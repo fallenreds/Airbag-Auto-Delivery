@@ -2,26 +2,27 @@ version: '3.7'
 
 services:
   back:
-    #build: backend/App/
-    image: fallenreds/rmonline-shop-tg:backend
+    build: backend/
     ports:
       - "8000:8000"
     volumes: 
       - type: bind
-        source: /root/info.db
+        source: ./info.db
         target: /backend/info.db
         read_only: false
   bot:
-    image: fallenreds/rmonline-shop-tg:bot
+    build: bot/
     ports:
       - "88:88"
     volumes:
       - type: bind
-        source: /root/props.json
+        source: ./props.json
         target: /bot/props.json
         read_only: false
   front:
-    #build: frontend/
-    image: fallenreds/rmonline-shop-tg:front
+    environment:
+      - NODE_OPTIONS=--openssl-legacy-provider
+      - SKIP_PREFLIGHT_CHECK=true
+    build: front/
     ports:
       - "3000:3000"

@@ -11,7 +11,7 @@ import SingUp from "./components/SignUp/SingUp";
 import SingIn from "./components/SignIn/SingIn";
 import config from "./config.json"
 import SuccessAuth from "./components/SuccessAuth/SuccessAuth";
-
+import React from 'react';
 
 export const settings = config.prod_settings
 export const base_url = settings.base_url
