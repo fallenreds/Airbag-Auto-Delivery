@@ -47,6 +47,7 @@ def manager_notes_builder(order, goods, db: DBConnection):
     name = f"{order['name']} {order['last_name']}"
     phone = f"{order['phone']}"
     address = f"{order['nova_post_address']}"
+    description = order.get('description')
     prepayment = "Предоплата" if order["prepayment"] else "Наложенный платеж"
     goods_list = json.loads(order["goods_list"].replace("'", '"'))
     order_suma = build_order_suma(order, goods)
@@ -55,6 +56,7 @@ def manager_notes_builder(order, goods, db: DBConnection):
                  f"ФИО: {name}\n" \
                  f"Телефон: {phone}\n" \
                  f"Адрес: {address}\n" \
+                 f"Коментар: {description if description else 'Відсутній'}\n" \
                  f"Тип платежа: {prepayment}\n" \
                  f"Знижка клієнта {user_discount['procent']}%\n" \
                  f"Сума до сплати {order_suma} грн\n" \

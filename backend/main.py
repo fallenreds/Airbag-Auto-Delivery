@@ -145,37 +145,6 @@ def new_remonline_order(order_id: OrderIdModel):
     order = db.get_all_orders(order_id=order_id.order_id)[0]
     return _new_remonline_order(order, db, CRM, json_goods)
 
-    # try:
-    #     if order:
-    #         print("order_find")
-    #         phone = order["phone"]
-    #         name = f"{order['name']} {order['last_name']}"
-    #         client = db.get_client_by_id(order['client_id'])
-    #         client_remonline_id = client['id_remonline']
-    #         order_type = TEST_CRM.get_order_types()["data"][0]["id"]
-    #
-    #         manager_notes = manager_notes_builder(order=order, goods=json_goods, db=db)
-    #
-    #         response = TEST_CRM.new_order(branch_id=branch,
-    #                                       order_type=order_type,
-    #                                       client_id=client_remonline_id,
-    #                                       manager_notes=manager_notes
-    #
-    #                                       )
-    #         db.add_remonline_order_id(response['data']['id'], order_id.order_id)
-    #         db.connection.close()
-    #
-    #         return {"data": response}
-    #
-    # except ConnectTimeout as error:
-    #     db.post_order_updates('remonline timeout error', order_id)
-    #     print(f"error: {error}")
-    #
-    # except Exception as error:
-    #     print(f"error: {error}")
-    #     db.post_order_updates('remonline creating error', order_id)
-
-    # db.connection.close()
 
 
 @app.get("/api/v1/shoppingcart/{id}")

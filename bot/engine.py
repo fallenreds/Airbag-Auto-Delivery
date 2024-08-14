@@ -80,6 +80,7 @@ async def manager_notes_builder(order, goods) -> dict:
     phone = f"{order['phone']}"
     address = f"{order['nova_post_address']}"
     prepayment = "Передплата" if order["prepayment"] == True else "Накладений платіж"
+    description = order.get('description')
     goods_list = json.loads(order["goods_list"].replace("'", '"'))
 
     order_suma = await build_order_suma(order, goods)
@@ -103,6 +104,7 @@ async def manager_notes_builder(order, goods) -> dict:
                  f"Номер замовлення: {order['id']} \n" \
                  f"ФІО: {name}\nТелефон: {phone}\n" \
                  f"Адреса: {address}\n" \
+                 f"Коментар: {description if description else 'Відсутній'}\n" \
                  f"Тип платежу: {prepayment}\n" \
                  f"Статус оплаты:{is_paid}\n\n" \
                  f"Знижка: {procent}%\n" \

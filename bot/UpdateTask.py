@@ -19,6 +19,7 @@ async def order_updates(bot, admin_list):
 
                     if record['type'] == "new_order_client_notification":
                         await new_order_client_notification(bot, order)
+
                         if order['prepayment'] == 1:
                             await send_messages_to_admins(bot, admin_list, "Створено нове замовлення з передплатою")
                         else:

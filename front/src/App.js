@@ -29,9 +29,7 @@ function App() {
     const [orderSumaState, setOrderSuma]= useState(0)
 
     let uid = tg.initDataUnsafe?.user?.id
-    // if(!uid){
-    //     uid = 5322089741
-    // }
+    
 
     useEffect(()=>{
         getShoppingCart({setShoppingCart}, uid)
