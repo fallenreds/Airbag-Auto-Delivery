@@ -1,6 +1,6 @@
 import asyncio
 import json
-
+import functools
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
 
@@ -126,11 +126,19 @@ async def admin_panel(message):
     #                            )
 
 
-async def get_props_info():
+async def get_props_info()->str:
     with open('props.json', "r", encoding='utf-8') as f:
         props = json.load(f)
-    return f"<b>Натисніть на номер картки щоб скопіювати</b>\n" \
-           f"\n<b>ФІО</b>: {props['full_name']}\n<b>Номер картки</b>: <code>{props['card']}</code>\n"
+
+    main_text = (f"<b>Натисніть на номер картки щоб скопіювати</b>\n"
+                 f"\n<b>ФІО</b>: {props['full_name']}\n"
+                 f"<b>Номери карток</b>:\n")
+
+    cards:list[str] = props['cards']
+    for card in cards:
+        main_text += f'<code>{card.strip()}</code>\n'
+
+    return main_text
 
 
 def find_good(goods, good_id):
@@ -522,7 +530,7 @@ async def new_props_fullname_state(message: types.Message, state: FSMContext):
     try:
         async with state.proxy() as data:
             data['full_name'] = message.text
-        await bot.send_message(message.chat.id, "Чудово, тепер напишіть номер картки")
+        await bot.send_message(message.chat.id, "Чудово, тепер напишіть номера карток через кому")
         await NewProps.next()
     except Exception as error:
         await bot.send_message(message.chat.id, "Нажаль, чомусь сталась помилка.")
@@ -532,7 +540,7 @@ async def new_props_fullname_state(message: types.Message, state: FSMContext):
 async def new_props_card_state(message: types.Message, state: FSMContext):
     try:
         async with state.proxy() as data:
-            data['card'] = message.text
+            data['cards'] = message.text.split(",")
 
         data = await state.get_data()
         with open('props.json', 'w') as file:
