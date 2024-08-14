@@ -1,0 +1,30 @@
+.success{
+    padding: 14vw 5vw 10vw 5vw;
+    display: flex;
+    color: var(--tg-theme-text-color);
+    flex-direction: column;
+    width: 100%;
+    font-family: 'Montserrat';
+    font-weight: bold;
+    background-color: var(--tg-theme-bg-color);
+}
+
+.success_btn{
+    border-radius: 10px;
+    font-weight: bold;
+    margin-top: 10vw;
+    padding: 3vw;
+    color: var(--tg-theme-text-color);
+    font-family: 'Montserrat';
+    background-color: rgba(215, 125, 72, 1);
+
+}
+
+.success img{
+    display: block;
+    height: 20vw;
+    width: 20vw;
+    margin-left: auto;
+    margin-right: auto;
+    margin-bottom: 5vw;
+}

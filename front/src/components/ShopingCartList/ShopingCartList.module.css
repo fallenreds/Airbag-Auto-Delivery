@@ -1,0 +1,26 @@
+.shoppingCartList{
+    padding-top: 40px;
+    background: var(--tg-theme-bg-color);
+    color: var(--tg-theme-text-color);
+    font-family: 'Montserrat';
+
+}
+
+.makeOrder{
+    background: rgba(215, 125, 72, 1);
+    color: var(--tg-theme-text-color);
+    font-family: 'Montserrat';
+    font-weight: bold;
+    width: 90%;
+    margin: 5%;
+    padding: 3vw;
+    border-radius: 10px;
+    border: None;
+}
+
+.topay{
+    font-weight: bold;
+    text-align: center;
+    margin-top: 5vw;
+    color: rgba(19, 189, 50, 1)
+}

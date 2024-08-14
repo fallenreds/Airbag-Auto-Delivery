@@ -1,0 +1,12 @@
+{
+  "test_settings": {
+    "base_url": "http://127.0.0.1:8000/",
+    "bonus_id": 34459054,
+    "prod_price": 284727
+  },
+  "prod_settings": {
+    "bonus_id": 34459054,
+    "base_url": "https://stoshop.co.ua/",
+    "prod_price": 284727
+  }
+}

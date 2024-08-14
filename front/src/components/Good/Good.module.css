@@ -1,0 +1,115 @@
+.post{
+    color: var(--tg-theme-text-color);
+    font-family: 'Montserrat';
+    font-weight: inherit;
+    margin-top: 11px;
+    padding: 11px;
+    background-color: var(--tg-theme-secondary-bg-color);
+    width: 170px;
+    height: 300px;
+    border-radius: 10px;
+    border: 1px solid black;
+}
+
+.title{
+    color: var(--tg-theme-text-color);
+    overflow-x:hidden;
+    font-size: 13px;
+    width: 150px;
+    height: 50px;
+}
+.cost{
+    color: var(--tg-theme-text-color);
+    line-height: 30px;
+    overflow-x:hidden;
+    font-size: 13px;
+    font-weight: bold;
+    width: 150px;
+    height: 30px;
+}
+
+.imageContainer{
+    width: 150px;
+    height: 150px;
+    overflow: hidden;
+    margin-right: auto;
+    position: relative;
+    display: flex;
+    justify-content: center;
+    border-radius: 5px;
+
+
+
+
+}
+.blurIMG{
+    width: 110%;
+    height: 110%;
+    filter: blur(2px);
+
+
+
+}
+.finalIMG {
+    height: 100%;
+    text-align: center;
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+    border-radius: 3px;
+    top: 0;
+
+    position: absolute;
+    z-index: 2;
+
+
+
+
+}
+
+/*.post>  img{*/
+
+/*    text-align: center;*/
+/*    width: 150px;*/
+/*    height: 150px;*/
+/*    border-radius: 3px;*/
+/*}*/
+
+
+.post > button {
+    color: var(--tg-theme-text-color);
+    text-align: center;
+    font-size: 13px;
+    font-weight: bold;
+    border-radius: 10px;
+    background: rgba(215, 125, 72, 1);
+    width: 150px;
+    height: 30px;
+    border: 2px solid rgba(215, 125, 72, 1);
+}
+
+
+/*.residue{*/
+/*    display: flex;*/
+/*    justify-content: center;*/
+/*    align-content: center;*/
+/*    font-weight: normal;*/
+/*    font-size: 12px;*/
+/*    background-color: rgba(215, 125, 72, 1);*/
+/*    position: absolute;*/
+/*    padding-top: 8px;*/
+/*    padding-bottom: 5px;*/
+/*    border-radius: 50%;*/
+/*    margin-left: 140px;*/
+/*    margin-top: -15px;*/
+/*    width: 30px;*/
+/*    height: 30px;*/
+
+/*}*/
+
+.residue{
+    color: #1c800b;
+    margin-top: 5px;
+    font-size: 12px;
+
+}

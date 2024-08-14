@@ -1,0 +1,55 @@
+.form {
+    padding: 14vw 5vw 10vw 5vw;
+    display: flex;
+    color: var(--tg-theme-text-color);
+    flex-direction: column;
+    width: 100%;
+    font-family: 'Montserrat';
+    font-weight: bold;
+    background-color: var(--tg-theme-bg-color);
+
+}
+
+.input {
+    font-size: 16px;
+    border-radius: 10px;
+    width: 100%;
+    padding: 10px;
+    color: var(--tg-theme-text-color);
+    background-color: var(--tg-theme-secondary-bg-color);
+    margin-top: 15px;
+}
+
+.select {
+    font-size: 16px;
+    padding: 10px;
+    margin-top: 15px;
+}
+
+.fakeblock{
+    padding-top: 450px;
+}
+
+.singButton{
+    background-color: rgba(215, 125, 72, 1);
+    font-family: 'Montserrat';
+    font-weight: bold;
+    width: 48%;
+    padding: 3vw;
+    border-radius: 10px;
+    border: None;
+}
+
+.topay{
+    font-weight: bold;
+    text-align: center;
+    margin-top: 5vw;
+    color: rgba(19, 189, 50, 1)
+}
+
+.buttonList{
+    display: flex;
+    flex-wrap: wrap;
+    margin-top: 10px;
+    justify-content: space-between;
+}

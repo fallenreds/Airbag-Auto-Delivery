@@ -1,0 +1,27 @@
+version: '3.7'
+
+services:
+  back:
+    #build: backend/App/
+    image: fallenreds/rmonline-shop-tg:backend
+    ports:
+      - "8000:8000"
+    volumes: 
+      - type: bind
+        source: /root/info.db
+        target: /backend/info.db
+        read_only: false
+  bot:
+    image: fallenreds/rmonline-shop-tg:bot
+    ports:
+      - "88:88"
+    volumes:
+      - type: bind
+        source: /root/props.json
+        target: /bot/props.json
+        read_only: false
+  front:
+    #build: frontend/
+    image: fallenreds/rmonline-shop-tg:front
+    ports:
+      - "3000:3000"
