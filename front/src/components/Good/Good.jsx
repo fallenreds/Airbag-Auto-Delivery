@@ -5,6 +5,7 @@ import 'react-image-gallery/styles/css/image-gallery.css';
 import classes from './Good.module.css';
 import {get_discount, postShoppingCart} from "../../hooks/api";
 import {useNavigate} from "react-router-dom";
+import BlurImage from "../BlurImage/BlurImage";
 
 Modal.setAppElement('#root'); // Set the root element for accessibility
 
@@ -87,8 +88,7 @@ const Good = (props) => {
             </Modal>
 
             <div className={classes.imageContainer} onClick={handleImageClick}>
-                <img className={classes.blurIMG} alt='Фото' src={image}/>
-                <img className={classes.finalIMG} alt='Фото' src={image}/>
+                <BlurImage image={image}></BlurImage>
             </div>
 
             <div className={classes.title}>

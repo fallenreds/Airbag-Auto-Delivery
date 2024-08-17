@@ -1,0 +1,23 @@
+.blurIMG{
+    width: 110%;
+    height: 110%;
+    filter: blur(2px);
+}
+.finalIMG {
+    height: 100%;
+    text-align: center;
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+    border-radius: 3px;
+    top: 0;
+    position: absolute;
+    z-index: 2;
+}
+
+.container{
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+}
