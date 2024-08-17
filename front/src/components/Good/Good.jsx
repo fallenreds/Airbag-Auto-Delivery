@@ -82,8 +82,8 @@ const Good = (props) => {
                     onClose={closeModal}
                     showPlayButton={false}
                     showThumbnails={true}
-                    sho
-                    useBrowserFullscreen={true}
+                    showFullscreenButton={false}
+                    useBrowserFullscreen={false}
                 />
             </Modal>
 
