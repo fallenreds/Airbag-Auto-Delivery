@@ -1,6 +1,7 @@
 import React, {useEffect, useState} from 'react';
 import classes from "../ShopingCart/ShopingCart.module.css";
 import {deleteShoppingCart, getOrderSuma, updateShoppingCart} from "../../hooks/api";
+import BlurImage from "../BlurImage/BlurImage";
 
 // eslint-disable-next-line
 const test_price = 298792
@@ -11,9 +12,7 @@ const ShopingCart = (props) => {
     const [price, setPrice] = useState(good.price[prod_price] * count);
     const [error, setError] = useState(false);
     let image = good.image[0]
-    if(!image){
-        image ='https://t3.ftcdn.net/jpg/04/34/72/82/360_F_434728286_OWQQvAFoXZLdGHlObozsolNeuSxhpr84.jpg'
-    }
+
 
     useEffect(() => {
         checkErrorState();
@@ -57,8 +56,7 @@ const ShopingCart = (props) => {
     return (
         <div className={classes.shoppingCart}>
             <div className={classes.imageContainer}>
-                <img className={classes.blurIMG} alt='Фото' src={image  || 'default_image_url'} />
-                <img className={classes.finalIMG} alt='Фото' src={image  || 'default_image_url'} />
+                <BlurImage image={image}></BlurImage>
             </div>
             <div className={classes.content}>
                 <div className={classes.info}>
