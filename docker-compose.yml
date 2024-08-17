@@ -10,6 +10,7 @@ services:
         source: ./info.db
         target: /backend/info.db
         read_only: false
+    restart: unless-stopped
   bot:
     build: bot/
     ports:
