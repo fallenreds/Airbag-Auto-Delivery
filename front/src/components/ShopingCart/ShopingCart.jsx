@@ -2,6 +2,7 @@ import React, {useEffect, useState} from 'react';
 import classes from "../ShopingCart/ShopingCart.module.css";
 import {deleteShoppingCart, getOrderSuma, updateShoppingCart} from "../../hooks/api";
 import BlurImage from "../BlurImage/BlurImage";
+import GalleryItem from "../ModalGallery/GalleryItem";
 
 // eslint-disable-next-line
 const test_price = 298792
@@ -55,9 +56,11 @@ const ShopingCart = (props) => {
     checkErrorState()
     return (
         <div className={classes.shoppingCart}>
-            <div className={classes.imageContainer}>
-                <BlurImage image={image}></BlurImage>
-            </div>
+            <GalleryItem
+                images={good.image}
+                previewClassName={classes.imageContainer}
+                index={0}
+            />
             <div className={classes.content}>
                 <div className={classes.info}>
                     <div className={classes.maintext}>{good.title}</div>

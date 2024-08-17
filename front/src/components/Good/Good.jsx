@@ -6,8 +6,9 @@ import classes from './Good.module.css';
 import {get_discount, postShoppingCart} from "../../hooks/api";
 import {useNavigate} from "react-router-dom";
 import BlurImage from "../BlurImage/BlurImage";
+import ModalGallery from "../ModalGallery/ModalGallery";
+import GalleryItem from "../ModalGallery/GalleryItem";
 
-Modal.setAppElement('#root'); // Set the root element for accessibility
 
 const Good = (props) => {
     const uid = props.uid;
@@ -18,8 +19,13 @@ const Good = (props) => {
     const [buttonState, setButton] = useState(buyButton);
     const [cartState, setCart] = useState(props.carts);
     const [goodState, setGood] = useState(props.good);
-    const [isGalleryOpen, setGalleryOpen] = useState(false);
-    const [galleryIndex, setGalleryIndex] = useState(0);
+    const [showGalleryFunc, setShowGalleryFunc] = useState(null);
+
+    const showGallery = () => {
+        if (showGalleryFunc) {
+            showGalleryFunc();
+        }
+    };
 
     useEffect(()=>{
         setGood(props.good);
@@ -30,10 +36,7 @@ const Good = (props) => {
     },[props.carts]);
 
     const router = useNavigate();
-    let image = goodState.image[0];
-    if(!image){
-        image ='https://t3.ftcdn.net/jpg/04/34/72/82/360_F_434728286_OWQQvAFoXZLdGHlObozsolNeuSxhpr84.jpg';
-    }
+
 
     useEffect(()=>{
         if (props.carts.includes(goodState.id)){
@@ -52,44 +55,19 @@ const Good = (props) => {
         postShoppingCart(uid, goodState.id);
     }
 
-    const handleImageClick = () => {
-        setGalleryIndex(0); // Set index to 0 to open on the first image
-        setGalleryOpen(true);
-    };
 
-    const images = goodState.image.map(img => ({
-        original: img,
-        thumbnail: img,
-    }));
 
-    const closeModal = () => {
-        setGalleryOpen(false);
-    };
+
+
 
     return (
         <div className={classes.post}>
-            <Modal
-                isOpen={isGalleryOpen}
-                onRequestClose={closeModal}
-                contentLabel="Image Gallery"
-                className={classes.modalContent}
-                overlayClassName={classes.modalOverlay}
+            <GalleryItem
+            images={goodState.image}
+            previewClassName={classes.imageContainer}
+            index={0}
+            />
 
-            >
-                <ImageGallery
-                    items={images}
-                    startIndex={galleryIndex}
-                    onClose={closeModal}
-                    showPlayButton={false}
-                    showThumbnails={true}
-                    showFullscreenButton={false}
-                    useBrowserFullscreen={false}
-                />
-            </Modal>
-
-            <div className={classes.imageContainer} onClick={handleImageClick}>
-                <BlurImage image={image}></BlurImage>
-            </div>
 
             <div className={classes.title}>
                 {goodState.title}<p/>
