@@ -1,13 +1,17 @@
 import asyncio
 import json
 import functools
+import logging
+
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
+from aiogram.utils.callback_data import CallbackData
 
 from UpdateTask import order_updates, get_no_paid_orders
 
 from api import *
 from aiogram import Bot, Dispatcher, executor, filters
+
 
 from buttons import *
 from config import *
@@ -22,6 +26,7 @@ storage = MemoryStorage()
 
 bot = Bot(token=BOT_TOKEN, parse_mode="HTML", )
 dp = Dispatcher(bot, storage=storage)
+
 
 
 async def check_admin_permission(message):
@@ -46,6 +51,7 @@ async def start_message(message):
         markup_k.add(admin_button)
 
     await bot.send_message(message.chat.id, text=greetings_text, reply_markup=markup_k)
+
 
 
 @dp.message_handler(commands=['admin'])
@@ -126,19 +132,7 @@ async def admin_panel(message):
     #                            )
 
 
-async def get_props_info()->str:
-    with open('props.json', "r", encoding='utf-8') as f:
-        props = json.load(f)
 
-    main_text = (f"<b>Натисніть на номер картки щоб скопіювати</b>\n"
-                 f"\n<b>ФІО</b>: {props['full_name']}\n"
-                 f"<b>Номери карток</b>:\n")
-
-    cards:list[str] = props['cards']
-    for card in cards:
-        main_text += f'<code>{card.strip()}</code>\n'
-
-    return main_text
 
 
 def find_good(goods, good_id):
@@ -351,170 +345,6 @@ async def edit_discount(telegram_id):
                            reply_markup=markup_i)
 
 
-@dp.callback_query_handler()
-async def callback_admin_panel(callback: types.CallbackQuery):
-    try:
-
-
-        goods = await get_all_goods()
-
-        admin_id = callback.from_user.id
-        if callback.data == "active_order":
-            active_orders = await get_active_orders()
-            if not active_orders:
-                return await bot.send_message(admin_id, text="На данний момент немає активних замовлень")
-            await order_list_builder(bot, active_orders, admin_id, goods)
-
-        if callback.data == "show_all_clients":
-            await show_clients(callback.message, bot)
-
-        if "check_order/" in callback.data:
-            order_id = await id_spliter(callback.data)
-            order = [await get_order_by_id(order_id)]
-            print(order)
-            await order_list_builder(bot, order, callback.message.chat.id, goods)
-
-        if callback.data == "discount_info":
-            await check_discount(callback.message)
-
-        if "make_paid/" in callback.data:
-            order_id = await id_spliter(callback.data)
-            order = await get_order_by_id(order_id)
-            admin_text = f"Чудово, тепер перевірте замовлення в remonline №{order_id}!"
-            client_text = f"Дякую, ви успішно оплатили замовлення №{order_id}!"
-            await make_pay_order(int(order_id))
-            await bot.send_message(order['telegram_id'], client_text)
-            await bot.send_message(callback.message.chat.id, admin_text)
-
-        if callback.data == "change_props" and callback.message.chat.id in admin_list:
-            await NewProps.full_name.set()
-            await bot.send_message(callback.message.chat.id,
-                                   "Будь ласка, напишіть ФІО в реквізитах.\nДля відміни операції натисніть /stop")
-
-        if "deactivate_order/" in callback.data:
-            order_id = await id_spliter(callback.data)
-            order = await get_order_by_id(order_id)
-
-            response = await finish_order(order_id)
-            if not response:
-                return None
-            if response['success']:
-                client_text = f"Дякуємо за замовлення <b>№{order['id']}</b>!\nДо нових зустрічей у AirBag “AutoDelivery” 💛💙"
-                await bot.send_message(admin_id,
-                                       text="Замовлення успішно закрито. Не забудьте змінити статус замовлення на remonline!")
-                await bot.send_message(order['telegram_id'], client_text)
-            else:
-                await unknown_error_notifications(bot, admin_id)
-
-        if "to_not_prepayment/" in callback.data:
-            order_id = await id_spliter(callback.data)
-            order = await get_order_by_id(order_id)
-            await change_to_not_prepayment(order_id)
-            await change_to_not_prepayment_notifications(bot, order_id, callback.message.chat.id)
-            await change_to_not_prepayment_notifications(bot, order_id, order['telegram_id'])
-        if "check_ttn/" in callback.data:
-            ttn = await id_spliter(callback.data)
-            order = await get_order_by_ttn(ttn)
-
-            response = await ttn_tracking(ttn, order['phone'])
-            tnn_info_text = await ttn_info_builder(response, order)
-            await bot.send_message(callback.message.chat.id, text=tnn_info_text)
-
-        # if "change_order_prepayment/" in callback.data:
-        #     order_id = callback.data.rsplit('/')[-1]
-
-        if "send_payment_photo" in callback.data:
-            order_id = callback.data.rsplit('/')[-1]
-            await NewPaymentData.order_id.set()
-            await bot.send_message(callback.message.chat.id,
-                                   f'Будь ласка, напишіть ваш номер замовлення, за яке ви хочете відправити фото оплати. Номер цього замовлення {order_id}.\nДля відміни операції натисніть /stop')
-
-        if callback.data == "to_call":
-            await bot.send_message(callback.message.chat.id, text="Номер телефону: \n+380989989828")
-
-        if "delete_order/" in callback.data:
-            order_id = await id_spliter(callback.data)
-            order = await get_order_by_id(order_id)
-            response = await delete_order(order_id)
-            markup_i = types.InlineKeyboardMarkup().add(get_our_contact_button())
-            if not response:
-                return None
-            if response['success']:
-                client_text = f"<b>На жаль, ми не дочекалися підтвердження Вашого замовлення №{order_id} 😟</b>" \
-                              f"\nЗамовлення видалено, чекаємо на Ваше повернення! 😀"
-                if callback.message.chat.id in admin_list:
-                    await bot.send_message(admin_id, text=f"Замовлення №{order_id} успішно видалено. Якщо тип замовлення накладений платіж, будь ласка, не забудьте видалити його з remonline!")
-                await bot.send_message(order['telegram_id'], client_text, reply_markup=markup_i)
-            else:
-                await unknown_error_notifications(bot, admin_id)
-
-        if callback.data == "no_paid":
-            orders = await no_paid_along_time()
-            if not orders['success']:
-                return await bot.send_message(admin_id, text="Наразі немає несплачених замовлень, з передплатою")
-            await order_list_builder(bot, orders['data'], admin_id, goods)
-
-        if callback.data == "Зв‘язок":
-            await show_info(callback)
-
-        if "add_ttn/" in callback.data:
-            order_id = await id_spliter(callback.data)
-            ttn_message = await bot.send_message(callback.message.chat.id,
-                                                 f"Добре, уведіть зараз id замовлення.\n\n<b>Id цього "
-                                                 f"замовлення {order_id}.</b>")
-
-            await NewTTN.order_id.set()
-
-        if callback.data == "Статус":
-            await check_status(callback)
-        if callback.data == "get_props_info":
-            await bot.send_message(callback.message.chat.id, await get_props_info())
-
-        if callback.data == "edit_discount":
-            await edit_discount(callback.message.chat.id)
-
-        if "delete_discount/" in callback.data:
-            discount_id = await id_spliter(callback.data)
-            response = await delete_discount(discount_id)
-            if not response:
-                return None
-            if response['success']:
-                await bot.send_message(callback.message.chat.id, text="Знижку було успішно видалено!")
-            else:
-                await unknown_error_notifications(bot, callback.message.chat.id)
-
-        if callback.data == "new_discount":
-            await bot.send_message(callback.message.chat.id, text="Очікую нові дані")
-
-        if callback.data == "make_post" and callback.message.chat.id in admin_list:
-            markup_i = types.InlineKeyboardMarkup().add(get_make_post_only_text_button(),
-                                                        get_make_post_text_with_image_button())
-            await bot.send_message(callback.message.chat.id,
-                                   text="Оберіть: оголошення з фотографією чи без?\nДля відміни операції натисніть /stop",
-                                   reply_markup=markup_i)
-
-        if callback.data == "make_post_with_image":
-            await bot.send_message(callback.message.chat.id, text="Добре, чекаю від вас текст оголошення")
-            await NewPost.text.set()
-
-        if callback.data == "make_post_no_image":
-            await bot.send_message(callback.message.chat.id, text="Добре, чекаю від вас текст оголошення")
-            await NewTextPost.text.set()
-
-        if callback.data == "show_client_info":
-            message = callback.message
-            await show_clients(message, bot)
-
-        if "add_client_monthpayment/" in callback.data:
-            client_id = await id_spliter(callback.data)
-            await bot.send_message(callback.message.chat.id,
-                                   f"Добре, пришліть мені ID клієнта. ID цього клієнта: {client_id}")
-            await NewClientDiscount.client_id.set()
-
-    except TypeError as error:
-        await no_connection_with_server_notification(bot, callback.message)
-    except Exception as error:
-        await send_error_log(bot, 516842877, error)
 
 
 @dp.message_handler(commands=['stop'], state='*')
@@ -525,34 +355,87 @@ async def cmd_cancel(message: types.Message, state: FSMContext):
     await state.finish()
     await message.reply('Ви успішно зупинили операцію.')
 
-@dp.message_handler(content_types=['text'], state=NewProps.full_name)
-async def new_props_fullname_state(message: types.Message, state: FSMContext):
+
+
+@dp.callback_query_handler(lambda call: call.data == "change_props")
+async def change_props(callback: types.CallbackQuery):
+
+    with open('props.json', "r", encoding='utf-8') as f:
+        props = json.load(f)
+
     try:
-        async with state.proxy() as data:
-            data['full_name'] = message.text
-        await bot.send_message(message.chat.id, "Чудово, тепер напишіть номера карток через кому")
-        await NewProps.next()
-    except Exception as error:
-        await bot.send_message(message.chat.id, "Нажаль, чомусь сталась помилка.")
+        current_props = ",".join(props.values())
+    except Exception:
+        current_props = ""
 
 
-@dp.message_handler(content_types=['text'], state=NewProps.card)
-async def new_props_card_state(message: types.Message, state: FSMContext):
-    try:
-        async with state.proxy() as data:
-            data['cards'] = message.text.split(",")
+    message_text = (f"Введіть через кому нові значення для встановлення реквізитів. Через кому напишіть:"
+                    f"\nФІО,"
+                    f"\nНомер картки,"
+                    f"\nЄДРПОУ,"
+                    f"\nНомер рахунку,"
+                    f"\nПризначення платежу"
+                    f"\n\nСкопіюйте для зручного редагування <code>{current_props}</code>"
+                    f"\nДля відміни операції натисніть /stop")
 
-        data = await state.get_data()
-        with open('props.json', 'w') as file:
-            file.write(json.dumps(data, indent=4))
-
-        await bot.send_message(message.chat.id, "Ваші реквізити успішно змінено")
+    await NewProps.set.set()
+    await bot.send_message(callback.message.chat.id,message_text)
 
 
-    except Exception as error:
-        await bot.send_message(message.chat.id, "Нажаль, чомусь сталась помилка.")
-    finally:
-        await state.finish()
+@dp.message_handler(content_types=['text'], state=NewProps.set)
+async def save_changed_props(message: types.Message, state: FSMContext):
+    await state.finish()
+    new_props:list[str] = [prop.strip() for prop in message.text.split(',')]
+
+    props = {
+        "full_name": new_props[0],
+        "card_number": new_props[1],
+        "edrpou": new_props[2],
+        "account_number": new_props[3],
+        "payment_purpose": new_props[4],
+
+    }
+    with open('props.json', 'w') as file:
+        file.write(json.dumps(props, indent=4))
+
+    await bot.send_message(message.chat.id, "Реквізити успішно змінені✅")
+
+async def get_props()->str:
+    with open('props.json', "r", encoding='utf-8') as f:
+        props = json.load(f)
+
+    message_text = (f"<b>Натисніть, щоб скопіювати</b>\n"
+                 f"\n<b>ФІО</b>: <code>{props.get('full_name')}</code>\n"
+                 f"<b>Номер картки </b>: <code>{props.get('card_number')}</code>\n"
+                 f"<b>ЄДРПОУ</b>: <code>{props.get('edrpou')}</code>\n"
+                 f"<b>Номер рахунку</b>: <code>{props.get('account_number')}</code>\n"
+                 f"<b>Призначення платежу</b>: <code>{props.get('payment_purpose')}</code>\n"
+                 )
+
+    return message_text
+@dp.callback_query_handler(lambda call: call.data == "get_props_info")
+async def show_props(callback: types.CallbackQuery):
+    await bot.send_message(callback.message.chat.id, await get_props())
+
+
+
+# @dp.message_handler(content_types=['text'], state=NewProps.card)
+# async def new_props_card_state(message: types.Message, state: FSMContext):
+#     try:
+#         async with state.proxy() as data:
+#             data['cards'] = message.text.split(",")
+#
+#         data = await state.get_data()
+#         with open('props.json', 'w') as file:
+#             file.write(json.dumps(data, indent=4))
+#
+#         await bot.send_message(message.chat.id, "Ваші реквізити успішно змінено")
+#
+#
+#     except Exception as error:
+#         await bot.send_message(message.chat.id, "Нажаль, чомусь сталась помилка.")
+#     finally:
+#         await state.finish()
 
 
 @dp.message_handler(content_types=['text'], state=NewPaymentData.order_id)
@@ -683,6 +566,165 @@ async def ttn_state(message: types.Message, state: FSMContext):
     except Exception as error:
         await send_error_log(bot, 516842877, error)
 
+@dp.callback_query_handler()
+async def callback_admin_panel(callback: types.CallbackQuery):
+    try:
+
+
+        goods = await get_all_goods()
+
+        admin_id = callback.from_user.id
+        if callback.data == "active_order":
+            active_orders = await get_active_orders()
+            if not active_orders:
+                return await bot.send_message(admin_id, text="На данний момент немає активних замовлень")
+            await order_list_builder(bot, active_orders, admin_id, goods)
+
+        if callback.data == "show_all_clients":
+            await show_clients(callback.message, bot)
+
+        if "check_order/" in callback.data:
+            order_id = await id_spliter(callback.data)
+            order = [await get_order_by_id(order_id)]
+            print(order)
+            await order_list_builder(bot, order, callback.message.chat.id, goods)
+
+        if callback.data == "discount_info":
+            await check_discount(callback.message)
+
+        if "make_paid/" in callback.data:
+            order_id = await id_spliter(callback.data)
+            order = await get_order_by_id(order_id)
+            admin_text = f"Чудово, тепер перевірте замовлення в remonline №{order_id}!"
+            client_text = f"Дякую, ви успішно оплатили замовлення №{order_id}!"
+            await make_pay_order(int(order_id))
+            await bot.send_message(order['telegram_id'], client_text)
+            await bot.send_message(callback.message.chat.id, admin_text)
+
+
+        if "deactivate_order/" in callback.data:
+            order_id = await id_spliter(callback.data)
+            order = await get_order_by_id(order_id)
+
+            response = await finish_order(order_id)
+            if not response:
+                return None
+            if response['success']:
+                client_text = f"Дякуємо за замовлення <b>№{order['id']}</b>!\nДо нових зустрічей у AirBag “AutoDelivery” 💛💙"
+                await bot.send_message(admin_id,
+                                       text="Замовлення успішно закрито. Не забудьте змінити статус замовлення на remonline!")
+                await bot.send_message(order['telegram_id'], client_text)
+            else:
+                await unknown_error_notifications(bot, admin_id)
+
+        if "to_not_prepayment/" in callback.data:
+            order_id = await id_spliter(callback.data)
+            order = await get_order_by_id(order_id)
+            await change_to_not_prepayment(order_id)
+            await change_to_not_prepayment_notifications(bot, order_id, callback.message.chat.id)
+            await change_to_not_prepayment_notifications(bot, order_id, order['telegram_id'])
+        if "check_ttn/" in callback.data:
+            ttn = await id_spliter(callback.data)
+            order = await get_order_by_ttn(ttn)
+
+            response = await ttn_tracking(ttn, order['phone'])
+            tnn_info_text = await ttn_info_builder(response, order)
+            await bot.send_message(callback.message.chat.id, text=tnn_info_text)
+
+        # if "change_order_prepayment/" in callback.data:
+        #     order_id = callback.data.rsplit('/')[-1]
+
+        if "send_payment_photo" in callback.data:
+            order_id = callback.data.rsplit('/')[-1]
+            await NewPaymentData.order_id.set()
+            await bot.send_message(callback.message.chat.id,
+                                   f'Будь ласка, напишіть ваш номер замовлення, за яке ви хочете відправити фото оплати. Номер цього замовлення {order_id}.\nДля відміни операції натисніть /stop')
+
+        if callback.data == "to_call":
+            await bot.send_message(callback.message.chat.id, text="Номер телефону: \n+380989989828")
+
+        if "delete_order/" in callback.data:
+            order_id = await id_spliter(callback.data)
+            order = await get_order_by_id(order_id)
+            response = await delete_order(order_id)
+            markup_i = types.InlineKeyboardMarkup().add(get_our_contact_button())
+            if not response:
+                return None
+            if response['success']:
+                client_text = f"<b>На жаль, ми не дочекалися підтвердження Вашого замовлення №{order_id} 😟</b>" \
+                              f"\nЗамовлення видалено, чекаємо на Ваше повернення! 😀"
+                if callback.message.chat.id in admin_list:
+                    await bot.send_message(admin_id, text=f"Замовлення №{order_id} успішно видалено. Якщо тип замовлення накладений платіж, будь ласка, не забудьте видалити його з remonline!")
+                await bot.send_message(order['telegram_id'], client_text, reply_markup=markup_i)
+            else:
+                await unknown_error_notifications(bot, admin_id)
+
+        if callback.data == "no_paid":
+            orders = await no_paid_along_time()
+            if not orders['success']:
+                return await bot.send_message(admin_id, text="Наразі немає несплачених замовлень, з передплатою")
+            await order_list_builder(bot, orders['data'], admin_id, goods)
+
+        if callback.data == "Зв‘язок":
+            await show_info(callback)
+
+        if "add_ttn/" in callback.data:
+            order_id = await id_spliter(callback.data)
+            ttn_message = await bot.send_message(callback.message.chat.id,
+                                                 f"Добре, уведіть зараз id замовлення.\n\n<b>Id цього "
+                                                 f"замовлення {order_id}.</b>")
+
+            await NewTTN.order_id.set()
+
+        if callback.data == "Статус":
+            await check_status(callback)
+
+
+        if callback.data == "edit_discount":
+            await edit_discount(callback.message.chat.id)
+
+        if "delete_discount/" in callback.data:
+            discount_id = await id_spliter(callback.data)
+            response = await delete_discount(discount_id)
+            if not response:
+                return None
+            if response['success']:
+                await bot.send_message(callback.message.chat.id, text="Знижку було успішно видалено!")
+            else:
+                await unknown_error_notifications(bot, callback.message.chat.id)
+
+        if callback.data == "new_discount":
+            await bot.send_message(callback.message.chat.id, text="Очікую нові дані")
+
+        if callback.data == "make_post" and callback.message.chat.id in admin_list:
+            markup_i = types.InlineKeyboardMarkup().add(get_make_post_only_text_button(),
+                                                        get_make_post_text_with_image_button())
+            await bot.send_message(callback.message.chat.id,
+                                   text="Оберіть: оголошення з фотографією чи без?\nДля відміни операції натисніть /stop",
+                                   reply_markup=markup_i)
+
+        if callback.data == "make_post_with_image":
+            await bot.send_message(callback.message.chat.id, text="Добре, чекаю від вас текст оголошення")
+            await NewPost.text.set()
+
+        if callback.data == "make_post_no_image":
+            await bot.send_message(callback.message.chat.id, text="Добре, чекаю від вас текст оголошення")
+            await NewTextPost.text.set()
+
+        if callback.data == "show_client_info":
+            message = callback.message
+            await show_clients(message, bot)
+
+        if "add_client_monthpayment/" in callback.data:
+            client_id = await id_spliter(callback.data)
+            await bot.send_message(callback.message.chat.id,
+                                   f"Добре, пришліть мені ID клієнта. ID цього клієнта: {client_id}")
+            await NewClientDiscount.client_id.set()
+
+    except TypeError as error:
+        await no_connection_with_server_notification(bot, callback.message)
+    except Exception as error:
+        await send_error_log(bot, 516842877, error)
 
 async def update(_):
     asyncio.create_task(get_no_paid_orders(bot, admin_list))

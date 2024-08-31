@@ -21,6 +21,7 @@ class NewPaymentData(StatesGroup):
     photo = State()
 
 class NewProps(StatesGroup):
+    set = State()
     full_name = State()
     card = State()
 

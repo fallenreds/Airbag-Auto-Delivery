@@ -1,6 +1,7 @@
 {
     "full_name": "\u0413\u0435\u043a\u0430\u043b\u043e \u0414\u043c\u0438\u0442\u0440\u043e",
-    "cards": [
-        "4035 2000 4221 9094"
-    ]
+    "card_number": "222222",
+    "edrpou": "11111",
+    "account_number": "test",
+    "payment_purpose": "Hello"
 }
