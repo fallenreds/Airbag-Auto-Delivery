@@ -1,6 +1,7 @@
 import React from 'react';
 import classes from "./Header.module.css"
 import {useLocation, useNavigate} from 'react-router-dom';
+import AuthButton from "../Button/AuthButton/AuthButton";
 
 const Header = (props) => {
     const router = useNavigate()
@@ -78,10 +79,14 @@ const Header = (props) => {
 
     return (
         <div className={classes.header}>
+
             {showSearchBar()}
             {showSearchIcon()}
-            {showBackButton()}
+            <AuthButton clickFunction={()=>router('/singup')} label={"Зареєструватись"}/>
+            <AuthButton clickFunction={()=>router('/singin')} label={"Увійти в аккаунт"}/>
             {showShoppingCartButton()}
+            {showBackButton()}
+
 
         </div>
 

@@ -15,6 +15,7 @@ export function useTelegram() {
             tg.MainButton.show();
         }
     }
+
     // const get_uid = () =>{
     //     if(tg.initDataUnsafe?.user.id){
     //         return tg.initDataUnsafe.user.id

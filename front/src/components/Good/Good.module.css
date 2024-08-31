@@ -7,7 +7,7 @@
     background-color: var(--tg-theme-secondary-bg-color);
     width: 170px;
     height: 300px;
-    border-radius: 10px;
+    border-radius: 5px;
     border: 1px solid black;
 }
 
@@ -70,8 +70,8 @@
     text-align: center;
     font-size: 13px;
     font-weight: bold;
-    border-radius: 10px;
-    background: rgba(215, 125, 72, 1);
+    border-radius: 5px;
+    background: rgba(255,128,53,255);
     width: 150px;
     height: 30px;
     border: 2px solid rgba(215, 125, 72, 1);
@@ -84,7 +84,7 @@
 /*    align-content: center;*/
 /*    font-weight: normal;*/
 /*    font-size: 12px;*/
-/*    background-color: rgba(215, 125, 72, 1);*/
+/*    background-color: rgba(255,128,53,255);*/
 /*    position: absolute;*/
 /*    padding-top: 8px;*/
 /*    padding-bottom: 5px;*/

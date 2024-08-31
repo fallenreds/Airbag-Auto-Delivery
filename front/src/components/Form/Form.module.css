@@ -11,7 +11,7 @@
 
 .input {
     font-size: 16px;
-    border-radius: 10px;
+    border-radius: 5px;
     width: 100%;
     padding: 10px;
     color: var(--tg-theme-text-color);
@@ -23,7 +23,7 @@
 
 .select{
     font-size: 16px;
-    border-radius: 10px;
+    border-radius: 5px;
     width: 100%;
     padding: 10px;
 
@@ -64,13 +64,13 @@
 
 .makeOrder{
     margin-top: 10vw;
-    background: rgba(215, 125, 72, 1);
+    background: rgba(255,128,53,255);
     color: var(--tg-theme-text-color);
     font-family: 'Montserrat';
     font-weight: bold;
     width: 100%;
     padding: 3vw;
-    border-radius: 10px;
+    border-radius: 5px;
     border: None;
 }
 
@@ -84,13 +84,13 @@
     padding-top: 450px;
 }
 .button{
-    background: rgba(215, 125, 72, 1);
+    background: rgba(255,128,53,255);
     color: var(--tg-theme-text-color);
     font-family: 'Montserrat';
     font-weight: bold;
     width: 90%;
     margin: 5%;
     padding: 3vw;
-    border-radius: 10px;
+    border-radius: 5px;
     border: None;
 }
