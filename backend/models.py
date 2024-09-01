@@ -65,3 +65,14 @@ class OrderModel(BaseModel):
     is_paid: bool = False
     description: str = None
     ttn: str = None
+
+
+class BaseTemplate(BaseModel):
+    """Used for creating template"""
+    name:str
+    text:str
+
+
+class Template(BaseTemplate):
+    """Used for getting template"""
+    id:int

@@ -3,7 +3,7 @@ from models import BaseTemplate, Template
 from DB import DBConnection
 import config
 router = APIRouter(prefix='/templates', tags=['Templates'])
-
+from logger import logger
 
 @router.get('/')
 def get_templates()->list[Template]:

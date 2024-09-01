@@ -7,30 +7,13 @@ from datetime import datetime
 from time import perf_counter
 
 import structlog
-from structlog.contextvars import clear_contextvars, bind_contextvars
 from structlog.types import EventDict, Processor
 from rich.console import Console
 from rich.traceback import Traceback
 from typing import Literal
 
 import config
-import logging
-import sys
-from typing import TextIO
-from logging.handlers import RotatingFileHandler
-from pathlib import Path
-from datetime import datetime
-from time import perf_counter
 
-import structlog
-from fastapi import Request, Response
-from fastapi.middleware import Middleware
-from structlog.types import EventDict, Processor
-from rich.console import Console
-from rich.traceback import Traceback
-from asgi_correlation_id.context import correlation_id
-from asgi_correlation_id import CorrelationIdMiddleware
-from uvicorn.protocols.utils import get_path_with_query_string
 
 def rich_custom_traceback(sio: TextIO, exc_info) -> None:
     """
@@ -148,42 +131,6 @@ def setup_logging(log_level: Literal['INFO','DEBUG'] = "INFO"):
 
     sys.excepthook = handle_exception
 
-
-async def logging_middleware(request: Request, call_next) -> Response:
-    access_logger = structlog.stdlib.get_logger("api.access")
-    structlog.contextvars.clear_contextvars()
-    # These context vars will be added to all log entries emitted during the request
-    request_id = correlation_id.get()
-    structlog.contextvars.bind_contextvars(request_id=request_id)
-
-    start_time = perf_counter()
-    # If the call_next raises an error, we still want to return our own 500 response,
-    # so we can add headers to it (process time, request ID...)
-    response = Response(status_code=500)
-    try:
-        response = await call_next(request)
-    except Exception:
-        # TODO: Validate that we don't swallow exceptions (unit test?)
-        structlog.stdlib.get_logger("api.error").exception("Uncaught exception")
-        raise
-    finally:
-
-        process_time = perf_counter() - start_time
-        status_code = response.status_code
-        url = get_path_with_query_string(request.scope)
-        client_host = request.client.host
-        client_port = request.client.port
-        http_method = request.method
-        http_version = request.scope["http_version"]
-        # Recreate the Uvicorn access log format, but add all parameters as structured information
-
-        access_logger.info(
-            f"""{client_host}:{client_port} - "{http_method} {url} HTTP/{http_version}" {status_code}""",
-            network={"client": {"ip": client_host, "port": client_port}},
-            duration=process_time,
-        )
-        response.headers["X-Process-Time"] = str(process_time)
-        return response
 
 setup_logging(log_level=config.LOG_LEVEL)
 

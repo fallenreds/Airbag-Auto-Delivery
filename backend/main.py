@@ -4,13 +4,14 @@ import time
 from time import sleep
 import logging
 import uvicorn
+from asgi_correlation_id import CorrelationIdMiddleware
 from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import PositiveInt
 
 import logger
 from DB import DBConnection
-from Models import *
+from models import *
 from RestAPI.RemonlineAPI import *
 from UpdateOrdersTask import update_order_task
 from config import *
@@ -28,6 +29,9 @@ from api.templates import router as template_router
 
 
 app = FastAPI()
+app.middleware("http")(logger.logging_middleware)
+app.add_middleware(CorrelationIdMiddleware)
+
 origins = ["*"]
 app.add_middleware(
     CORSMiddleware,

@@ -1,6 +1,7 @@
-import json
 import sqlite3
-from models import *
+
+from models import BaseTemplate, Template
+
 
 class DBConnection:
     def __init__(self, dbpath):
