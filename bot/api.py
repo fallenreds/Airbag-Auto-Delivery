@@ -27,14 +27,15 @@ async def delete_template(template_id)->None:
             if resp.status == 200:
                 return await resp.json()
 
-async def create_template(name, text)->dict:
+async def create_template(name:str, text:str)->dict:
     """Create new template"""
     data = {"name": name, "text": text}
 
     async with aiohttp.ClientSession() as session:
         async with session.post(f'{base_url}api/v1/templates/', json=data) as resp:
-            if resp.status == 200:
-                return await resp.json()
+
+            return await resp.json()
+
 
 
 #------------------------ Шаблони.END  -----------------------#

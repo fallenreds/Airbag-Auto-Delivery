@@ -132,6 +132,6 @@ def setup_logging(log_level: Literal['INFO','DEBUG'] = "INFO"):
     sys.excepthook = handle_exception
 
 
-setup_logging(log_level=config.LOG_LEVEL)
+setup_logging(log_level='DEBUG')
 
 logger = structlog.stdlib.get_logger()

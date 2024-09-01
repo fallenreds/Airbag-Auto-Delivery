@@ -87,3 +87,4 @@ def get_show_discount_info_button():
 
 def get_props_info_button():
     return types.InlineKeyboardButton("Переглянути реквізити", callback_data="get_props_info")
+

@@ -1,7 +1,8 @@
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import classes from "./Header.module.css"
 import {useLocation, useNavigate} from 'react-router-dom';
 import AuthButton from "../Button/AuthButton/AuthButton";
+import {checkAuth} from "../../hooks/api";
 
 const Header = (props) => {
     const router = useNavigate()
@@ -12,6 +13,7 @@ const Header = (props) => {
     // function goProductlist() {
     //     window.Telegram.WebApp.openLink('/')
     // }
+    const uid = props.uid
 
     function showBackButton(){
         if(location.pathname !=='/'){
@@ -76,22 +78,45 @@ const Header = (props) => {
 
 
     }
+    const [authenticated, setAuthenticated] = useState()
+    useEffect(()=>{
+        checkAuth({uid}).then(
+                response=>{{setAuthenticated(response.status)}
+            }
+        )
+    },[])
+    if(authenticated===true){
+        return (
 
-    return (
-        <div className={classes.header}>
+            <div className={classes.header}>
 
-            {showSearchBar()}
-            {showSearchIcon()}
-            <AuthButton clickFunction={()=>router('/singup')} label={"Зареєструватись"}/>
-            <AuthButton clickFunction={()=>router('/singin')} label={"Увійти в аккаунт"}/>
-            {showShoppingCartButton()}
-            {showBackButton()}
+                {showSearchBar()}
+                {showSearchIcon()}
+                {showShoppingCartButton()}
+                {showBackButton()}
 
 
-        </div>
+            </div>
+        );
+    }
+    else {
+        return (
+
+            <div className={classes.header}>
+
+                {showSearchBar()}
+                {showSearchIcon()}
+
+                <AuthButton clickFunction={()=>router('/singup')} label={"Зареєструватись"}/>
+                <AuthButton clickFunction={()=>router('/singin')} label={"Увійти в аккаунт"}/>
+                {showShoppingCartButton()}
+                {showBackButton()}
 
 
-    );
+            </div>
+        );
+    }
+
 };
 
 export default Header;

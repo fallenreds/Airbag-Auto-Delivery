@@ -52,7 +52,7 @@ function App() {
 
     return(
         <div className="App">
-            <Header searchState={searchState} setSearch={setSearch}/>
+            <Header searchState={searchState} uid={uid} setSearch={setSearch}/>
                 <Routes>
                     <Route index element={<ProductList
                         shoppingCartState={shoppingCartState}

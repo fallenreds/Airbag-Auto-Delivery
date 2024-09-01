@@ -25,4 +25,6 @@ class NewProps(StatesGroup):
     full_name = State()
     card = State()
 
-
+class NewTemplate(StatesGroup):
+    name = State()
+    text = State()

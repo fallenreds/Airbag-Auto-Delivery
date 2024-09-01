@@ -19,7 +19,7 @@ from aiogram import Bot, Dispatcher, executor, filters
 from buttons import *
 from config import *
 from engine import manager_notes_builder, id_spliter, ttn_info_builder, send_error_log, make_order
-from States import NewTTN, NewPost, NewClientDiscount, NewPaymentData, NewProps, NewTextPost
+from States import NewTTN, NewPost, NewClientDiscount, NewPaymentData, NewProps, NewTextPost, NewTemplate
 from handlers.client_handler import show_clients
 from labels import AdminLabels
 from notifications import *
@@ -30,6 +30,9 @@ storage = MemoryStorage()
 bot = Bot(token=BOT_TOKEN, parse_mode="HTML", )
 dp = Dispatcher(bot, storage=storage)
 
+
+#----------- Callback Data ----------#
+templates_callback = CallbackData(prefix='templates')
 
 
 def check_admin_permission(message):
@@ -69,7 +72,8 @@ async def admin_panel(message):
         get_all_clients_button(),
         get_make_post(),
         get_set_props(),
-        get_props_info_button()
+        get_props_info_button(),
+        types.InlineKeyboardButton("Шаблоны", callback_data=templates_callback.new())
     )
     return await bot.send_message(message.chat.id, text=AdminLabels.enter_notifications.value, reply_markup=markup_i)
 
@@ -520,13 +524,86 @@ async def send_post_to_visitors(messages: list[types.Message]):
 
 
 #------------------------ Шаблони розсилки -----------------------#
-@dp.callback_query_handler(lambda callback: callback.data == 'templates' and check_admin_permission(callback.message))
+
+send_template_callback = CallbackData('send_template', 'template_id')
+delete_template_callback = CallbackData('delete_template', 'template_id')
+create_template_callback = CallbackData('create_template')
+
+@dp.callback_query_handler(lambda callback:  callback.data.startswith(templates_callback.prefix) and check_admin_permission(callback.message))
 async def show_templates(callback:types.CallbackQuery):
-    g
+    templates = await get_templates()
+    kb = types.InlineKeyboardMarkup(row_width=2)
+
+    for template in templates:
+        kb.add(
+            types.InlineKeyboardButton(
+                text=template['name'], callback_data=send_template_callback.new(template_id=template['id'])
+            ),
+            types.InlineKeyboardButton(
+                text="🗑", callback_data=delete_template_callback.new(template_id=template['id'])
+            )
+        )
+    kb.add(
+        types.InlineKeyboardButton(
+            text="Створити новий", callback_data=create_template_callback.new()
+        )
+    )
+    await bot.send_message(callback.message.chat.id, text="Тут, ви можете відправити шаблон, видалити шаблон, та додати новий шаблон", reply_markup=kb)
+
+@dp.callback_query_handler(lambda callback: callback.data.startswith(send_template_callback.prefix) and check_admin_permission(callback.message))
+async def send_template(callback:types.CallbackQuery):
+    template_id = send_template_callback.parse(callback_data=callback.data).get('template_id')
+    template = await get_template(template_id=template_id)
+    asyncio.create_task(send_template_to_visitors(template['text']))
+
+@dp.callback_query_handler(lambda callback: callback.data.startswith(send_template_callback.prefix) and check_admin_permission(callback.message))
+async def send_template(callback:types.CallbackQuery):
+    template_id = send_template_callback.parse(callback_data=callback.data).get('template_id')
+    template = await get_template(template_id=template_id)
+    await bot.send_message(callback.message.chat.id, text=template['text'])
+
+@dp.callback_query_handler(lambda callback: callback.data.startswith(create_template_callback.prefix) and check_admin_permission(callback.message))
+async def create_new_template(callback:types.CallbackQuery):
+    await NewTemplate.name.set()
+    await bot.send_message(callback.message.chat.id, "Введіть назву шаблона. Рекомандовано не більше 16 символів.")
+
+@dp.message_handler(content_types=['text'], state=NewTemplate.name)
+async def get_template_name(message: types.Message, state: FSMContext):
+    state_data = await state.get_data()
+    state_data['name'] = message.text
+    await state.update_data(state_data)
+    await NewTemplate.text.set()
+    await bot.send_message(message.chat.id, "Тепер, надішліть текст шаблону, саме він буде відправлений користувачам")
+
+@dp.message_handler(content_types=['text'], state=NewTemplate.text)
+async def get_template_text(message: types.Message, state: FSMContext):
+    state_data = await state.get_data()
+    state_data['text'] = message.html_text
+    await create_template(name=str(state_data['name']), text=str(state_data['text']))
+    await state.finish()
+    kb = types.InlineKeyboardMarkup(row_width=1)
+    await bot.send_message(message.chat.id, "Дякую, шаблон був доданий в базу шаблонів. Тепер ви можете використати його.", reply_markup=kb)
+    callback = types.CallbackQuery()
+    callback.message = message
+    await show_templates(callback)
 
 
+@dp.callback_query_handler(lambda callback: callback.data.startswith(delete_template_callback.prefix) and check_admin_permission(callback.message))
+async def delete_template_handler(callback: types.CallbackQuery):
+    template_id = delete_template_callback.parse(callback_data=callback.data).get('template_id')
+    await api.delete_template(template_id=template_id)
+    await bot.send_message(callback.message.chat.id, "Шаблон видалено")
+    await show_templates(callback)
 
+async def send_template_to_visitors(text: str):
+    visitors = await get_visitors()
+    for visitor in visitors:
+        try:
+            await bot.send_message(chat_id=visitor['telegram_id'], text=text)
+        except (ChatNotFound, BotBlocked):
+            await delete_visitor(visitor['telegram_id'])
 
+#------------------------ END.Шаблони розсилки -----------------------#
 
 
 @dp.message_handler(content_types=['text'], state=NewTTN.order_id)
