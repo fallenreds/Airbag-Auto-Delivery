@@ -1,12 +1,46 @@
 import json
 import sqlite3
-
+from models import *
 
 class DBConnection:
     def __init__(self, dbpath):
         self.connection = sqlite3.connect(dbpath)
         self.connection.row_factory = sqlite3.Row
         self.cursor = self.connection.cursor()
+        self.cursor.row_factory = self.dict_factory
+
+    @staticmethod
+    def dict_factory(cursor, row):
+        d = {}
+        for idx, col in enumerate(cursor.description):
+            d[col[0]] = row[idx]
+        return d
+
+    #-------------------- Template Methods --------------#
+
+
+
+    def get_templates(self) -> list[Template]:
+        self.cursor.execute(f"""select * from template""")
+        return [Template(**data) for data in self.cursor.fetchall()]
+
+    def get_template(self, template_id: int) -> Template|None:
+        self.cursor.execute(f"""select * from template where id=?""", (template_id,))
+        result = self.cursor.fetchone()
+        return Template(**result) if result else None
+
+
+    def delete_template(self, template_id: int) -> None:
+        self.cursor.execute(f"""delete from template where id=?""", (template_id,))
+        self.connection.commit()
+        return None
+
+    def create_template(self, template: BaseTemplate) -> Template:
+        """Create new template"""
+        self.cursor.execute(f"""insert into template ('name', 'text') values (?,?)""", (template.name,template.text))
+        self.connection.commit()
+        return self.get_template(self.cursor.lastrowid)
+
 
     # visitors methods
     def get_visitor_by_tg(self, telegram_id):

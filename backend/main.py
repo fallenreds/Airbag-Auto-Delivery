@@ -4,7 +4,7 @@ import time
 from time import sleep
 import logging
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import PositiveInt
 
@@ -22,7 +22,7 @@ warehouse = CRM.get_main_warehouse_id()
 TEST_CRM = RemonlineAPI(REMONLINE_API_KEY_PROD)
 branch = TEST_CRM.get_branches()["data"][0]["id"]
 categories_to_filter = [753923]
-
+from api.templates import router as template_router
 # CRM : RemonlineAPI
 # warehouse :int
 
@@ -37,6 +37,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+api_router = APIRouter(prefix='/api/v1')
+api_router.include_router(template_router)
+app.include_router(api_router)
 
 json_goods: dict
 
