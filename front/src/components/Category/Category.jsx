@@ -15,7 +15,7 @@ const Category = (...props) => {
     }
     return (
         <a href={"#section1"} style={{textDecoration:"none", color: "var(--tg-theme-text-color)", fontWeight:"bold"}}><div  onClick={selectCategory} className={classes.category}>
-            <img src={rq} alt ='img' />
+            <img style={{backgroundColor:"white"}} src={rq} alt ='img' />
             {props[0].category.title}
         </div></a>
     );

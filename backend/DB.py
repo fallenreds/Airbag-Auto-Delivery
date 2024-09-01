@@ -17,6 +17,11 @@ class DBConnection:
 
         self.cursor.execute(f"""select * from visitors""")
         return self.cursor.fetchall()
+    def delete_visitor(self, telegram_id:int):
+        self.cursor.execute("""delete from visitors where telegram_id=?""", (telegram_id,))
+
+        self.connection.commit()
+
 
     def post_new_visitor(self, telegram_id):
         response = {"success": True, "data": None}

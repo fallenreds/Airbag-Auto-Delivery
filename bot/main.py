@@ -3,10 +3,13 @@ import json
 import functools
 import logging
 
+from aiogram.utils.exceptions import *
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
+from aiogram.dispatcher.filters import Filter
 from aiogram.utils.callback_data import CallbackData
 
+import api
 from UpdateTask import order_updates, get_no_paid_orders
 
 from api import *
@@ -29,7 +32,7 @@ dp = Dispatcher(bot, storage=storage)
 
 
 
-async def check_admin_permission(message):
+def check_admin_permission(message):
     if message.chat.id not in admin_list:
         return False
     return True
@@ -46,17 +49,16 @@ async def start_message(message):
     discount_info = types.KeyboardButton("Знижки 💎")
 
     markup_k.add(order_status_button, contact_info, discount_info)
-    if await check_admin_permission(message):
+    if check_admin_permission(message):
         admin_button = types.KeyboardButton("/admin")
         markup_k.add(admin_button)
-
     await bot.send_message(message.chat.id, text=greetings_text, reply_markup=markup_k)
 
 
 
 @dp.message_handler(commands=['admin'])
 async def admin_panel(message):
-    if not await check_admin_permission(message):
+    if not check_admin_permission(message):
         return await bot.send_message(message.chat.id, text=AdminLabels.notAdmin.value)
     markup_i = types.InlineKeyboardMarkup(row_width=1)
 
@@ -287,7 +289,7 @@ async def is_discount(text):
 @dp.message_handler(filters.Text(contains="@", ignore_case=True))
 async def add_new_discount(message: types.Message):
     telegram_id = message.chat.id
-    if await check_admin_permission(message) and await is_discount(message.text):
+    if check_admin_permission(message) and await is_discount(message.text):
         month_payment, procent = message.text.split("@")
         response = await post_discount(int(procent), int(month_payment))
         if not response:
@@ -493,46 +495,48 @@ async def new_client_discount_state(message: types.Message, state: FSMContext):
 
 
 
-@dp.message_handler(content_types=['text'], state=NewTextPost.text)
-async def new_no_phono_post(message: types.Message, state: FSMContext):
-    async with state.proxy() as data:
-        data['text'] = message.text
+#------------------------ Розсилка користувачам -----------------------#
 
-    data = await state.get_data()
-    await bot.send_message(message.chat.id, text="Ваше оголошення незабаром буде усім користувачам боту")
-    visitors = await get_visitors()
-    if visitors:
-        for visitor in visitors:
-            try:
-                await bot.send_message(visitor['telegram_id'], data['text'])
-            except Exception as error:
-                await send_error_log(bot, 516842877, error)
+@dp.callback_query_handler(lambda callback: callback.data == 'make_post' and check_admin_permission(callback.message))
+async def make_post(callback:types.CallbackQuery):
+    kb = types.InlineKeyboardMarkup()
+    kb.add(types.InlineKeyboardButton(text="Відправити", callback_data="send_post"))
+    await bot.send_message(callback.message.chat.id, text="Надсилайте одне або декілька повідомлень.Всі вони будуть відправлені користувачам.\n<b>Доступні УСІ формати повідомлень</b>.", reply_markup=kb)
+    await NewPost.set.set()
+
+
+@dp.message_handler(content_types=types.ContentTypes.ANY, state=NewPost.set)
+async def get_post_messages(message: types.Message, state: FSMContext):
+    """Catch and store messages in state"""
+    state_data = await state.get_data()
+    messages = state_data.get('messages') if state_data.get('messages') else []
+    messages.append(message)
+    state_data['messages']=messages
+    await state.set_data(state_data)
+
+
+
+@dp.callback_query_handler(lambda callback: callback.data == 'send_post', state=NewPost.set)
+async def new_post(callback:types.CallbackQuery, state:FSMContext):
+    state_data = await state.get_data()
     await state.finish()
-
-@dp.message_handler(content_types=['text'], state=NewPost.text)
-async def new_post_text_state(message: types.Message, state: FSMContext):
-    async with state.proxy() as data:
-        data['text'] = message.text
-    await bot.send_message(message.chat.id, "А теперь пришліть фото оголошення")
-    await NewPost.next()
+    asyncio.create_task(send_post_to_visitors(state_data.get('messages',[])))
+    await bot.send_message(chat_id=callback.from_user.id,text=f"Ваше оголошення незабаром буде усім користувачам боту 📧 {len(state_data.get('messages',[]))}")
 
 
-@dp.message_handler(content_types=["photo"], state=NewPost.photo)
-async def new_post_photo_state(message: types.Message, state: FSMContext):
-    async with state.proxy() as data:
-        data['photo'] = message.photo[0].file_id
-    data = await state.get_data()
-    await bot.send_message(message.chat.id, text="Ваше оголошення незабаром буде усім користувачам боту")
+
+async def send_post_to_visitors(messages: list[types.Message]):
     visitors = await get_visitors()
-    if visitors:
-        for visitor in visitors:
+    for visitor in visitors:
+        for message in messages:
             try:
-                await bot.send_photo(chat_id=visitor['telegram_id'], photo=data['photo'], caption=data['text'])
-            except Exception as error:
-                await send_error_log(bot, 516842877, error)
-    await state.finish()
+                await message.bot.copy_message(chat_id=visitor['telegram_id'], from_chat_id=message.chat.id, message_id=message.message_id)
+            except (ChatNotFound, BotBlocked):
+                await delete_visitor(visitor['telegram_id'])
 
 
+
+#------------------------ END.Розсилка користувачам -----------------------#
 
 
 @dp.message_handler(content_types=['text'], state=NewTTN.order_id)
@@ -568,7 +572,7 @@ async def ttn_state(message: types.Message, state: FSMContext):
 
 @dp.callback_query_handler()
 async def callback_admin_panel(callback: types.CallbackQuery):
-    try:
+    # try:
 
 
         goods = await get_all_goods()
@@ -696,20 +700,11 @@ async def callback_admin_panel(callback: types.CallbackQuery):
         if callback.data == "new_discount":
             await bot.send_message(callback.message.chat.id, text="Очікую нові дані")
 
-        if callback.data == "make_post" and callback.message.chat.id in admin_list:
-            markup_i = types.InlineKeyboardMarkup().add(get_make_post_only_text_button(),
-                                                        get_make_post_text_with_image_button())
-            await bot.send_message(callback.message.chat.id,
-                                   text="Оберіть: оголошення з фотографією чи без?\nДля відміни операції натисніть /stop",
-                                   reply_markup=markup_i)
 
-        if callback.data == "make_post_with_image":
-            await bot.send_message(callback.message.chat.id, text="Добре, чекаю від вас текст оголошення")
-            await NewPost.text.set()
 
-        if callback.data == "make_post_no_image":
-            await bot.send_message(callback.message.chat.id, text="Добре, чекаю від вас текст оголошення")
-            await NewTextPost.text.set()
+
+
+
 
         if callback.data == "show_client_info":
             message = callback.message
@@ -721,10 +716,15 @@ async def callback_admin_panel(callback: types.CallbackQuery):
                                    f"Добре, пришліть мені ID клієнта. ID цього клієнта: {client_id}")
             await NewClientDiscount.client_id.set()
 
-    except TypeError as error:
-        await no_connection_with_server_notification(bot, callback.message)
-    except Exception as error:
-        await send_error_log(bot, 516842877, error)
+    # except TypeError as error:
+    #     await no_connection_with_server_notification(bot, callback.message)
+    # except Exception as error:
+    #     await send_error_log(bot, 516842877, error)
+
+
+
+
+
 
 async def update(_):
     asyncio.create_task(get_no_paid_orders(bot, admin_list))

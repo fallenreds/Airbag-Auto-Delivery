@@ -29,6 +29,9 @@ function App() {
     const [orderSumaState, setOrderSuma]= useState(0)
 
     let uid = tg.initDataUnsafe?.user?.id
+    tg.expand()
+
+
 
 
     useEffect(()=>{

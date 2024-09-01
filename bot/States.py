@@ -5,8 +5,8 @@ class NewTTN(StatesGroup):
     ttn_state = State()
 
 class NewPost(StatesGroup):
-    text = State()
-    photo = State()
+    set = State()
+    messages = State()
 
 class NewTextPost(StatesGroup):
     text = State()

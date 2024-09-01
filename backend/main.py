@@ -1,18 +1,20 @@
-import time
-import uvicorn
-from aiogram.types.base import Integer
-from pydantic import PositiveInt
-from fastapi import FastAPI
 
-from UpdateOrdersTask import update_order_task
-from RestAPI.RemonlineAPI import *
-from fastapi.middleware.cors import CORSMiddleware
-from config import *
-from DB import DBConnection
 import threading
-from engine import manager_notes_builder, find_good, find_discount, get_month_money_spent, _new_remonline_order
-from Models import *
+import time
 from time import sleep
+import logging
+import uvicorn
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import PositiveInt
+
+import logger
+from DB import DBConnection
+from Models import *
+from RestAPI.RemonlineAPI import *
+from UpdateOrdersTask import update_order_task
+from config import *
+from engine import find_good, find_discount, get_month_money_spent, _new_remonline_order
 
 CRM = RemonlineAPI(REMONLINE_API_KEY_PROD)
 warehouse = CRM.get_main_warehouse_id()
@@ -26,19 +28,7 @@ categories_to_filter = [753923]
 
 
 app = FastAPI()
-# origins = [
-#     "http://localhost",
-#     "http://localhost:8080",
-#     "http://localhost:3000",
-#     "http://localhost:88",
-#     "https://stupendous-gnome-b5657d.netlify.app/",
-#     "https://app.netlify.com/",
-#     "https://stupendous-gnome-b5657d.netlify.app/static/js/main.e9b2a2af.js:2:300830",
-# ]
-origins = [
-    "*"
-]
-
+origins = ["*"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -46,6 +36,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 json_goods: dict
 
@@ -206,6 +197,13 @@ def add_new_visitor(telegram_id):
     db.connection.close()
     return response
 
+@app.delete("/api/v1/visitors/{telegram_id}")
+def delete_visitor(telegram_id:int):
+    db = DBConnection(DB_PATH)
+    response = db.delete_visitor(telegram_id)
+    db.connection.close()
+    logging.info('Delete visitor')
+    return response
 
 # client
 @app.get("/api/v1/clients/")

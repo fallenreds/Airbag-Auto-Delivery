@@ -51,12 +51,6 @@ async def order_in_branch_reminder_notifications(bot, order, remember_time):
 
 async def new_order_client_notification(bot, order):
     try:
-        # markup_i = types.InlineKeyboardMarkup().add(get_status_button())
-        # await bot.send_message(order['telegram_id'],
-        #                        "<b>Шановний клієнте, вітаємо, ваше замовлення успішно створено 🎉🥳</b>"
-        #                        "\n\nВи можете переглянути статус вашого замовлення натиснувши кнопку нижче, або натиснути на статус оголошення у меню нижче",
-        #                        reply_markup=markup_i)
-        # message = types.Message({"chat": {"id":}})
         await check_status_notification(bot, order['telegram_id'], order)
     except Exception as error:
         await send_error_log(bot, 516842877, error)
