@@ -420,26 +420,6 @@ async def show_props(callback: types.CallbackQuery):
     await bot.send_message(callback.message.chat.id, await get_props())
 
 
-
-# @dp.message_handler(content_types=['text'], state=NewProps.card)
-# async def new_props_card_state(message: types.Message, state: FSMContext):
-#     try:
-#         async with state.proxy() as data:
-#             data['cards'] = message.text.split(",")
-#
-#         data = await state.get_data()
-#         with open('props.json', 'w') as file:
-#             file.write(json.dumps(data, indent=4))
-#
-#         await bot.send_message(message.chat.id, "Ваші реквізити успішно змінено")
-#
-#
-#     except Exception as error:
-#         await bot.send_message(message.chat.id, "Нажаль, чомусь сталась помилка.")
-#     finally:
-#         await state.finish()
-
-
 @dp.message_handler(content_types=['text'], state=NewPaymentData.order_id)
 async def new_payment_order_id_state(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
@@ -537,6 +517,16 @@ async def send_post_to_visitors(messages: list[types.Message]):
 
 
 #------------------------ END.Розсилка користувачам -----------------------#
+
+
+#------------------------ Шаблони розсилки -----------------------#
+@dp.callback_query_handler(lambda callback: callback.data == 'templates' and check_admin_permission(callback.message))
+async def show_templates(callback:types.CallbackQuery):
+    g
+
+
+
+
 
 
 @dp.message_handler(content_types=['text'], state=NewTTN.order_id)

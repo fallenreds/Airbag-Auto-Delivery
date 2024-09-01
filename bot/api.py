@@ -3,6 +3,43 @@ import config
 
 base_url = config.BASE_URL
 
+#------------------------ Шаблони  -----------------------#
+
+
+async def get_templates()->list[dict]:
+    """Get list of templates"""
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f'{base_url}api/v1/templates') as resp:
+            if resp.status == 200:
+                return await resp.json()
+
+async def get_template(template_id)->dict:
+    """Get template by id"""
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f'{base_url}api/v1/templates/{template_id}') as resp:
+            if resp.status == 200:
+                return await resp.json()
+
+async def delete_template(template_id)->None:
+    """Delete template by id"""
+    async with aiohttp.ClientSession() as session:
+        async with session.delete(f'{base_url}api/v1/templates/{template_id}') as resp:
+            if resp.status == 200:
+                return await resp.json()
+
+async def create_template(name, text)->dict:
+    """Create new template"""
+    data = {"name": name, "text": text}
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(f'{base_url}api/v1/templates/', json=data) as resp:
+            if resp.status == 200:
+                return await resp.json()
+
+
+#------------------------ Шаблони.END  -----------------------#
+
+
 async def get_all_goods():
     async with aiohttp.ClientSession() as session:
         async with session.get(f'{base_url}api/v1/goods') as resp:
