@@ -1,3 +1,5 @@
+import typing
+
 from pydantic import BaseModel
 from typing import Any
 
@@ -75,4 +77,13 @@ class BaseTemplate(BaseModel):
 
 class Template(BaseTemplate):
     """Used for getting template"""
+    id:int
+
+class BaseClientUpdate(BaseModel):
+    """Used for creating client updates"""
+    type:typing.Literal['CREATED', 'DELETED', 'BLOCKED']
+    user_id:int
+
+
+class ClientUpdate(BaseClientUpdate):
     id:int

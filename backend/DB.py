@@ -1,6 +1,6 @@
 import sqlite3
 
-from models import BaseTemplate, Template
+from models import BaseTemplate, Template, BaseClientUpdate, ClientUpdate
 
 
 class DBConnection:
@@ -17,9 +17,32 @@ class DBConnection:
             d[col[0]] = row[idx]
         return d
 
-    #-------------------- Template Methods --------------#
+    #--------------- Client Updates -------------- #
+    def get_client_updates(self) -> list[ClientUpdate]:
+        self.cursor.execute(f"""select * from client_updates""")
+        return [ClientUpdate(**data) for data in self.cursor.fetchall()]
+
+    def get_client_update(self, client_update_id: int) -> ClientUpdate|None:
+        self.cursor.execute(f"""select * from client_updates where id=?""", (client_update_id,))
+        result = self.cursor.fetchone()
+        return ClientUpdate(**result) if result else None
 
 
+    def delete_client_update(self, client_update_id: int) -> None:
+        self.cursor.execute(f"""delete from client_updates where id=?""", (client_update_id,))
+        self.connection.commit()
+        return None
+
+    def create_client_update(self, client_updates: BaseClientUpdate) -> ClientUpdate:
+        """Create new template"""
+        self.cursor.execute(f"""insert into client_update ('type', 'client_id') values (?,?)""", (client_updates.type, client_updates.user_id))
+        self.connection.commit()
+        return self.get_client_update(self.cursor.lastrowid)
+
+    #--------------- END.Client Updates -------------- #
+
+
+    #--------------- TEMPLATES -------------- #
 
     def get_templates(self) -> list[Template]:
         self.cursor.execute(f"""select * from template""")
@@ -41,7 +64,7 @@ class DBConnection:
         self.cursor.execute(f"""insert into template ('name', 'text') values (?,?)""", (template.name,template.text))
         self.connection.commit()
         return self.get_template(self.cursor.lastrowid)
-
+    #--------------- END. TEMPLATES -------------- #
 
     # visitors methods
     def get_visitor_by_tg(self, telegram_id):

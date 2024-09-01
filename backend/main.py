@@ -24,6 +24,10 @@ TEST_CRM = RemonlineAPI(REMONLINE_API_KEY_PROD)
 branch = TEST_CRM.get_branches()["data"][0]["id"]
 categories_to_filter = [753923]
 from api.templates import router as template_router
+from api.client_updates import router as client_updates_router
+
+
+
 # CRM : RemonlineAPI
 # warehouse :int
 
@@ -43,6 +47,7 @@ app.add_middleware(
 
 api_router = APIRouter(prefix='/api/v1')
 api_router.include_router(template_router)
+api_router.include_router(client_updates_router)
 app.include_router(api_router)
 
 json_goods: dict
