@@ -3,6 +3,37 @@ import config
 
 base_url = config.BASE_URL
 
+
+#------------------------ User updates  -----------------------#
+
+
+async def get_clients_updates()->list[dict]:
+    """Get list of templates"""
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f'{base_url}api/v1/clientupdates') as resp:
+            if resp.status == 200:
+                return await resp.json()
+
+async def get_client_update(client_update_id)->dict:
+    """Get template by id"""
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f'{base_url}api/v1/clientupdates/{client_update_id}') as resp:
+            if resp.status == 200:
+                return await resp.json()
+
+async def delete_client_update(client_update_id)->None:
+    """Delete template by id"""
+    async with aiohttp.ClientSession() as session:
+        async with session.delete(f'{base_url}api/v1/clientupdates/{client_update_id}') as resp:
+            if resp.status == 200:
+                return await resp.json()
+
+
+
+
+
+#------------------------ END.User updates  -----------------------#
+
 #------------------------ Шаблони  -----------------------#
 
 

@@ -1,5 +1,6 @@
 import json
 from aiogram import types
+from aiogram.utils.exceptions import ChatNotFound, BotBlocked
 
 from api import get_orders_by_tg_id, get_client_by_tg_id, get_discount
 from buttons import get_delete_order_button, get_props_info_button, get_send_payment_photo_button, get_check_ttn_button
@@ -173,8 +174,10 @@ async def ttn_info_builder(response: dict, order):
 
 async def send_messages_to_admins(bot, admin_ids: list, text, reply_markup=None):
     for admin in admin_ids:
-        await bot.send_message(admin, text=text, reply_markup=reply_markup)
-
+        try:
+            await bot.send_message(admin, text=text, reply_markup=reply_markup)
+        except Exception:
+            pass
 
 async def send_error_log(bot, admin_id, error):
     await bot.send_message(admin_id, text=error)

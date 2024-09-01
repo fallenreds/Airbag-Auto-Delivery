@@ -1,5 +1,7 @@
+import typing
+
 from api import get_order_updates, delete_order_updates, get_order_by_id, no_paid_along_time, \
-    update_no_paid_remember_count
+    update_no_paid_remember_count, get_clients_updates, delete_client_update
 from buttons import get_our_contact_button, get_to_pay_button, get_no_paid_orders_button
 from engine import send_messages_to_admins, send_error_log
 from notifications import *
@@ -81,3 +83,29 @@ async def get_no_paid_orders(bot, admin_list):
             print("Error with no paid orders", error)
             ##await send_error_log(bot, 516842877, error)
         await asyncio.sleep(3600)
+
+
+
+async def client_updates(bot, admin_list):
+    while True:
+        await asyncio.sleep(3)
+        try:
+            updates = await get_clients_updates()
+            if not updates:
+                continue
+
+            for record in updates:
+                client = await get_client_by_id(record['client_id'])
+
+                if record['type'] == "CREATED":
+                    await send_messages_to_admins(
+                        bot=bot,
+                        admin_ids=admin_list,
+                        text=f"<b>Шановний адміністратор, зареєстрований новий користувач</b>\nID: {client.get('id')}\nФІО: {client.get('name')} {client.get('last_name')}\nТелефон: {client.get('phone')}")
+
+
+                await delete_client_update(record['id'])
+        except Exception as error:
+            print("Error with orderupdates", error)
+            ##await send_error_log(bot, 516842877, error)
+

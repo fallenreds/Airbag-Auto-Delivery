@@ -82,7 +82,7 @@ class Template(BaseTemplate):
 class BaseClientUpdate(BaseModel):
     """Used for creating client updates"""
     type:typing.Literal['CREATED', 'DELETED', 'BLOCKED']
-    user_id:int
+    client_id:int
 
 
 class ClientUpdate(BaseClientUpdate):

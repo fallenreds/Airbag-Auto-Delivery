@@ -10,7 +10,7 @@ from aiogram.dispatcher.filters import Filter
 from aiogram.utils.callback_data import CallbackData
 
 import api
-from UpdateTask import order_updates, get_no_paid_orders
+from updates import order_updates, get_no_paid_orders, client_updates
 
 from api import *
 from aiogram import Bot, Dispatcher, executor, filters
@@ -796,6 +796,7 @@ async def callback_admin_panel(callback: types.CallbackQuery):
 async def update(_):
     asyncio.create_task(get_no_paid_orders(bot, admin_list))
     asyncio.create_task(order_updates(bot, admin_list))
+    asyncio.create_task(client_updates(bot, admin_list))
 
 
 executor.start_polling(dp, skip_updates=True, on_startup=update)

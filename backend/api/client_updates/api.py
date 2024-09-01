@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 from models import BaseTemplate, Template, ClientUpdate, BaseClientUpdate
 from DB import DBConnection
 import config
-router = APIRouter(prefix='/clientupdates/', tags=['Client Updates'])
+router = APIRouter(prefix='/clientupdates', tags=['Client Updates'])
 from logger import logger
 
 @router.get('/', response_model=list[ClientUpdate])

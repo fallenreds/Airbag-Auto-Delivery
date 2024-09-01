@@ -35,7 +35,7 @@ class DBConnection:
 
     def create_client_update(self, client_updates: BaseClientUpdate) -> ClientUpdate:
         """Create new template"""
-        self.cursor.execute(f"""insert into client_update ('type', 'client_id') values (?,?)""", (client_updates.type, client_updates.user_id))
+        self.cursor.execute(f"""insert into client_updates ('type', 'client_id') values (?,?)""", (client_updates.type, client_updates.client_id))
         self.connection.commit()
         return self.get_client_update(self.cursor.lastrowid)
 
