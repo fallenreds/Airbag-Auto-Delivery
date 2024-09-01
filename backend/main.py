@@ -109,6 +109,8 @@ def get_goods():
 @app.post("/api/v1/client/")
 def get_or_post_client(client: ClientModel):
     client_data = TEST_CRM.find_or_create_client(client.phone, client.name)
+
+
     return client_data
 
 
@@ -259,6 +261,8 @@ def create_client(client_data: ClientFullModel):
             login=client_data.login,
             password=client_data.password,
             phone=client_data.phone)
+
+        db.create_client_update(BaseClientUpdate(type="CREATED", client_id=client))
         db.connection.close()
         return client
     return False

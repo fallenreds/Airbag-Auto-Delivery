@@ -88,7 +88,7 @@ async def get_no_paid_orders(bot, admin_list):
 
 async def client_updates(bot, admin_list):
     while True:
-        await asyncio.sleep(3)
+        await asyncio.sleep(10)
         try:
             updates = await get_clients_updates()
             if not updates:

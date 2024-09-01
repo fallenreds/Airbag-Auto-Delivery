@@ -78,44 +78,19 @@ const Header = (props) => {
 
 
     }
-    const [authenticated, setAuthenticated] = useState()
-    useEffect(()=>{
-        checkAuth({uid}).then(
-                response=>{{setAuthenticated(response.status)}
-            }
-        )
-    },[])
-    if(authenticated===true){
-        return (
 
-            <div className={classes.header}>
+    return (
 
-                {showSearchBar()}
-                {showSearchIcon()}
-                {showShoppingCartButton()}
-                {showBackButton()}
+        <div className={classes.header}>
+
+            {showSearchBar()}
+            {showSearchIcon()}
+            {showShoppingCartButton()}
+            {showBackButton()}
 
 
-            </div>
-        );
-    }
-    else {
-        return (
-
-            <div className={classes.header}>
-
-                {showSearchBar()}
-                {showSearchIcon()}
-
-                <AuthButton clickFunction={()=>router('/singup')} label={"Зареєструватись"}/>
-                <AuthButton clickFunction={()=>router('/singin')} label={"Увійти в аккаунт"}/>
-                {showShoppingCartButton()}
-                {showBackButton()}
-
-
-            </div>
-        );
-    }
+        </div>
+    );
 
 };
 

@@ -82,11 +82,11 @@ const ProductList = (props) => {
         }
         else {
             return <>
-                {/*<div className={classes.AuthContainer}>Шановний клієнт, ви маєте змогу зарєструватись, або увійти в аккаунт.</div>*/}
-                {/*<div className={classes.AuthButtonContainer}>*/}
-                {/*    <AuthButton clickFunction={()=>router('/singup')} label={"Зареєструватись"}/>*/}
-                {/*    <AuthButton clickFunction={()=>router('/singin')} label={"Увійти в аккаунт"}/>*/}
-                {/*</div>*/}
+                <div className={classes.AuthContainer}>Шановний клієнт, ви маєте змогу зарєструватись, або увійти в аккаунт.</div>
+                <div className={classes.AuthButtonContainer}>
+                    <AuthButton clickFunction={()=>router('/singup')} label={"Зареєструватись"}/>
+                    <AuthButton clickFunction={()=>router('/singin')} label={"Увійти в аккаунт"}/>
+                </div>
 
             </>
         }
