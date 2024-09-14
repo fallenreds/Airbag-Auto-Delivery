@@ -82,10 +82,10 @@ async def deactivated_notifications(bot, order, admin_list):
         await send_error_log(bot, 516842877, error)
 
 
-async def deleted_notifications(bot, order, admin_list):
+async def deleted_notifications(bot, order, reason:str|None, admin_list):
     try:
-        client_text = f"<b>На жаль, ми не дочекалися підтвердження Вашого замовлення №{order['id']} 😟</b>" \
-                      f"\nЗамовлення видалено, чекаємо на Ваше повернення! 😀"
+        client_text = f"<b>Ваше замовлення №{order['id']} було видалено адміністратором🗑.</b>\n{reason if reason else ''}"
+
         admin_text = f"Шановний адміністратов, замовлення №{order['id']} успішно видалено."
         markup_i = types.InlineKeyboardMarkup().add(get_our_contact_button())
         await bot.send_message(order['telegram_id'], client_text, reply_markup=markup_i)

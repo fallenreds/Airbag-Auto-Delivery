@@ -1,3 +1,4 @@
+import ast
 import typing
 
 from api import get_order_updates, delete_order_updates, get_order_by_id, no_paid_along_time, \
@@ -16,6 +17,20 @@ async def order_updates(bot, admin_list):
             if updates and updates != [] and updates is not None:
                 for record in updates:
                     order = await get_order_by_id(record['order_id'])
+
+                    if record['type'] == "deleted":
+                        await send_messages_to_admins( bot,admin_list, 'delete')
+                        await deleted_notifications(
+                            bot,
+                            ast.literal_eval(record['order']),
+                            record.get('details'),
+                            admin_list
+                        )
+
+                    if not order:
+                        await delete_order_updates(record['id'])
+                        continue
+
                     if record['type'] == "new order":  # crm remonline
                         await new_order_notification(bot, order, admin_list)
 
@@ -31,9 +46,7 @@ async def order_updates(bot, admin_list):
                     if record['type'] == "deactivated":
                         await deactivated_notifications(bot, order, admin_list)
 
-                    if record['type'] == "deleted":
-                        order = order.copy()
-                        await deleted_notifications(bot, order, admin_list)
+
 
                     if record['type'] == "ttn updated":
                         await ttn_update_notification(bot, order)

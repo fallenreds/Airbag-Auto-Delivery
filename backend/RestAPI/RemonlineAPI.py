@@ -40,6 +40,13 @@ class BaseRemonline:
             response = requests.post(url=url, data=data, **kwargs)
         return response
 
+    def delete(self, url, **kwargs):
+        response = requests.delete(url=url, **kwargs)
+        if response.status_code != 200:
+            print(f"Remonline status code {response.status_code}")
+            self.token = self.get_user_token()
+            response = requests.delete(url=url, **kwargs)
+        return response
 
         # if response.status_code == 101:
         #     self.token = self.get_user_token()
@@ -145,6 +152,9 @@ class RemonlineAPI(BaseRemonline):
         api_path = "warehouse/categories/"
         request_url = self._url_builder(api_path)
         return self.get_objects(api_path=api_path, request_url=request_url, **kwargs)
+
+    def delete_order(self, remonline_order_id)->None:
+        api_path = "warehouse/categories/"
 
     def get_goods(self, warehouse, **kwargs) -> dict:
         api_path = f"warehouse/goods/{warehouse}"

@@ -1,3 +1,5 @@
+import json
+import logging
 import sqlite3
 
 from models import BaseTemplate, Template, BaseClientUpdate, ClientUpdate
@@ -281,6 +283,13 @@ class DBConnection:
                         """, (order_id,))
         return self.cursor.fetchone()
 
+    def find_order_by_remonline_id(self, remonline_order_id):
+        self.cursor.execute("""
+                            select * from orders
+                            where remonline_order_id = ?
+                        """, (remonline_order_id,))
+        return self.cursor.fetchone()
+
     def get_all_orders(self, telegram_id=None, order_id=None):
         filter = ''
         if telegram_id:
@@ -401,7 +410,6 @@ class DBConnection:
             success = True
             self.connection.commit()
         except Exception as error:
-            print(error)
             success = False
         finally:
             return {"success": success}
@@ -495,21 +503,15 @@ class DBConnection:
         )
         self.connection.commit()
     # order_updates methods
-    def post_order_updates(self, update_type, order_id):
-        response = {"success": True, 'data': None}
-        try:
-            self.cursor.execute(f"""
-                                insert into order_updates
-                                ('type', order_id)
-                                values (?,?)""", (update_type, order_id))
+    def post_order_updates(self, update_type, order_id, order:dict|None=None, details:str|None=None):
 
-            self.connection.commit()
-            response = {"success": True, 'data': self.cursor.lastrowid}
-        except Exception as error:
-            print(error)
-            response = {"success": False, 'data': error}
-        finally:
-            return response
+        self.cursor.execute(
+            """INSERT INTO order_updates ("type", order_id, "order", details) VALUES (?, ?, ?, ?)""",
+            (update_type, order_id, str(order), details)
+        )
+
+        self.connection.commit()
+        return self.find_order_by_id(self.cursor.lastrowid)
 
     def delete_order_updates(self, order_updates_id):
         response = {"success": True, 'data': "Deleted"}

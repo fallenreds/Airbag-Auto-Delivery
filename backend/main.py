@@ -5,7 +5,7 @@ from time import sleep
 import logging
 import uvicorn
 from asgi_correlation_id import CorrelationIdMiddleware
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import PositiveInt
 
@@ -114,7 +114,7 @@ def get_or_post_client(client: ClientModel):
     return client_data
 
 
-@app.post("/api/v1/order")
+@app.post("/api/v1/order/")
 async def post_order(order: OrderModel):
     db = DBConnection(DB_PATH)
     client = db.get_client_by_telegram_id(order.telegram_id)
@@ -414,11 +414,21 @@ def finish_order(order_id: int):
 
 
 @app.delete("/api/v1/deleteorder/{order_id}")
-def drop_order(order_id: int):
+def delete_order_by_id(order_id: int):
     db = DBConnection(DB_PATH)
     response = db.delete_order(order_id)
     db.connection.close()
     return response
+
+@app.delete("/api/v1/deleteremonlineorder/{remonline_order_id}")
+def delete_order_by_remonline_id(remonline_order_id: int, reason:typing.Optional[str]):
+    db = DBConnection(DB_PATH)
+    order = db.find_order_by_remonline_id(remonline_order_id)
+    if not order:
+        raise HTTPException(404, 'Order not found.')
+    db.post_order_updates("deleted", order.get('id'), order, reason)
+    db.connection.close()
+    return delete_order_by_id(order['id'])
 
 
 @app.get("/api/v1/activeorders")
@@ -427,6 +437,7 @@ def get_active_orders():
     active_orders = db.get_active_orders()
     db.connection.close()
     return active_orders
+
 
 
 @app.post("/api/v1/payorder/{order_id}")

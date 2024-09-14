@@ -50,25 +50,25 @@ const Form = (props) => {
 
             }
         )
-    },[])
+    },[uid, router] )
 
-    if(authenticated===true && client){
-        get_discount(client.id).then(
-            response=>{
-                if(response.data.success===true){
-                    setDiscount(response.data.data.procent)
-                    //return <div>Вам доступна знижка у розмірі {response.data.data.procent}%</div>
+    useEffect(() => {
+        if (authenticated && client) {
+            get_discount(client.id).then(response => {
+                if (response.data.success) {
+                    setDiscount(response.data.data.procent);
                 }
-            }
-        )
-    }
+            });
+        }
+    }, [authenticated, client]);
 
 
     const [shoppingCartState, setShoppingCart] = useState([])
 
+
     useEffect(()=>{
         getShoppingCart({setShoppingCart}, uid)
-    },[])
+    },[uid])
 
     const [orderSumaState, setOrderSuma] = useState(0)
     useEffect(()=>{
