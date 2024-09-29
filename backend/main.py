@@ -74,10 +74,11 @@ def get_all_goods():
             global json_goods
 
             json_goods = {"data": list(filtered_goods)}
-            print("goods successfully updates")
+            logger.logger.info('Goods updated')
             time.sleep(20)
         except Exception as error:
-            print(f"goods NOT updates\n{error}")
+            logger.logger.info('Goods not updated')
+            logger.logger.error(error)
 
 
 t = threading.Thread(target=get_all_goods).start()

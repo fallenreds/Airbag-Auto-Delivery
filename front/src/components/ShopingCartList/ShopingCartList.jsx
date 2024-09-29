@@ -97,6 +97,7 @@ const ShopingCartList = (props) => {
 
     const removeCart = (id) => {
         setShoppingCart(shoppingCartState.filter(item => item.id !== id));
+
     };
 
     const dsf = () => {
@@ -143,6 +144,7 @@ const ShopingCartList = (props) => {
                     uid={uid}
                     removeCart={removeCart}
                     onErrorChange={handleChildErrorChange}
+
                 />
             ))}
             {dsf()}

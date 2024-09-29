@@ -51,7 +51,8 @@ const ShopingCart = (props) => {
         props.setOrderSuma(props.orderSumaState - good.price[prod_price] * count);
         deleteShoppingCart(props.cart.id);
         props.removeCart(props.cart.id);
-        checkErrorState()
+        props.onErrorChange(props.index, false);
+
     };
     checkErrorState()
     return (

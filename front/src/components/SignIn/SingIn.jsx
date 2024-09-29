@@ -132,12 +132,9 @@ const SingIn = (props) => {
                 />
                 <div style={{color:"red",  marginBottom:"0px", fontSize: 12}}>{passwordError}</div>
                 <div style={{marginTop:"5px", fontSize: 12}}>
-                    Ще не зареєстровані? Натисніть кнопку "Зареєструватися" для реєстрації облікового запису.
+                    Введіть дані для авторизації та натисніть "Увійти"
                 </div>
                 <div className={classes.buttonList}>
-                    <button className={classes.singButton} onClick={goToSingUp}  type={"submit"}>
-                        Зареєструватись
-                    </button>
                     <button  className={classes.singButton} disabled={!isValidForm} type={"submit"}>
                         Увійти
                     </button>

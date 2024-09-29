@@ -73,7 +73,7 @@ async def admin_panel(message):
         get_make_post(),
         get_set_props(),
         get_props_info_button(),
-        types.InlineKeyboardButton("Шаблоны", callback_data=templates_callback.new())
+        types.InlineKeyboardButton("Шаблони", callback_data=templates_callback.new())
     )
     return await bot.send_message(message.chat.id, text=AdminLabels.enter_notifications.value, reply_markup=markup_i)
 
@@ -411,8 +411,8 @@ async def get_props()->str:
         props = json.load(f)
 
     message_text = (f"<b>Натисніть, щоб скопіювати</b>\n"
+                 f"<b>Номер картки </b>: <code>{props.get('card_number')}</code>\nАБО"
                  f"\n<b>ФІО</b>: <code>{props.get('full_name')}</code>\n"
-                 f"<b>Номер картки </b>: <code>{props.get('card_number')}</code>\n"
                  f"<b>ЄДРПОУ</b>: <code>{props.get('edrpou')}</code>\n"
                  f"<b>Номер рахунку</b>: <code>{props.get('account_number')}</code>\n"
                  f"<b>Призначення платежу</b>: <code>{props.get('payment_purpose')}</code>\n"
