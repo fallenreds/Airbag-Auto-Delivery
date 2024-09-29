@@ -1,3 +1,5 @@
+After Building you need to create DB by hands. Project does not have migration service.
+
 
 ## props.json
 This file contain information about admin credit cards info.
