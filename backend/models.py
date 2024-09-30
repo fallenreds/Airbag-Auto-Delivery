@@ -87,3 +87,7 @@ class BaseClientUpdate(BaseModel):
 
 class ClientUpdate(BaseClientUpdate):
     id:int
+
+class MergeModel(BaseModel):
+    source_order_id: int
+    target_order_id: int

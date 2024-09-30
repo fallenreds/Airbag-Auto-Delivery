@@ -1,16 +1,16 @@
-
+import ast
 import threading
 import time
 from time import sleep
-import logging
 import uvicorn
 from asgi_correlation_id import CorrelationIdMiddleware
 from fastapi import FastAPI, APIRouter, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import PositiveInt
 
+import config
 import logger
 from DB import DBConnection
+from api.shoppingcart.api import get_shopping_cart
 from models import *
 from RestAPI.RemonlineAPI import *
 from UpdateOrdersTask import update_order_task
@@ -22,10 +22,10 @@ warehouse = CRM.get_main_warehouse_id()
 #
 TEST_CRM = RemonlineAPI(REMONLINE_API_KEY_PROD)
 branch = TEST_CRM.get_branches()["data"][0]["id"]
-categories_to_filter = [753923]
+
 from api.templates import router as template_router
 from api.client_updates import router as client_updates_router
-
+from api.shoppingcart import router as shoppingcart_router
 
 
 # CRM : RemonlineAPI
@@ -48,6 +48,7 @@ app.add_middleware(
 api_router = APIRouter(prefix='/api/v1')
 api_router.include_router(template_router)
 api_router.include_router(client_updates_router)
+api_router.include_router(shoppingcart_router)
 app.include_router(api_router)
 
 json_goods: dict
@@ -69,7 +70,7 @@ def get_all_goods():
                 if len(response["data"]):
                     goods += response["data"]
 
-            filtered_goods = filter(lambda x: x['category']["id"] not in categories_to_filter, goods)
+            filtered_goods = filter(lambda x: x['category']["id"] not in CATEGORIES_IGNORE_IDS, goods)
 
             global json_goods
 
@@ -114,6 +115,45 @@ def get_or_post_client(client: ClientModel):
 
     return client_data
 
+@app.post("/api/v1/order/merge")
+async def merge_order(orders:MergeModel):
+    """Merge goods from 2 order and create new order"""
+    db = DBConnection(DB_PATH)
+
+    source_order = db.find_order_by_id(orders.source_order_id)
+    target_order = db.find_order_by_id(orders.target_order_id)
+
+    new_goods = ast.literal_eval(source_order.get('goods_list'))
+    new_goods.extend(ast.literal_eval(target_order.get('goods_list')))
+
+    if source_order is None or target_order is None:
+        return HTTPException(400, 'Orders not found')
+
+
+
+
+    order_id = db.post_orders(
+        source_order['client_id'],
+        source_order.get('telegram_id'),
+        str(new_goods),
+        source_order.get('name'),
+        source_order.get('last_name'),
+        source_order.get('prepayment'),
+        source_order.get('phone'),
+        source_order.get('nova_post_address'),
+        source_order.get('is_paid'),
+        source_order.get('description'),
+        source_order.get('ttn'))
+    new_order = db.find_order_by_id(order_id)
+    _new_remonline_order(new_order, db, CRM, json_goods)
+
+    CRM.update_order_status(source_order.get('remonline_id'), config.DELETE_ORDER_STATUS_ID)
+    CRM.update_order_status(target_order.get('remonline_id'), config.DELETE_ORDER_STATUS_ID)
+    db.delete_order(source_order['id'])
+    db.delete_order(target_order['id'])
+    db.post_order_updates(update_type="MERGED", order_id=order_id, order=new_order)
+    db.connection.close()
+
 
 @app.post("/api/v1/order/")
 async def post_order(order: OrderModel):
@@ -149,44 +189,12 @@ async def post_order(order: OrderModel):
 def new_remonline_order(order_id: OrderIdModel):
     db = DBConnection(DB_PATH)
     order = db.get_all_orders(order_id=order_id.order_id)[0]
-    return _new_remonline_order(order, db, CRM, json_goods)
-
-
-
-@app.get("/api/v1/shoppingcart/{id}")
-def get_shopping_cart(id: int):
-    # with open("data/shopping_cart.json") as file:
-    #     return [obj for obj in json.load(file) if obj['telegram_id'] == id]
-    db = DBConnection(DB_PATH)
-    data = db.list_shopping_cart(id)
+    remonline_order = _new_remonline_order(order, db, CRM, json_goods)
     db.connection.close()
-    return data
+    return remonline_order
 
 
-@app.delete("/api/v1/shoppingcart/{id}")
-def delete_shopping_cart(id: PositiveInt):
-    db = DBConnection(DB_PATH)
-    db.delete_shopping_cart(id)
-    db.connection.close()
 
-
-@app.post("/api/v1/shoppingcart/")
-def post_shopping_cart(Cart: CartModel):
-    new_cart = {
-        "telegram_id": int(Cart.telegram_id),
-        "good_id": int(Cart.good_id),
-        "count": 1
-    }
-    db = DBConnection(DB_PATH)
-    db.post_shopping_cart(new_cart["telegram_id"], new_cart["good_id"])
-    db.connection.close()
-
-
-@app.patch("/api/v1/shoppingcart/{id}")
-def update_shopping_cart_count(id: int, CountModel: UpdateCountModel):
-    db = DBConnection(DB_PATH)
-    db.update_shopping_cart_count(id, CountModel.count)
-    db.connection.close()
 
 
 @app.patch("/api/v1/updatettn/")

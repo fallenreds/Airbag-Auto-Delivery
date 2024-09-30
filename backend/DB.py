@@ -1,3 +1,4 @@
+import ast
 import json
 import logging
 import sqlite3
@@ -268,6 +269,18 @@ class DBConnection:
             response = {"success": False}
         finally:
             return response
+
+    def merge_order(self, source_order, target_order)->dict|None:
+        """Merge goods from source to target order. After mergind delete source order"""
+        source_goods = ast.literal_eval(source_order.get("goods_list"))
+        target_goods = ast.literal_eval(target_order.get("goods_list"))
+        target_goods.extend(source_goods)  # merge goods
+        target_order['goods_list'] = target_goods
+
+        self.cursor.execute("""update order set goods_list=? where id = ? """, (target_goods, target_order['id'],))
+        self.connection.commit()
+        self.delete_order(source_order['id'])
+        return target_order
 
     def find_order_by_ttn(self, ttn):
         self.cursor.execute("""

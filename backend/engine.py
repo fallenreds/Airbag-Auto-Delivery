@@ -80,36 +80,25 @@ def find_discount(money_spent, discounts):
 
 
 def _new_remonline_order(order, db, CRM, goods):
-    try:
-        if order:
-            print("order_find")
+    if not order:
+        raise ValueError()
 
-            client = db.get_client_by_id(order['client_id'])
-            client_remonline_id = client['id_remonline']
-            order_type = CRM.get_order_types()["data"][0]["id"]
 
-            manager_notes = manager_notes_builder(order=order, goods=goods, db=db)
 
-            response = CRM.new_order(branch_id=DEFAULT_BRANCH_PROD,
-                                          order_type=order_type,
-                                          client_id=client_remonline_id,
-                                          manager_notes=manager_notes
-                                    )
+    client = db.get_client_by_id(order['client_id'])
+    client_remonline_id = client['id_remonline']
+    order_type = CRM.get_order_types()["data"][0]["id"]
 
-            if not response['success']:
-                raise Exception
-            db.add_remonline_order_id(response['data']['id'], order['id'])
-            return {"data": response}
+    manager_notes = manager_notes_builder(order=order, goods=goods, db=db)
 
-    except ConnectTimeout as error:
-        db.post_order_updates('remonline timeout error', order['id'])
-        print(f"error: {error}")
+    response = CRM.new_order(branch_id=DEFAULT_BRANCH_PROD,
+                                  order_type=order_type,
+                                  client_id=client_remonline_id,
+                                  manager_notes=manager_notes
+                            )
+    db.add_remonline_order_id(response['data']['id'], order['id'])
+    return {"data": response}
 
-    except Exception as error:
-        print(f"error: {error}")
-        db.post_order_updates('remonline creating error', order['id'])
-    finally:
-        db.connection.close()
 
 
 def get_month_money_spent(orders, all_goods):

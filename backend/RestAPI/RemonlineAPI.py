@@ -1,3 +1,5 @@
+import logging
+
 import requests
 import json
 
@@ -107,7 +109,9 @@ class BaseRemonline:
         data = self.set_params(required, optional, **kwargs)
         response = self.post(url=request_url, data=data)
         if str(response.status_code) != "200":
-            raise Exception
+            logging.error(response.json())
+            raise response.raise_for_status()
+
         if response:
             return response.json()
         return {"data": {}, 'success': False}
@@ -212,3 +216,14 @@ class RemonlineAPI(BaseRemonline):
         self.new_client(phone=phone, name=name)
         new_client = self.get_clients(phones=phone)
         return new_client
+
+    def update_order_status(self, order_id, status_id):
+        api_path = "order/status/"
+        request_url = f"{self.domain}{api_path}"
+        data = {'order_id':order_id, 'status_id':status_id}
+        response = self.post(url=request_url, data=data)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            logging.info(response.json())
+            raise response.raise_for_status()
