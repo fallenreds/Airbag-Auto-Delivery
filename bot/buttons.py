@@ -1,5 +1,5 @@
 from aiogram import types
-
+from aiogram.utils.callback_data import CallbackData
 
 def get_check_ttn_button(ttn):
     return types.InlineKeyboardButton(f"Відстежити замовлення🔍", callback_data=f'check_ttn/{ttn}')
@@ -7,6 +7,9 @@ def get_check_ttn_button(ttn):
 
 def get_delete_order_button(order_id):
     return types.InlineKeyboardButton("Видалити замовлення ❌", callback_data=f"delete_order/{order_id}")
+
+def get_merge_order_button(order_id):
+    return types.InlineKeyboardButton("Об'єднати з іншим замовленням 🔀", callback_data=f"merge_order/{order_id}")
 
 
 def get_deactive_order_button(order_id):

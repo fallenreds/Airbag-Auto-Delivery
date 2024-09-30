@@ -31,6 +31,9 @@ async def order_updates(bot, admin_list):
                         await delete_order_updates(record['id'])
                         continue
 
+                    if record['type'] == 'merged':
+                        await  merge_order_notification(bot, order)
+
                     if record['type'] == "new order":  # crm remonline
                         await new_order_notification(bot, order, admin_list)
 

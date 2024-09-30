@@ -150,7 +150,7 @@ async def make_pay_order(order_id):
 
 async def add_new_visitor(telegram_id) -> dict:
     async with aiohttp.ClientSession() as session:
-        async with session.post(f'{base_url}api/v1/AddNewVisitor/{telegram_id}', json={"telegram_id": telegram_id, }) as resp:
+        async with session.post(f'{base_url}api/v1/visitors/{telegram_id}', json={"telegram_id": telegram_id, }) as resp:
             print(telegram_id)
             if resp.status == 200:
                 return await resp.json()
@@ -198,7 +198,12 @@ async def delete_order(order_id):
             if resp.status == 200:
                 return await resp.json()
 
-
+async def merge_order(source_order_id, target_order_id):
+    async with aiohttp.ClientSession() as session:
+        data = {"source_order_id": source_order_id, "target_order_id": target_order_id}
+        async with session.post(f'{base_url}api/v1/order/merge', json=data) as resp:
+            if resp.status == 200:
+                return await resp.json()
 async def delete_discount(discount_id):
     async with aiohttp.ClientSession() as session:
         async with session.delete(f'{base_url}api/v1/discount/{discount_id}') as resp:

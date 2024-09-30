@@ -109,7 +109,7 @@ def update_order_task():
 
             active_orders: list[dict] = db.get_active_orders()
             ids_remonline: list = [order['remonline_order_id'] for order in active_orders]
-            # remonline_orders = TEST_CRM.get_orders(ids=ids_remonline)
+            # remonline_orders = CRM.get_orders(ids=ids_remonline)
             remonline_orders: list[dict] = paginator(CRM.get_orders, ids=ids_remonline)
 
             for order in active_orders:

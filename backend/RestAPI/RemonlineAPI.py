@@ -221,9 +221,6 @@ class RemonlineAPI(BaseRemonline):
         api_path = "order/status/"
         request_url = f"{self.domain}{api_path}"
         data = {'order_id':order_id, 'status_id':status_id}
-        response = self.post(url=request_url, data=data)
-        if response.status_code == 200:
-            return response.json()
-        else:
-            logging.info(response.json())
-            raise response.raise_for_status()
+        return self.post_objects(api_path=api_path,accepted_params_path="RestAPI/params/update_status.json", request_url=request_url, **data)
+
+

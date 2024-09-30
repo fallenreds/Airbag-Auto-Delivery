@@ -28,3 +28,7 @@ class NewProps(StatesGroup):
 class NewTemplate(StatesGroup):
     name = State()
     text = State()
+
+class MergeOrderState(StatesGroup):
+    source_order_id = State()
+    target_order_id = State()

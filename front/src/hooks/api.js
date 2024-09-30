@@ -39,7 +39,7 @@ export function getShoppingCart(props, telegramId) {
 
 export function postShoppingCart(telegramId, goodId) {
     axios.post(
-        base_url + 'api/v1/shoppingcart/',
+        base_url + 'api/v1/shoppingcart',
         {
             "telegram_id": telegramId,
             "good_id": goodId,
@@ -80,7 +80,7 @@ export function postOrder(telegramId,
                           description,
                           ) {
     axios.post(
-        base_url + 'api/v1/order/',
+        base_url + 'api/v1/order',
         {
             "telegram_id": telegramId,
             "goods_list": goodsList,
@@ -132,7 +132,7 @@ export function postClient(uid,
 
 ) {
     axios.post(
-        base_url + 'api/v1/singup/',
+        base_url + 'api/v1/singup',
         {
             "telegram_id": uid,
             "name": name,
@@ -186,7 +186,7 @@ export function checkAuth(props) {
 
 export function logIn(login, password, telegramId) {
     return axios.post(
-        base_url + 'api/v1/signin/',
+        base_url + 'api/v1/signin',
         {
             "login": login,
             "password": password,

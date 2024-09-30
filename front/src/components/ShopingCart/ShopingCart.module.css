@@ -8,7 +8,9 @@
     padding: 3%;
     width: 90%;
     height: 90%;
+
     border: 1px solid black;
+
 }
 
 .content{
@@ -27,10 +29,17 @@
 
 
 .info{
+
     margin-left: 3%;
 }
 
 .maintext{
+    color: var(--tg-theme-text-color);
+    overflow-x:hidden;
+    font-size: 13px;
+    width: 120px;
+    height: 50px;
+    max-height: 30px;
     margin: 0% 3% 3% 0%;
 }
 

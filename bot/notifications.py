@@ -24,6 +24,8 @@ async def check_status_notification(bot, telegram_id, order):
 async def new_order_notification(bot, order, admin_list):
     await send_messages_to_admins(bot, admin_list, "Нове замовлення в remonline успішно створено!")
 
+async def merge_order_notification(bot, oder:dict):
+    await bot.send_message(f"Декілька ваших замовлень були об'єднані в замовлення {oder['id']}.")
 
 async def ttn_update_notification(bot, order):
     message_text = f"<b>Дякуємо! Ваше замовлення📦 №{order['id']} відправлено🚛.</b>" \

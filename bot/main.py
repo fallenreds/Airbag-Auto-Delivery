@@ -18,11 +18,13 @@ from aiogram import Bot, Dispatcher, executor, filters
 
 from buttons import *
 from config import *
-from engine import manager_notes_builder, id_spliter, ttn_info_builder, send_error_log, make_order
-from States import NewTTN, NewPost, NewClientDiscount, NewPaymentData, NewProps, NewTextPost, NewTemplate
+from engine import manager_notes_builder, id_spliter, ttn_info_builder, send_error_log, make_order, show_order_goods
+from States import NewTTN, NewPost, NewClientDiscount, NewPaymentData, NewProps, NewTextPost, NewTemplate, \
+    MergeOrderState
 from handlers.client_handler import show_clients
 from labels import AdminLabels
 from notifications import *
+from utils.inline import inline_paginator
 
 admin_list = [516842877, 5783466675]
 storage = MemoryStorage()
@@ -34,6 +36,13 @@ dp = Dispatcher(bot, storage=storage)
 #----------- Callback Data ----------#
 templates_callback = CallbackData(prefix='templates')
 
+@dp.message_handler(commands=['stop'], state='*')
+async def cmd_cancel(message: types.Message, state: FSMContext):
+    current_state = await state.get_state()
+    if current_state is None:
+        return
+    await state.finish()
+    await message.reply('Ви успішно зупинили операцію.')
 
 def check_admin_permission(message):
     if message.chat.id not in admin_list:
@@ -307,14 +316,63 @@ async def add_new_discount(message: types.Message):
     elif check_admin_permission(message):
         await bot.send_message(telegram_id, "Введите значения в указаном формате.")
 
+@dp.inline_handler(state = MergeOrderState)
+async def show_orders_to_merge(inline_query: types.InlineQuery, state: FSMContext):
+    state_data = await state.get_data()
+    all_goods = state_data.get('goods',[])
+    client_orders = state_data.get('orders', [])
+
+    if not client_orders:
+        await state.finish()
+        await bot.send_message(chat_id=inline_query.from_user.id, text="Нажаль немає жодного підходящого замовлення у цього клієнта")
+
+    results = []
+    offset = int(inline_query.offset) if inline_query.offset else 0
+    for order in inline_paginator(client_orders, offset):
+        item = types.InlineQueryResultArticle(
+            id=order['id'],
+            title=order['id'],
+            description=show_order_goods(order, all_goods),
+            input_message_content=types.InputTextMessageContent(message_text=order['id']),
+        )
+        results.append(item)
+
+    if len(results) < 50:
+        await inline_query.answer(results, is_personal=True, cache_time=0),
+    else:
+        await inline_query.answer(
+            results,
+            is_personal=True,
+            next_offset=str(offset + 50),
+            cache_time=0,
+        )
+
+@dp.message_handler(state=MergeOrderState.target_order_id)
+async def merge_order_handler(message: types.Message, state: FSMContext):
+    state_data = await state.get_data()
+    source_order_id = state_data.get('source_order_id')
+
+    try:
+        target_order_id = int(message.text)
+    except ValueError or TypeError:
+        await bot.send_message(message.chat.id, f"Виберіть із доступних варіантів замовлення. Для відхилення операції натисність /stop")
+        return
+    finally:
+        await bot.delete_message(message.chat.id, message.message_id)
+    await state.finish()
+    await merge_order(source_order_id, target_order_id)
+    await bot.send_message(message.chat.id, f"Ви поєднали замовлення {source_order_id} та {target_order_id}")
+
+
 
 async def order_list_builder(bot, orders, admin_id, goods):
     for order in orders:
         notes_info = await manager_notes_builder(order, goods)  # {"text":goods_info, "client": base_client}
 
-        markup_i = types.InlineKeyboardMarkup()
+        markup_i = types.InlineKeyboardMarkup(row_width=1)
         deactivate_button = get_deactive_order_button(order['id'])
         delete_button = get_delete_order_button(order['id'])
+        merge_button = get_merge_order_button(order['id'])
 
         if not order["ttn"]:
             add_ttn_button = types.InlineKeyboardButton(f"Додати ttn", callback_data=f"add_ttn/{order['id']}")
@@ -329,7 +387,7 @@ async def order_list_builder(bot, orders, admin_id, goods):
                 markup_i.add(to_not_prepayment_button)
                 markup_i.add(get_make_paid_button(order['id']))
 
-        markup_i.add(deactivate_button, delete_button)
+        markup_i.add(deactivate_button, delete_button, merge_button)
         await bot.send_message(admin_id, text=notes_info["text"], reply_markup=markup_i)
 
 
@@ -353,13 +411,7 @@ async def edit_discount(telegram_id):
 
 
 
-@dp.message_handler(commands=['stop'], state='*')
-async def cmd_cancel(message: types.Message, state: FSMContext):
-    current_state = await state.get_state()
-    if current_state is None:
-        return
-    await state.finish()
-    await message.reply('Ви успішно зупинили операцію.')
+
 
 
 
@@ -713,6 +765,19 @@ async def callback_admin_panel(callback: types.CallbackQuery):
 
         if callback.data == "to_call":
             await bot.send_message(callback.message.chat.id, text="Номер телефону: \n+380989989828")
+
+        if "merge_order" in callback.data:
+            order_id = await id_spliter(callback.data)
+            order = await get_order_by_id(order_id)
+            await MergeOrderState.target_order_id.set()
+            state = Dispatcher.get_current().current_state()
+            client_orders = list(filter(lambda order_obj: order_obj['id'] != order_id, await get_orders_by_tg_id(order['telegram_id'])))
+            await state.update_data(source_order_id=order_id, order=order, orders=client_orders, goods=goods)
+            kb = types.InlineKeyboardMarkup()
+            kb.add(types.InlineKeyboardButton("Поєднати з", switch_inline_query_current_chat='merge'))
+            await bot.send_message(callback.message.chat.id, 'Натисність, щоб переглянути замовлення доступні до поєднання', reply_markup=kb)
+
+
 
         if "delete_order/" in callback.data:
             order_id = await id_spliter(callback.data)

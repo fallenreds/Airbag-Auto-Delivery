@@ -82,7 +82,6 @@ async def manager_notes_builder(order, goods) -> dict:
     address = f"{order['nova_post_address']}"
     prepayment = "Передплата" if order["prepayment"] == True else "Накладений платіж"
     description = order.get('description')
-    goods_list = json.loads(order["goods_list"].replace("'", '"'))
 
     order_suma = await build_order_suma(order, goods)
     user_discount = await get_discount(base_client["id"])
@@ -116,11 +115,19 @@ async def manager_notes_builder(order, goods) -> dict:
     if ttn := order['ttn']:
         goods_info += f"\nНомер ТТН: {ttn}"
 
+    goods_info += show_order_goods(order, goods)
+
+    return {"text": goods_info, "client": base_client}
+
+
+def show_order_goods(order:dict, goods:dict):
+    goods_info = ""
+    goods_list = json.loads(order["goods_list"].replace("'", '"'))
+
     for obj in goods_list:
         good = find_good(goods["data"], obj['good_id'])
         goods_info += f"\n\nТовар: {good['title']} - Кількість: {obj['count']}"
-
-    return {"text": goods_info, "client": base_client}
+    return goods_info
 
 
 async def id_spliter(callback_data: str) -> int:

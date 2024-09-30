@@ -21,7 +21,7 @@ def delete_shopping_cart(id: PositiveInt):
     db.connection.close()
 
 
-@router.post("/")
+@router.post("")
 def post_shopping_cart(Cart: CartModel):
     new_cart = {
         "telegram_id": int(Cart.telegram_id),

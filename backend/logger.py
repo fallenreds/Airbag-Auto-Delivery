@@ -162,6 +162,8 @@ async def logging_middleware(request: Request, call_next) -> Response:
     response = Response(status_code=500)
     try:
         response = await call_next(request)
+        if response.status_code == 200:
+            return response
     except Exception:
         # TODO: Validate that we don't swallow exceptions (unit test?)
         structlog.stdlib.get_logger("api.error").exception("Uncaught exception")
