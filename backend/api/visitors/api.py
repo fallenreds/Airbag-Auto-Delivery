@@ -8,7 +8,7 @@ from loader import CRM
 from models import ClientModel
 
 router = APIRouter(prefix='/visitors' ,tags=['Visitors'])
-@router.get("/api/v1/visitors/")
+@router.get("/")
 def get_visitors():
     db = DBConnection(DB_PATH)
     response = db.get_visitors()
