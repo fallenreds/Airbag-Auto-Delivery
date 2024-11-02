@@ -319,6 +319,11 @@ class DBConnection:
         """)
         return self.cursor.fetchall()
 
+    def get_active_orders_by_telegram_id(self, telegram_id:int):
+        self.cursor.execute(f"""
+            select * from orders where is_completed=0 and telegram_id = ?
+        """, (telegram_id,))
+        return self.cursor.fetchall()
     def set_bonus_order_date_to_previous_month(self, order_id):
         self.cursor.execute(
             """

@@ -135,6 +135,12 @@ def get_active_orders():
     db.connection.close()
     return active_orders
 
+@router.get("/activeorders/{telegram_id}")
+def get_active_orders_by_telegram_id(telegram_id):
+    db = DBConnection(DB_PATH)
+    active_orders = db.get_active_orders_by_telegram_id(telegram_id)
+    db.connection.close()
+    return active_orders
 
 
 @router.post("/payorder/{order_id}")
