@@ -114,6 +114,11 @@ async def get_active_orders() -> list:
             if resp.status == 200:
                 return await resp.json()
 
+async def get_active_orders_by_telegram_id(telegram_id:int) -> list:
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f'{base_url}api/v1/activeorders/{telegram_id}') as resp:
+            if resp.status == 200:
+                return await resp.json()
 
 async def get_order_updates() -> list:
     async with aiohttp.ClientSession() as session:

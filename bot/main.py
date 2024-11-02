@@ -771,7 +771,7 @@ async def callback_admin_panel(callback: types.CallbackQuery):
             order = await get_order_by_id(order_id)
             await MergeOrderState.target_order_id.set()
             state = Dispatcher.get_current().current_state()
-            client_orders = list(filter(lambda order_obj: order_obj['id'] != order_id, await get_orders_by_tg_id(order['telegram_id'])))
+            client_orders = list(filter(lambda order_obj: order_obj['id'] != order_id, await get_active_orders_by_telegram_id(order['telegram_id'])))
             await state.update_data(source_order_id=order_id, order=order, orders=client_orders, goods=goods)
             kb = types.InlineKeyboardMarkup()
             kb.add(types.InlineKeyboardButton("Поєднати з", switch_inline_query_current_chat='merge'))
