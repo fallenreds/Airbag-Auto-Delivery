@@ -569,7 +569,8 @@ async def send_post_to_visitors(messages: list[types.Message]):
                 await message.bot.copy_message(chat_id=visitor['telegram_id'], from_chat_id=message.chat.id, message_id=message.message_id)
             except (ChatNotFound, BotBlocked):
                 await delete_visitor(visitor['telegram_id'])
-
+            except Exception:
+                pass
 
 
 #------------------------ END.Розсилка користувачам -----------------------#
@@ -608,9 +609,9 @@ async def send_template(callback:types.CallbackQuery):
     template = await get_template(template_id=template_id)
     asyncio.create_task(send_template_to_visitors(template['text']))
 
-@dp.callback_query_handler(lambda callback: callback.data.startswith(send_template_callback.prefix) and check_admin_permission(callback.message))
-async def send_template(callback:types.CallbackQuery):
-    template_id = send_template_callback.parse(callback_data=callback.data).get('template_id')
+@dp.callback_query_handler(lambda callback: callback.data.startswith(_callback.prefix) and check_admin_permission(callback.message))
+async def (callback:types.CallbackQuery):
+    template_id = _callback.parse(callback_data=callback.data).get('template_id')
     template = await get_template(template_id=template_id)
     await bot.send_message(callback.message.chat.id, text=template['text'])
 
@@ -654,6 +655,8 @@ async def send_template_to_visitors(text: str):
             await bot.send_message(chat_id=visitor['telegram_id'], text=text)
         except (ChatNotFound, BotBlocked):
             await delete_visitor(visitor['telegram_id'])
+        except Exception:
+            pass
 
 #------------------------ END.Шаблони розсилки -----------------------#
 
