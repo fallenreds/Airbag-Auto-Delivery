@@ -609,9 +609,9 @@ async def send_template(callback:types.CallbackQuery):
     template = await get_template(template_id=template_id)
     asyncio.create_task(send_template_to_visitors(template['text']))
 
-@dp.callback_query_handler(lambda callback: callback.data.startswith(_callback.prefix) and check_admin_permission(callback.message))
-async def (callback:types.CallbackQuery):
-    template_id = _callback.parse(callback_data=callback.data).get('template_id')
+@dp.callback_query_handler(lambda callback: callback.data.startswith(send_template_callback.prefix) and check_admin_permission(callback.message))
+async def send_template(callback:types.CallbackQuery):
+    template_id = send_template_callback.parse(callback_data=callback.data).get('template_id')
     template = await get_template(template_id=template_id)
     await bot.send_message(callback.message.chat.id, text=template['text'])
 
