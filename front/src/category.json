@@ -13,7 +13,6 @@
   {"id": 753900, "title": "Hyundai", "parent_id": 754099, "image": "hundai.jpg"},
   {"id": 753922, "title": "Infiniti", "parent_id": 754099, "image": "infinity.jpg"},
   {"id": 1140061, "title": "Jaguar", "parent_id": 754099, "image": "jaguar.jpg"},
-  {"id": 1140061, "title": "Jaguar", "parent_id": 754099, "image": "jaguar.jpg"},
   {"id": 753896, "title": "Jeep", "parent_id": 754099,"image": "jeep.jpg"},
   {"id": 1121713, "title": "KIA", "parent_id": 754099, "image": "kia.jpg"},
   {"id": 753901, "title": "Lexus", "parent_id": 754099, "image": "lexus.jpg"},
