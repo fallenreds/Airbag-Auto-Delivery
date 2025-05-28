@@ -19,18 +19,7 @@ class GoodsCacheService:
     def _update_goods_loop(self):
         while True:
             try:
-                goods = []
-                page = 1
-                run = True
-                while run:
-                    response = self.crm_client.get_goods(self.warehouse, page=page)
-                    page += 1
-                    if len(response["data"]) <= 50:
-                        run = False
-
-                    if len(response["data"]):
-                        goods += response["data"]
-
+                goods = self.crm_client.get_all_goods(self.warehouse)
                 filtered_goods = filter(lambda x: x['category']["id"] not in self.categories_ignore_ids, goods)
                 self.goods = {"data": list(filtered_goods)}
                 logger.info('Goods updated')

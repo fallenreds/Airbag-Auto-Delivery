@@ -15,7 +15,7 @@ def paginator(function, **kwargs):
     while run:
         response = function(page=page, **kwargs)
         page += 1
-        if len(response["data"]) <= 50:
+        if len(response["data"]) < 50:
             run = False
 
         if len(response["data"]):
@@ -110,7 +110,7 @@ def update_order_task():
             active_orders: list[dict] = db.get_active_orders()
             ids_remonline: list = [order['remonline_order_id'] for order in active_orders]
             # remonline_orders = CRM.get_orders(ids=ids_remonline)
-            remonline_orders: list[dict] = paginator(CRM.get_orders, ids=ids_remonline)
+            remonline_orders: list[dict] = CRM.get_all_orders(ids=ids_remonline)
 
             for order in active_orders:
                 ttn = None

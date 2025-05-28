@@ -1,5 +1,5 @@
 import logging
-
+from requests import HTTPError
 import requests
 import json
 
@@ -90,7 +90,7 @@ class BaseRemonline:
         data = self.set_params(required, optional, **kwargs)
         response = self.get(url=request_url, params=data)
         if str(response.status_code) != "200":
-            raise Exception
+            raise HTTPError(response=response)
         if response:
             return response.json()
         return {"data": {}, 'success': False}
@@ -163,9 +163,26 @@ class RemonlineAPI(BaseRemonline):
     def get_goods(self, warehouse, **kwargs) -> dict:
         api_path = f"warehouse/goods/{warehouse}"
         request_url = f"{self.domain}{api_path}"
-        return self.get_objects(api_path=api_path, accepted_params_path="RestAPI/params/goods_params.json",
+
+        response = self.get_objects(api_path=api_path, accepted_params_path="RestAPI/params/goods_params.json",
                                 request_url=request_url,
                                 **kwargs)
+        return response
+
+    def get_all_goods(self, warehouse, **kwargs) -> list[dict]:
+        goods_list = []
+        page = 0
+        while True:
+            try:
+                page += 1
+                goods = self.get_goods(warehouse, **kwargs, page=page)
+                goods_list.extend(goods['data'])
+                if len(goods_list) == goods['count']:
+                    break
+            except HTTPError as error:
+                logging.error("HTTPError while fetching goods", error)
+                break
+        return goods_list
 
     def get_warehouse(self, **kwargs):
         api_path = "warehouse/"
@@ -190,8 +207,23 @@ class RemonlineAPI(BaseRemonline):
     def get_orders(self, **kwargs):
         api_path = "order/"
         request_url = f"{self.domain}{api_path}"
-        return self.get_objects(api_path=api_path, request_url=request_url,
-                                accepted_params_path="RestAPI/params/order_params.json", **kwargs)
+        response =  self.get_objects(api_path=api_path, request_url=request_url,accepted_params_path="RestAPI/params/order_params.json", **kwargs)
+        return response
+
+    def get_all_orders(self, **kwargs) -> list[dict]:
+        all_orders = []
+        page = 0
+        while True:
+            try:
+                page += 1
+                orders = self.get_orders(**kwargs, page=page)
+                all_orders.extend(orders['data'])
+                if len(all_orders) == orders['count']:
+                    break
+            except HTTPError as error:
+                logging.error("HTTPError while fetching orders", error)
+                break
+        return all_orders
 
     def new_order(self, **kwargs):
         """
