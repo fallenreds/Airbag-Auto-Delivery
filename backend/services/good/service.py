@@ -25,7 +25,7 @@ class GoodsCacheService:
                 while run:
                     response = self.crm_client.get_goods(self.warehouse, page=page)
                     page += 1
-                    if len(response["data"]) < 50:
+                    if len(response["data"]) <= 50:
                         run = False
 
                     if len(response["data"]):

@@ -15,7 +15,7 @@ def paginator(function, **kwargs):
     while run:
         response = function(page=page, **kwargs)
         page += 1
-        if len(response["data"]) < 50:
+        if len(response["data"]) <= 50:
             run = False
 
         if len(response["data"]):
