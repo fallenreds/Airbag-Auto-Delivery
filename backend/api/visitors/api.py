@@ -10,6 +10,10 @@ from models import ClientModel
 router = APIRouter(prefix='/visitors' ,tags=['Visitors'])
 @router.get("/")
 def get_visitors():
+    """
+    Получить всех посетителей системы
+    В след версии API будет доступно только администратору системы (вероятно только через бот)
+    """
     db = DBConnection(DB_PATH)
     response = db.get_visitors()
     db.connection.close()
@@ -18,6 +22,10 @@ def get_visitors():
 
 @router.post("/{telegram_id}")
 def add_new_visitor(telegram_id):
+    """
+    Добавить нового посетителя в систему
+    В след версии API будет доступно только администратору системы (вероятно только через бот)
+    """
     db = DBConnection(DB_PATH)
     response = db.post_new_visitor(telegram_id)
     db.connection.close()
@@ -25,6 +33,10 @@ def add_new_visitor(telegram_id):
 
 @router.delete("/{telegram_id}")
 def delete_visitor(telegram_id:int):
+    """
+    Удалить посетителя из системы по его телеграм ID
+    В след версии API будет доступно только администратору системы (вероятно только через бот)
+    """
     db = DBConnection(DB_PATH)
     response = db.delete_visitor(telegram_id)
     db.connection.close()

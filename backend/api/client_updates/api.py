@@ -7,7 +7,10 @@ from logger import logger
 
 @router.get('/', response_model=list[ClientUpdate])
 def get_client_updates()->list[ClientUpdate]:
-    """Get all templates"""
+    """
+    Получить все обновления всех клиентов
+    Вероятно будет изменено в следующей версии API
+    """
     db = DBConnection(config.DB_PATH)
     response = db.get_client_updates()
     db.connection.close()
@@ -15,7 +18,10 @@ def get_client_updates()->list[ClientUpdate]:
 
 @router.get('/{client_update_id}', response_model=ClientUpdate)
 def get_client_update(client_update_id:int)->ClientUpdate|None:
-    """Get template by id"""
+    """
+    Получить все обновление клиента по id
+    Вероятно будет изменено в следующей версии API
+    """
     db = DBConnection(config.DB_PATH)
     response = db.get_client_update(client_update_id)
     db.connection.close()
@@ -25,7 +31,10 @@ def get_client_update(client_update_id:int)->ClientUpdate|None:
 
 @router.delete('/{client_update_id}')
 def delete_client_update(client_update_id:int)->None:
-    """Delete template by id"""
+    """
+    Удалить запить обновления по id - после каждого чтения обновления
+    Вероятно будет изменено в следующей версии API
+    """
     db = DBConnection(config.DB_PATH)
     db.delete_client_update(client_update_id)
     db.connection.close()
@@ -33,7 +42,10 @@ def delete_client_update(client_update_id:int)->None:
 
 @router.post('/', response_model=ClientUpdate)
 def create_client_update(client_update:BaseClientUpdate)->ClientUpdate:
-    """Create new template"""
+    """
+    Создает новое обновление клиента в системе
+    Вероятно будет удалено в следующей версии API
+    """
     db = DBConnection(config.DB_PATH)
     response = db.create_client_update(client_update)
     db.connection.close()

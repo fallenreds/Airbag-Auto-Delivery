@@ -18,7 +18,10 @@ router = APIRouter(tags=['Orders'])
 
 @router.post("/order/merge")
 async def merge_order(orders:MergeModel,cache_service: GoodsCacheService = Depends(get_goods_cache_service)):
-    """Merge goods from 2 order and create new order"""
+    """
+    Соединение товаров из 2 заказов и создание нового заказа вместо старого
+    В след версии API будет доступно только администратору системы (вероятно только через бот)
+    """
     db = DBConnection(DB_PATH)
 
     source_order = db.find_order_by_id(orders.source_order_id)
@@ -55,6 +58,10 @@ async def merge_order(orders:MergeModel,cache_service: GoodsCacheService = Depen
 
 @router.post("/order")
 async def post_order(order: OrderModel, cache_service: GoodsCacheService = Depends(get_goods_cache_service)):
+    """
+    Создает новый заказ в системе
+    В след версии будет возможно только авторизированым клиентам
+    """
     db = DBConnection(DB_PATH)
     client = db.get_client_by_telegram_id(order.telegram_id)
     if not client:
@@ -86,6 +93,12 @@ async def post_order(order: OrderModel, cache_service: GoodsCacheService = Depen
 
 @router.get("/orders")
 def get_orders():
+    """
+    Получить все заказы в системе
+    В след версии будет изменено, пользователи будуть получать только свои заказы.
+    Админ все заказы.
+    Будет пагинация, фильтрацыия и т.д.
+    """
     db = DBConnection(DB_PATH)
     orders = db.get_all_orders()
     db.connection.close()
@@ -94,6 +107,10 @@ def get_orders():
 
 @router.patch("/orders/tonotprepayment/{order_id}")
 def change_to_not_prepayment(order_id, cache_service: GoodsCacheService = Depends(get_goods_cache_service)):
+    """
+    Сделать заказ не предоплатой
+    В след версии API будет доступно только администратору системы (вероятно только через бот)
+    """
     db = DBConnection(DB_PATH)
     order = db.change_to_not_prepayment(order_id)
     db.connection.close()
@@ -104,6 +121,10 @@ def change_to_not_prepayment(order_id, cache_service: GoodsCacheService = Depend
 
 @router.patch("/disactiveorder/{order_id}")
 def finish_order(order_id: int):
+    """
+    Завершить заказ
+    В след версии API будет доступно только администратору системы (вероятно только через бот)
+    """
     db = DBConnection(DB_PATH)
     response = db.deactivate_order(order_id)
     db.connection.close()
@@ -112,6 +133,10 @@ def finish_order(order_id: int):
 
 @router.delete("/deleteorder/{order_id}")
 def delete_order_by_id(order_id: int):
+    """
+    Удалить заказ по ID
+    В след версии API будет доступно только администратору системы (вероятно только через бот)
+    """
     db = DBConnection(DB_PATH)
     response = db.delete_order(order_id)
     db.connection.close()
@@ -119,6 +144,10 @@ def delete_order_by_id(order_id: int):
 
 @router.delete("/deleteremonlineorder/{remonline_order_id}")
 def delete_order_by_remonline_id(remonline_order_id: int, reason:typing.Optional[str]):
+    """
+    Удалить заказ по ID remonline
+    В след версии API будет доступно только администратору системы (вероятно только через бот)
+    """
     db = DBConnection(DB_PATH)
     order = db.find_order_by_remonline_id(remonline_order_id)
     if not order:
@@ -130,6 +159,10 @@ def delete_order_by_remonline_id(remonline_order_id: int, reason:typing.Optional
 
 @router.get("/activeorders")
 def get_active_orders():
+    """
+    Получить все активные заказы в системе
+    В след версии API вероятно будет удалено, а функционал будет в get_orders
+    """
     db = DBConnection(DB_PATH)
     active_orders = db.get_active_orders()
     db.connection.close()
@@ -137,6 +170,10 @@ def get_active_orders():
 
 @router.get("/activeorders/{telegram_id}")
 def get_active_orders_by_telegram_id(telegram_id):
+    """
+    Получить все активные заказы в системе по телеграм ID
+    В след версии API вероятно будет удалено, а функционал будет в get_orders
+    """
     db = DBConnection(DB_PATH)
     active_orders = db.get_active_orders_by_telegram_id(telegram_id)
     db.connection.close()
@@ -145,6 +182,10 @@ def get_active_orders_by_telegram_id(telegram_id):
 
 @router.post("/payorder/{order_id}")
 def make_pay_order(order_id: int,cache_service: GoodsCacheService = Depends(get_goods_cache_service)):
+    """
+    Следать заказ оплаченым
+    В след версии API будет доступно только администратору системы (вероятно только через бот) или будет изменено API
+    """
     db = DBConnection(DB_PATH)
     db.pay_order(order_id)
     db.post_order_updates('new order', order_id)
@@ -154,6 +195,11 @@ def make_pay_order(order_id: int,cache_service: GoodsCacheService = Depends(get_
 # order_updates
 @router.get("/ordersupdates")
 def get_orders_updates():
+    """
+    Получить все обновления заказов
+    В след версии вероятно будет изменено, пользователи будут получать только свои обновления.
+    Админ будет все получать
+    """
     db = DBConnection(DB_PATH)
     updates = db.get_order_updates()
     db.connection.close()
@@ -162,6 +208,11 @@ def get_orders_updates():
 
 @router.delete("/ordersupdates/{updates_id}")
 def get_orders_updates(updates_id):
+    """
+    Получить обновление заказа по ID
+    В след версии вероятно будет изменено, пользователи будут получать только свои обновления.
+    Админ будет все получать
+    """
     db = DBConnection(DB_PATH)
     updates = db.delete_order_updates(updates_id)
     db.connection.close()
@@ -169,6 +220,11 @@ def get_orders_updates(updates_id):
 
 @router.get("/orderbyttn/{ttn}")
 def get_order_by_ttn(ttn: int):
+    """
+    Получить обновление заказа по ID
+    В след версии вероятно будет изменено, пользователи будут получать только свои обновления.
+    Админ будет все получать
+    """
     db = DBConnection(DB_PATH)
     response = db.find_order_by_ttn(ttn)
     db.connection.close()
@@ -177,6 +233,10 @@ def get_order_by_ttn(ttn: int):
 
 @router.get("/getorder/{telegram_id}")
 def get_order_by_telegram_id(telegram_id: int):
+    """
+    Получить все заказы в системе по телеграм ID
+    В след версии API вероятно будет удалено, а функционал будет в get_orders
+    """
     db = DBConnection(DB_PATH)
     orders = db.get_all_orders(telegram_id)
     db.connection.close()
@@ -185,6 +245,10 @@ def get_order_by_telegram_id(telegram_id: int):
 
 @router.get("/getorderbyid/{order_id}")
 def get_order_by_id(order_id: int):
+    """
+    Получить заказ по ID
+    В след версии API вероятно будет удалено, а функционал будет в get_orders
+    """
     db = DBConnection(DB_PATH)
     order = db.find_order_by_id(order_id)
     db.connection.close()
@@ -193,6 +257,10 @@ def get_order_by_id(order_id: int):
 
 @router.get("/ordersuma/{telegram_id}")
 def get_order_sum(telegram_id: int, cache_service: GoodsCacheService = Depends(get_goods_cache_service)):
+    """
+    Подсчет суммы заказа корзины.
+    Вероятно будет изменено в след версии АПИ.
+    """
     data = get_shopping_cart(telegram_id)
 
     to_pay = 0
@@ -203,6 +271,10 @@ def get_order_sum(telegram_id: int, cache_service: GoodsCacheService = Depends(g
 
 @router.get("/no-paid-along-time/")
 def no_paid_along_time_orders():
+    """
+    Получить все заказы, которые не были оплачены в течении 1 часа
+    В след версии API будет доступно только администратору системы (вероятно только через бот) или будет изменено API
+    """
     db = DBConnection(DB_PATH)
     orders = db.no_paid_along_time()
     if not orders:
@@ -211,12 +283,18 @@ def no_paid_along_time_orders():
 
 @router.patch("/updatettn/")
 def update_order_ttn(TTN_data: NewTTNModel):
+    """
+    Обновить TTN заказа
+    В след версии API будет доступно только администратору системы (вероятно только через бот) будут небольшие изменения
+    """
     db = DBConnection(DB_PATH)
     response = db.update_ttn(TTN_data.order_id, TTN_data.ttn)
     db.connection.close()
     return response
+
 @router.patch("/branch_remember_count/{order_id}")
 def update_branch_remember_count(order_id):
+    """Чет обновляет в заказе, типа как просмотр надо потом разобраться"""
     db = DBConnection(DB_PATH)
     db.update_branch_remember_count(int(order_id))
     db.connection.close()
@@ -224,6 +302,7 @@ def update_branch_remember_count(order_id):
 
 @router.patch("/no_paid_remember_count/{order_id}")
 def update_no_paid_remember_count(order_id):
+    """Чет обновляет в заказе, типа как просмотр надо потом разобраться"""
     db = DBConnection(DB_PATH)
     db.update_no_paid_remember_count(int(order_id))
     db.connection.close()

@@ -9,6 +9,10 @@ router = APIRouter(tags=['Auth'])
 
 @router.get("/isauthendicated/{telegram_id}")
 def isauthenticated(telegram_id: int):
+    """
+    Проверка на то, существует ли пользователь с таким телеграм
+    Будет изменено в след API версии
+    """
     db = DBConnection(DB_PATH)
     client = db.get_client_by_telegram_id(telegram_id)
     if client:
@@ -27,6 +31,10 @@ def isauthenticated(telegram_id: int):
 
 @router.post("/singup/")
 def create_client(client_data: ClientFullModel):
+    """
+    Cоздание нового клиента в системе и в Remonline
+    В след версии API будет расширено другими значениями
+    """
     remoline_client = CRM.find_or_create_client(client_data.phone, f"{client_data.name} {client_data.last_name}")
     print(client_data)
 
@@ -49,6 +57,10 @@ def create_client(client_data: ClientFullModel):
 
 @router.get("/checkfreelogin/{login}")
 def check_free_login(login: str):
+    """
+    Проверка на то, свободен ли логин
+    В след версии API не будет изменено (вероятно поменяется ендпоинт-url)
+    """
     db = DBConnection(DB_PATH)
     client = db.get_client_by_login(login)
     db.connection.close()
@@ -61,6 +73,10 @@ def check_free_login(login: str):
 
 @router.get("/checkfreephone/{phone}")
 def check_free_phone(phone: str):
+    """
+    Проверка на то, свободен ли телефон
+    В след версии API не будет изменено (вероятно поменяется ендпоинт-url)
+    """
     db = DBConnection(DB_PATH)
     client = db.get_client_by_phone(phone)
     db.connection.close()
@@ -73,6 +89,12 @@ def check_free_phone(phone: str):
 
 @router.post("/signin/")
 def signin(auth_data: SignInModel):
+    """
+    Авторизация клиента в системе
+    В след версии API будет удалено,
+    по скольку авторизация будет происходить при каждом запросе (JWT)
+
+    """
     db = DBConnection(DB_PATH)
     client = db.get_client_by_login(auth_data.login)
     if not client:

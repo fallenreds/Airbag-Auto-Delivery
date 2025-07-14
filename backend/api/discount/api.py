@@ -10,6 +10,10 @@ from services.good.service import GoodsCacheService
 router = APIRouter(tags=['Discounts'])
 @router.get("/alldiscounts/")
 def get_discounts():
+    """
+    Получить все доступные скидки в системе
+    В след версии API будет доступно только администратору системы (вероятно только через бот)
+    """
     db = DBConnection(DB_PATH)
     discounts = db.get_all_discounts()
     discounts.sort(key=lambda x: x['month_payment'])
@@ -17,6 +21,10 @@ def get_discounts():
 
 @router.get("/monthdiscount/{client_id}")
 def get_month_discount(client_id: int, cache_service: GoodsCacheService = Depends(get_goods_cache_service)):
+    """
+    Получить скидку клиента за текущий месяц
+    В след версии API будет доступно только администратору системы (вероятно только через бот)
+    """
     db = DBConnection(DB_PATH)
     money_spent: int = 0
     orders = db.get_monthly_finished_orders(client_id)
@@ -37,6 +45,10 @@ def get_month_discount(client_id: int, cache_service: GoodsCacheService = Depend
 
 @router.get("/curmonthspendmoney/{client_id}")
 def get_money_spend_cur_month(client_id: int, cache_service: GoodsCacheService = Depends(get_goods_cache_service)):
+    """
+    Получить сколько клиент потратил в текущем месяце
+    В след версии API будет доступно только администратору системы (вероятно только через бот)
+    """
     db = DBConnection(DB_PATH)
     orders = db.get_finished_orders_in_current_month(client_id)
     money_spent = get_month_money_spent(orders, cache_service.get_goods())
@@ -47,6 +59,11 @@ def get_money_spend_cur_month(client_id: int, cache_service: GoodsCacheService =
 
 @router.post("/bonus_client_discount/")
 def post_bonus_client_discount(data: CustomDiscount):
+    """
+    Создает искувственную скидку для клиента
+    Добавляет "Количество потраченых денег" на акканут клиента
+    В след версии API будет доступно только администратору системы (вероятно только через бот)
+    """
     db = DBConnection(DB_PATH)
     client = db.get_client_by_id(data.client_id)
     if not client:
@@ -73,7 +90,10 @@ def post_bonus_client_discount(data: CustomDiscount):
 
 @router.post("/discount/")
 def post_discount(discount: DiscountModel):
-    print(discount)
+    """
+    Создает новую скидку в системе
+    В след версии API будет доступно только администратору системы (вероятно только через бот)
+    """
     db = DBConnection(DB_PATH)
     response = db.create_discount(discount.procent, discount.month_payment)
     db.connection.close()
@@ -82,6 +102,10 @@ def post_discount(discount: DiscountModel):
 
 @router.delete("/discount/{discount_id}")
 def delete_discount(discount_id):
+    """
+    Удаляет скидку по id
+    В след версии API будет доступно только администратору системы (вероятно только через бот)
+    """
     db = DBConnection(DB_PATH)
     response = db.delete_discount(discount_id)
     db.connection.close()

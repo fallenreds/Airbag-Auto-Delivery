@@ -7,7 +7,10 @@ from logger import logger
 
 @router.get('/')
 def get_templates()->list[Template]:
-    """Get all templates"""
+    """
+    Получить все шаблоны рассылки
+    В след версии API будет доступно только администратору системы (вероятно только через бот)
+    """
     db = DBConnection(config.DB_PATH)
     response = db.get_templates()
     db.connection.close()
@@ -15,7 +18,10 @@ def get_templates()->list[Template]:
 
 @router.get('/{template_id}', response_model=Template)
 def get_template(template_id:int)->Template|None:
-    """Get template by id"""
+    """
+    Получить шаблон рассылки по id.
+    В след версии API будет доступно только администратору системы (вероятно только через бот)
+    """
     db = DBConnection(config.DB_PATH)
     response = db.get_template(template_id)
     db.connection.close()
@@ -25,7 +31,10 @@ def get_template(template_id:int)->Template|None:
 
 @router.delete('/{template_id}')
 def delete_template(template_id:int)->None:
-    """Delete template by id"""
+    """
+    Удалить шаблон рассылки по id.
+    В след версии API будет доступно только администратору системы (вероятно только через бот)
+    """
     db = DBConnection(config.DB_PATH)
     db.delete_template(template_id)
     db.connection.close()
@@ -33,7 +42,9 @@ def delete_template(template_id:int)->None:
 
 @router.post('/', response_model=Template)
 def create_template(template:BaseTemplate)->Template:
-    """Create new template"""
+    """
+    Создать новый шаблон рассылки.
+    В след версии API будет доступно только администратору системы (вероятно только через бот) """
     db = DBConnection(config.DB_PATH)
     response = db.create_template(template)
     db.connection.close()
