@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Client, ClientUpdate, Order, OrderUpdate, Discount, ShoppingCart, Template, BotVisitor, Good, GoodCategory
+from .models import Client, ClientUpdate, Order, OrderUpdate, Discount, Cart, CartItem, OrderItem, Template, BotVisitor, Good, GoodCategory
 
 class ClientSerializer(serializers.ModelSerializer):
     class Meta:
@@ -11,10 +11,22 @@ class ClientUpdateSerializer(serializers.ModelSerializer):
         model = ClientUpdate
         fields = '__all__'
 
+class OrderItemSerializer(serializers.ModelSerializer):
+    good = serializers.PrimaryKeyRelatedField(queryset=Good.objects.all())
+    class Meta:
+        model = OrderItem
+        fields = ['id', 'good', 'count', 'price']
+
 class OrderSerializer(serializers.ModelSerializer):
+    items = OrderItemSerializer(many=True, read_only=True)
     class Meta:
         model = Order
-        fields = '__all__'
+        fields = [
+            'id', 'remonline_order_id', 'client', 'telegram_id', 'name', 'last_name',
+            'prepayment', 'phone', 'nova_post_address', 'description', 'is_paid',
+            'ttn', 'is_completed', 'date', 'remember_count', 'branch_remember_count',
+            'in_branch_datetime', 'items'
+        ]
 
 class OrderUpdateSerializer(serializers.ModelSerializer):
     class Meta:
@@ -26,10 +38,17 @@ class DiscountSerializer(serializers.ModelSerializer):
         model = Discount
         fields = '__all__'
 
-class ShoppingCartSerializer(serializers.ModelSerializer):
+class CartItemSerializer(serializers.ModelSerializer):
+    good = serializers.PrimaryKeyRelatedField(queryset=Good.objects.all())
     class Meta:
-        model = ShoppingCart
-        fields = '__all__'
+        model = CartItem
+        fields = ['id', 'good', 'count']
+
+class CartSerializer(serializers.ModelSerializer):
+    items = CartItemSerializer(many=True, read_only=True)
+    class Meta:
+        model = Cart
+        fields = ['id', 'client', 'telegram_id', 'created_at', 'updated_at', 'items']
 
 class TemplateSerializer(serializers.ModelSerializer):
     class Meta:

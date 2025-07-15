@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from .models import (
-    Client, ClientUpdate, Order, OrderUpdate, Discount, ShoppingCart, Template, BotVisitor, Good, GoodCategory
+    Client, ClientUpdate, Order, OrderUpdate, Discount, Cart, CartItem, OrderItem, Template, BotVisitor, Good, GoodCategory
 )
 
 @admin.register(Good)
@@ -54,10 +54,20 @@ class DiscountAdmin(admin.ModelAdmin):
     list_display = ('id', 'procent', 'month_payment')
     search_fields = ('procent',)
 
-@admin.register(ShoppingCart)
-class ShoppingCartAdmin(admin.ModelAdmin):
-    list_display = ('id', 'telegram_id', 'good_id', 'count')
-    search_fields = ('telegram_id', 'good_id')
+@admin.register(Cart)
+class CartAdmin(admin.ModelAdmin):
+    list_display = ('id', 'client', 'telegram_id', 'created_at', 'updated_at')
+    search_fields = ('client__login', 'telegram_id')
+
+@admin.register(CartItem)
+class CartItemAdmin(admin.ModelAdmin):
+    list_display = ('id', 'cart', 'good', 'count')
+    search_fields = ('cart__id', 'good__title')
+
+@admin.register(OrderItem)
+class OrderItemAdmin(admin.ModelAdmin):
+    list_display = ('id', 'order', 'good', 'count', 'price')
+    search_fields = ('order__id', 'good__title')
 
 @admin.register(Template)
 class TemplateAdmin(admin.ModelAdmin):

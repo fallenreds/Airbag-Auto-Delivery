@@ -17,6 +17,8 @@ class ClientManager(BaseUserManager):
         if extra_fields.get('is_superuser') is not True:
             raise ValueError('Superuser must have is_superuser=True.')
         return self.create_user(login, password, **extra_fields)
+
+
 class Client(AbstractBaseUser, PermissionsMixin):
     id = models.BigAutoField(primary_key=True)
     id_remonline = models.BigIntegerField()
@@ -62,12 +64,12 @@ class OrderUpdate(models.Model):
     details = models.TextField(blank=True, null=True)
     order = models.CharField(max_length=255, blank=True, null=True)
     order_ref = models.ForeignKey('Order', on_delete=models.SET_NULL, null=True, blank=True, related_name='order_updates')
+
 class Order(models.Model):
     id = models.BigAutoField(primary_key=True)
     remonline_order_id = models.BigIntegerField(blank=True, null=True)
-    client = models.ForeignKey(Client, on_delete=models.SET_NULL, null=True, related_name='orders')
+    client = models.ForeignKey('Client', on_delete=models.SET_NULL, null=True, related_name='orders')
     telegram_id = models.BigIntegerField()
-    goods_list = models.TextField()
     name = models.CharField(max_length=255)
     last_name = models.CharField(max_length=255)
     prepayment = models.BooleanField(default=False)
@@ -77,19 +79,38 @@ class Order(models.Model):
     is_paid = models.BooleanField(default=False)
     ttn = models.TextField(blank=True, null=True)
     is_completed = models.BooleanField(default=False)
-    date = models.DateTimeField()
+    date = models.DateTimeField(auto_now_add=True)
     remember_count = models.IntegerField(default=0)
     branch_remember_count = models.IntegerField(default=0)
     in_branch_datetime = models.DateTimeField(blank=True, null=True)
-class ShoppingCart(models.Model):
-    id = models.BigAutoField(primary_key=True)
-    telegram_id = models.BigIntegerField()
-    good_id = models.BigIntegerField()
-    count = models.IntegerField()
+    # Теперь связь с товарами через OrderItem
+
+class OrderItem(models.Model):
+    order = models.ForeignKey('Order', on_delete=models.CASCADE, related_name='items')
+    good = models.ForeignKey('Good', on_delete=models.SET_NULL, null=True)
+    count = models.PositiveIntegerField()
+    price = models.IntegerField()  # Цена на момент заказа
+
+
+class Cart(models.Model):
+    client = models.OneToOneField('Client', on_delete=models.CASCADE, related_name='cart', null=True, blank=True)
+    telegram_id = models.BigIntegerField(null=True, blank=True, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+class CartItem(models.Model):
+    cart = models.ForeignKey('Cart', on_delete=models.CASCADE, related_name='items')
+    good = models.ForeignKey('Good', on_delete=models.CASCADE)
+    count = models.PositiveIntegerField()
+
+    class Meta:
+        unique_together = ('cart', 'good')
+
 class Template(models.Model):
     id = models.BigAutoField(primary_key=True)
     name = models.CharField(max_length=255)
     text = models.TextField()
+    
 class BotVisitor(models.Model):
     id = models.BigAutoField(primary_key=True)
     telegram_id = models.BigIntegerField(unique=True)
