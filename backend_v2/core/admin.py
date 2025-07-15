@@ -1,8 +1,19 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from .models import (
-    Client, ClientUpdate, Order, OrderUpdate, Discount, ShoppingCart, Template, BotVisitor
+    Client, ClientUpdate, Order, OrderUpdate, Discount, ShoppingCart, Template, BotVisitor, Good, GoodCategory
 )
+
+@admin.register(Good)
+class GoodAdmin(admin.ModelAdmin):
+    list_display = ("id", "title", "price", "residue", "code", "category")
+    search_fields = ("title", "code")
+    list_filter = ("category",)
+
+@admin.register(GoodCategory)
+class GoodCategoryAdmin(admin.ModelAdmin):
+    list_display = ("id", "title", "id_remonline", "parent_id")
+    search_fields = ("title",)
 
 @admin.register(Client)
 class ClientAdmin(UserAdmin):

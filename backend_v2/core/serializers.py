@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Client, ClientUpdate, Order, OrderUpdate, Discount, ShoppingCart, Template, BotVisitor
+from .models import Client, ClientUpdate, Order, OrderUpdate, Discount, ShoppingCart, Template, BotVisitor, Good, GoodCategory
 
 class ClientSerializer(serializers.ModelSerializer):
     class Meta:
@@ -39,4 +39,14 @@ class TemplateSerializer(serializers.ModelSerializer):
 class BotVisitorSerializer(serializers.ModelSerializer):
     class Meta:
         model = BotVisitor
+        fields = '__all__'
+
+class GoodSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Good
+        fields = '__all__'
+
+class GoodCategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = GoodCategory
         fields = '__all__'

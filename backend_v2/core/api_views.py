@@ -1,8 +1,9 @@
 from rest_framework import viewsets
-from .models import Client, ClientUpdate, Order, OrderUpdate, Discount, ShoppingCart, Template, BotVisitor
+from .models import Client, ClientUpdate, Order, OrderUpdate, Discount, ShoppingCart, Template, BotVisitor, Good, GoodCategory
 from .serializers import (
     ClientSerializer, ClientUpdateSerializer, OrderSerializer, OrderUpdateSerializer,
-    DiscountSerializer, ShoppingCartSerializer, TemplateSerializer, BotVisitorSerializer
+    DiscountSerializer, ShoppingCartSerializer, TemplateSerializer, BotVisitorSerializer,
+    GoodSerializer, GoodCategorySerializer
 )
 
 class ClientViewSet(viewsets.ModelViewSet):
@@ -36,3 +37,11 @@ class TemplateViewSet(viewsets.ModelViewSet):
 class BotVisitorViewSet(viewsets.ModelViewSet):
     queryset = BotVisitor.objects.all()
     serializer_class = BotVisitorSerializer
+
+class GoodViewSet(viewsets.ModelViewSet):
+    queryset = Good.objects.all()
+    serializer_class = GoodSerializer
+
+class GoodCategoryViewSet(viewsets.ModelViewSet):
+    queryset = GoodCategory.objects.all()
+    serializer_class = GoodCategorySerializer

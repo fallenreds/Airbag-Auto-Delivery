@@ -95,3 +95,21 @@ class BotVisitor(models.Model):
     telegram_id = models.BigIntegerField(unique=True)
     def __str__(self):
         return str(self.telegram_id)
+
+class Good(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    id_remonline = models.BigIntegerField()
+    title = models.CharField(max_length=255)
+    description = models.TextField()
+    images = models.JSONField()
+    price = models.IntegerField()
+    residue = models.IntegerField()
+    code = models.IntegerField()
+    category = models.ForeignKey('GoodCategory', on_delete=models.SET_NULL, null=True, blank=True, related_name='goods')
+    
+class GoodCategory(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    id_remonline = models.BigIntegerField()
+    title = models.CharField(max_length=255)
+    parent_id = models.BigIntegerField(null=True, blank=True)
+    

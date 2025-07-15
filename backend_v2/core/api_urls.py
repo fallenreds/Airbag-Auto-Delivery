@@ -1,7 +1,8 @@
 from rest_framework.routers import DefaultRouter
 from .api_views import (
     ClientViewSet, ClientUpdateViewSet, OrderViewSet, OrderUpdateViewSet,
-    DiscountViewSet, ShoppingCartViewSet, TemplateViewSet, BotVisitorViewSet
+    DiscountViewSet, ShoppingCartViewSet, TemplateViewSet, BotVisitorViewSet,
+    GoodViewSet, GoodCategoryViewSet
 )
 
 router = DefaultRouter()
@@ -13,5 +14,7 @@ router.register(r'discounts', DiscountViewSet)
 router.register(r'shopping-carts', ShoppingCartViewSet)
 router.register(r'templates', TemplateViewSet)
 router.register(r'bot-visitors', BotVisitorViewSet)
+router.register(r'goods', GoodViewSet)
+router.register(r'good-categories', GoodCategoryViewSet)
 
 urlpatterns = router.urls
