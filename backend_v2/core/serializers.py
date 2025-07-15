@@ -15,7 +15,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
     good = serializers.PrimaryKeyRelatedField(queryset=Good.objects.all())
     class Meta:
         model = OrderItem
-        fields = ['id', 'good', 'count', 'price']
+        fields = ['id', 'good', 'count']
 
 class OrderSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)

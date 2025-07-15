@@ -66,7 +66,7 @@ class CartItemAdmin(admin.ModelAdmin):
 
 @admin.register(OrderItem)
 class OrderItemAdmin(admin.ModelAdmin):
-    list_display = ('id', 'order', 'good', 'count', 'price')
+    list_display = ('id', 'order', 'good', 'count')
     search_fields = ('order__id', 'good__title')
 
 @admin.register(Template)

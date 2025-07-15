@@ -50,14 +50,17 @@ class Client(AbstractBaseUser, PermissionsMixin):
     REQUIRED_FIELDS = []
     def __str__(self):
         return f"{self.name} {self.last_name} ({self.login})"
+
 class ClientUpdate(models.Model):
     id = models.BigAutoField(primary_key=True)
     type = models.CharField(max_length=32)
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='updates')
+
 class Discount(models.Model):
     id = models.BigAutoField(primary_key=True)
     procent = models.IntegerField()
     month_payment = models.IntegerField()
+    
 class OrderUpdate(models.Model):
     id = models.BigAutoField(primary_key=True)
     type = models.CharField(max_length=32)
@@ -89,7 +92,6 @@ class OrderItem(models.Model):
     order = models.ForeignKey('Order', on_delete=models.CASCADE, related_name='items')
     good = models.ForeignKey('Good', on_delete=models.SET_NULL, null=True)
     count = models.PositiveIntegerField()
-    price = models.IntegerField()  # Цена на момент заказа
 
 
 class Cart(models.Model):
@@ -110,7 +112,7 @@ class Template(models.Model):
     id = models.BigAutoField(primary_key=True)
     name = models.CharField(max_length=255)
     text = models.TextField()
-    
+
 class BotVisitor(models.Model):
     id = models.BigAutoField(primary_key=True)
     telegram_id = models.BigIntegerField(unique=True)
@@ -122,10 +124,10 @@ class Good(models.Model):
     id_remonline = models.BigIntegerField()
     title = models.CharField(max_length=255)
     description = models.TextField()
-    images = models.JSONField()
+    images = models.JSONField(null=True, blank=True)
     price = models.IntegerField()
     residue = models.IntegerField()
-    code = models.IntegerField()
+    code = models.CharField(max_length=32)
     category = models.ForeignKey('GoodCategory', on_delete=models.SET_NULL, null=True, blank=True, related_name='goods')
     
 class GoodCategory(models.Model):
