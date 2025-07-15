@@ -24,7 +24,31 @@ schema_view = get_schema_view(
     openapi.Info(
         title="Airbag API",
         default_version='v1',
-        description="API documentation for Airbag Auto Delivery",
+        description="""
+API documentation for Airbag Auto Delivery
+
+# Фильтрация списков (GET)
+
+Во всех эндпоинтах получения списков поддерживается гибкая фильтрация через query-параметры. Доступные возможности:
+
+- **Точное совпадение**: `?field=value`
+- **Поиск по подстроке**: `?name__icontains=иван`
+- **Сравнения**: `?price__gte=10000&date__lte=2024-01-01`
+- **По ForeignKey**: `?category_id=2`
+- **По булевым**: `?is_active=true`
+- **По null**: `?description__isnull=true`
+
+**Примеры:**
+- `/api/good/?title__icontains=айфон&price__gte=10000&residue__gt=0`
+- `/api/client/?name__icontains=Иван&is_active=true`
+- `/api/order/?client_id=5&is_paid=true`
+- `/api/template/?name__icontains=скидка`
+
+**Ограничения:**
+- Фильтрация по JSONField (например, images у Good) не поддерживается и не отображается в Swagger.
+- Для строковых, числовых, булевых и связанных полей поддерживаются все стандартные lookup-суффиксы Django (см. [Django lookups](https://docs.djangoproject.com/en/5.2/ref/models/querysets/#field-lookups)).
+- Максимум 100 результатов за раз (`limit`, `offset`).
+""", 
     ),
     public=True,
     permission_classes=(permissions.AllowAny,),
