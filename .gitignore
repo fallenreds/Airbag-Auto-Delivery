@@ -2,4 +2,5 @@ info.db
 props.json
 backend_v2/.env
 backend_v2/db.sqlite3
+**/__pycache__
 .env
