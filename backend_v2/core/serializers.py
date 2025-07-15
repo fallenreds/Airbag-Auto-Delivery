@@ -13,9 +13,10 @@ class ClientUpdateSerializer(serializers.ModelSerializer):
 
 class OrderItemSerializer(serializers.ModelSerializer):
     good = serializers.PrimaryKeyRelatedField(queryset=Good.objects.all())
+    order = serializers.PrimaryKeyRelatedField(queryset=Order.objects.all())
     class Meta:
         model = OrderItem
-        fields = ['id', 'good', 'count']
+        fields = ['id', 'good', 'count', 'order']
 
 class OrderSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)
@@ -40,9 +41,10 @@ class DiscountSerializer(serializers.ModelSerializer):
 
 class CartItemSerializer(serializers.ModelSerializer):
     good = serializers.PrimaryKeyRelatedField(queryset=Good.objects.all())
+    cart = serializers.PrimaryKeyRelatedField(queryset=Cart.objects.all())
     class Meta:
         model = CartItem
-        fields = ['id', 'good', 'count']
+        fields = ['id', 'good', 'count', 'cart']
 
 class CartSerializer(serializers.ModelSerializer):
     items = CartItemSerializer(many=True, read_only=True)
