@@ -1,4 +1,6 @@
 import json
+import os
+
 import requests
 
 from typing import List, Dict, Optional, Union
@@ -22,6 +24,7 @@ class RemonlineInterface:
             data={"api_key": self.api_key}
         )
         response.raise_for_status()
+
         return response.json()["token"]
 
     def _refresh_token_and_retry(self, method, url: str, **kwargs) -> requests.Response:
@@ -51,7 +54,9 @@ class RemonlineInterface:
         params = {"token": self.token}
 
         if accepted_params_path:
-            with open(accepted_params_path) as file:
+            # Всегда строим путь относительно папки params рядом с этим файлом
+            params_path = os.path.join(os.path.dirname(__file__), 'params', accepted_params_path)
+            with open(params_path) as file:
                 optional = json.load(file)
                 for key, value in kwargs.items():
                     if key in optional:
@@ -101,7 +106,7 @@ class RemonlineInterface:
             page += 1
             response = self.get_objects(
                 f"warehouse/goods/{warehouse_id}",
-                accepted_params_path="RestAPI/params/goods_params.json",
+                accepted_params_path="goods_params.json",
                 page=page
             )
             goods.extend(response.get("data", []))
@@ -113,14 +118,14 @@ class RemonlineInterface:
         """Возвращает список всех клиентов"""
         return self.get_objects(
             "clients/",
-            accepted_params_path="RestAPI/params/clients_params.json"
+            accepted_params_path="params/clients_params.json"
         ).get("data", [])
 
     def create_client(self, name: str, phone: str) -> dict:
         """Создает нового клиента по имени и телефону"""
         return self.post_objects(
             "clients/",
-            accepted_params_path="RestAPI/params/new_client.json",
+            accepted_params_path="new_client.json",
             name=name,
             phone=phone
         )
@@ -129,7 +134,7 @@ class RemonlineInterface:
         """Ищет клиента по телефону или создает нового, если не найден"""
         existing = self.get_objects(
             "clients/",
-            accepted_params_path="RestAPI/params/clients_params.json",
+            accepted_params_path="params/clients_params.json",
             phones=phone
         )
         if existing["data"]:
@@ -137,7 +142,7 @@ class RemonlineInterface:
         self.create_client(name=name, phone=phone)
         new_client = self.get_objects(
             "clients/",
-            accepted_params_path="RestAPI/params/clients_params.json",
+            accepted_params_path="params/clients_params.json",
             phones=phone
         )
         return new_client["data"][0]
@@ -150,7 +155,7 @@ class RemonlineInterface:
             page += 1
             response = self.get_objects(
                 "order/",
-                accepted_params_path="RestAPI/params/order_params.json",
+                accepted_params_path="order_params.json",
                 page=page
             )
             orders.extend(response.get("data", []))
@@ -162,7 +167,7 @@ class RemonlineInterface:
         """Создает новый заказ"""
         return self.post_objects(
             "order/",
-            accepted_params_path="RestAPI/params/new_order.json",
+            accepted_params_path="new_order.json",
             branch_id=branch_id,
             order_type=order_type,
             client_id=client_id,
@@ -173,7 +178,7 @@ class RemonlineInterface:
         """Обновляет статус заказа"""
         return self.post_objects(
             "order/status/",
-            accepted_params_path="RestAPI/params/update_status.json",
+            accepted_params_path="update_status.json",
             order_id=order_id,
             status_id=status_id
         )
