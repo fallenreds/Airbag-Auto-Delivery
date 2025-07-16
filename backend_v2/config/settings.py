@@ -37,7 +37,7 @@ BRANCH_PROD = os.getenv('BRANCH_PROD')
 PRICE_ID_PROD = os.getenv('PRICE_ID_PROD')
 BONUS_ID = os.getenv('BONUS_ID')
 DELETE_ORDER_STATUS_ID = os.getenv('DELETE_ORDER_STATUS_ID') #Used for merge orders
-
+CATEGORIES_IGNORE_IDS = os.getenv('CATEGORIES_IGNORE_IDS', '').split(',') if os.getenv('CATEGORIES_IGNORE_IDS') else []
 # DRF pagination and filter settings
 REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'core.pagination.CustomLimitOffsetPagination',

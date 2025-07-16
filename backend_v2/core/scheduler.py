@@ -2,7 +2,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 import logging
 
-from config.settings import REMONLINE_API_KEY, PRICE_ID_PROD, BONUS_ID
+from config.settings import REMONLINE_API_KEY, PRICE_ID_PROD, BONUS_ID, CATEGORIES_IGNORE_IDS
 from core.services.remonline.api import RemonlineInterface
 
 logger = logging.getLogger(__name__)
@@ -15,8 +15,6 @@ def sync_goods():
 
     remonline = RemonlineInterface(REMONLINE_API_KEY)
     goods_data = remonline.get_goods(remonline.get_main_warehouse_id())
-    goods_data = [item for item in goods_data if item['id'] != BONUS_ID]
-
     # --- Категории ---
     categories_data = {}
     for item in goods_data:
@@ -65,6 +63,8 @@ def sync_goods():
         cat = item.get('category')
         if cat and 'id' in cat:
             cat_obj = existing_categories.get(cat['id'])
+        if cat.get('id') in CATEGORIES_IGNORE_IDS:
+            continue
         goods_to_create.append(Good(
             id_remonline=item['id'],
             title=item.get('title', ''),
