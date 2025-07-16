@@ -1,5 +1,5 @@
 from rest_framework.routers import DefaultRouter
-from .api_views import (
+from .views import (
     ClientViewSet, ClientUpdateViewSet, OrderViewSet, OrderUpdateViewSet,
     DiscountViewSet, CartViewSet, CartItemViewSet, OrderItemViewSet, TemplateViewSet, BotVisitorViewSet,
     GoodViewSet, GoodCategoryViewSet
