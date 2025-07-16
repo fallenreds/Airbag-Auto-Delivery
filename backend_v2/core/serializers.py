@@ -62,12 +62,13 @@ class BotVisitorSerializer(serializers.ModelSerializer):
         model = BotVisitor
         fields = '__all__'
 
-class GoodSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Good
-        fields = '__all__'
-
 class GoodCategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = GoodCategory
+        fields = '__all__'
+
+class GoodSerializer(serializers.ModelSerializer):
+    category = GoodCategorySerializer()  # вложенный объект
+    class Meta:
+        model = Good
         fields = '__all__'
