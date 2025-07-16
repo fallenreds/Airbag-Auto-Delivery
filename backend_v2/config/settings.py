@@ -31,8 +31,12 @@ DEBUG = os.getenv('DJANGO_DEBUG', 'True') == 'True'
 
 ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', '0.0.0.0,localhost').split(',')
 
-
-# Application definition
+# Remonline  settings
+REMONLINE_API_KEY = os.getenv('REMONLINE_API_KEY')
+BRANCH_PROD = os.getenv('BRANCH_PROD')
+PRICE_ID_PROD = os.getenv('PRICE_ID_PROD')
+BONUS_ID = os.getenv('BONUS_ID')
+DELETE_ORDER_STATUS_ID = os.getenv('DELETE_ORDER_STATUS_ID') #Used for merge orders
 
 # DRF pagination and filter settings
 REST_FRAMEWORK = {
