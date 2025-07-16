@@ -55,43 +55,30 @@ def sync_goods():
 
     # --- Товары ---
     remonline_ids = [item['id'] for item in goods_data]
-    existing_goods = {g.id_remonline: g for g in Good.objects.filter(id_remonline__in=remonline_ids)}
-    goods_to_update = []
+    logger.info(f"Remonline goods count: {len(goods_data)}")
+    logger.info(f"Remonline IDs: {remonline_ids}")
+    # Полностью очищаем таблицу Good
+    Good.objects.all().delete()
     goods_to_create = []
-
     for item in goods_data:
-        good = existing_goods.get(item['id'])
         cat_obj = None
         cat = item.get('category')
         if cat and 'id' in cat:
             cat_obj = existing_categories.get(cat['id'])
-        defaults = {
-            'title': item.get('title', ''),
-            'description': item.get('description', ''),
-            'images': item.get('image', []),
-            'price': int(item.get('price', {})[PRICE_ID_PROD]),
-            'residue': int(item.get('residue', 0)),
-            'code': item.get('code', ''),
-            'category': cat_obj,
-        }
-        if good:
-            changed = False
-            for k, v in defaults.items():
-                if getattr(good, k) != v:
-                    setattr(good, k, v)
-                    changed = True
-            if changed:
-                goods_to_update.append(good)
-        else:
-            goods_to_create.append(Good(id_remonline=item['id'], **defaults))
-
+        goods_to_create.append(Good(
+            id_remonline=item['id'],
+            title=item.get('title', ''),
+            description=item.get('description', ''),
+            images=item.get('image', []),
+            price=int(item.get('price', {})[PRICE_ID_PROD]),
+            residue=int(item.get('residue', 0)),
+            code=item.get('code', ''),
+            category=cat_obj,
+        ))
     with transaction.atomic():
         if goods_to_create:
             Good.objects.bulk_create(goods_to_create)
-        if goods_to_update:
-            Good.objects.bulk_update(goods_to_update, ['title', 'description', 'images', 'price', 'residue', 'code', 'category'])
-
-    logger.info(f"Goods sync complete: updated {len(goods_to_update)}, created {len(goods_to_create)}")
+    logger.info(f"Goods sync complete: created {len(goods_to_create)}")
 
 
 def start_scheduler():
