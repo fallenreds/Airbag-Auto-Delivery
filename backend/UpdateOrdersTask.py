@@ -78,6 +78,7 @@ def nova_post_update_status(orders, db: DBConnection):
     if nova_post_tracking_data:
         finished_ttn = list(
             filter(lambda x: int(x["StatusCode"]) in [nova_post_money_transfer_status_code, nova_post_finish_status_code], nova_post_tracking_data))
+
         for element in finished_ttn:
             order = db.find_order_by_ttn(element['Number'])
             if order:
@@ -107,12 +108,13 @@ def update_order_task():
 
             CRM = RemonlineAPI(REMONLINE_API_KEY_PROD)
 
-            active_orders: list[dict] = db.get_active_orders()
+            active_orders: list[dict] = filter(lambda order: order['is_completed'] == 0, db.get_active_orders())
             ids_remonline: list = [order['remonline_order_id'] for order in active_orders]
             # remonline_orders = CRM.get_orders(ids=ids_remonline)
             remonline_orders: list[dict] = CRM.get_all_orders(ids=ids_remonline)
 
             for order in active_orders:
+
                 ttn = None
                 filtered_remonline_order = list(
                     filter(lambda rm_order: rm_order['id'] == order['remonline_order_id'], remonline_orders))
@@ -137,7 +139,7 @@ def update_order_task():
                     # print(f"Order {order['id']}  has been deleted")
                     pass
 
-            active_orders: list[dict] = db.get_active_orders()
+            # active_orders: list[dict] = db.get_active_orders()
             nova_post_update_status(active_orders, db)
             print("Status 200. Nova_post_update_status process")
 
