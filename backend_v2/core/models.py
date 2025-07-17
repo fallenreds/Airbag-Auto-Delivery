@@ -1,13 +1,16 @@
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
+
 class ClientManager(BaseUserManager):
     def create_user(self, login, password=None, **extra_fields):
         if not login:
             raise ValueError('Login must be set')
+        extra_fields.setdefault('is_active', True)
         user = self.model(login=login, **extra_fields)
         user.set_password(password)
         user.save(using=self._db)
         return user
+
     def create_superuser(self, login, password=None, **extra_fields):
         extra_fields.setdefault('is_staff', True)
         extra_fields.setdefault('is_superuser', True)
@@ -21,8 +24,8 @@ class ClientManager(BaseUserManager):
 
 class Client(AbstractBaseUser, PermissionsMixin):
     id = models.BigAutoField(primary_key=True)
-    id_remonline = models.BigIntegerField()
-    telegram_id = models.BigIntegerField()
+    id_remonline = models.BigIntegerField(null=True, blank=True)
+    telegram_id = models.BigIntegerField(null=True, blank=True)
     name = models.CharField(max_length=255)
     last_name = models.CharField(max_length=255)
     login = models.CharField(max_length=128, unique=True)

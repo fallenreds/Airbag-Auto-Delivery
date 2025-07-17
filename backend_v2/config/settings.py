@@ -38,16 +38,31 @@ PRICE_ID_PROD = os.getenv('PRICE_ID_PROD')
 BONUS_ID = os.getenv('BONUS_ID')
 DELETE_ORDER_STATUS_ID = os.getenv('DELETE_ORDER_STATUS_ID') #Used for merge orders
 CATEGORIES_IGNORE_IDS = os.getenv('CATEGORIES_IGNORE_IDS', '').split(',') if os.getenv('CATEGORIES_IGNORE_IDS') else []
+
 # DRF pagination and filter settings
 REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'core.pagination.CustomLimitOffsetPagination',
-    'PAGE_SIZE': 100,
-    'DEFAULT_FILTER_BACKENDS': [
+    'PAGE_SIZE': 20,
+    'DEFAULT_FILTER_BACKENDS': (
         'django_filters.rest_framework.DjangoFilterBackend',
         'core.filters.UniversalFieldFilterBackend',
-    ],
+    ),
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
 }
 
+SWAGGER_SETTINGS = {
+    'SECURITY_DEFINITIONS': {
+        'Bearer': {
+            'type': 'apiKey',
+            'name': 'Authorization',
+            'in': 'header',
+            'description': 'JWT Authorization header using the Bearer scheme. Example: "Bearer {token}"',
+        }
+    },
+    'USE_SESSION_AUTH': False,
+}
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -145,6 +160,9 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Кастомная модель пользователя
+AUTH_USER_MODEL = 'core.Client'
 
 import logging
 

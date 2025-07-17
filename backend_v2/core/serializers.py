@@ -1,5 +1,15 @@
 from rest_framework import serializers
 from .models import Client, ClientUpdate, Order, OrderUpdate, Discount, Cart, CartItem, OrderItem, Template, BotVisitor, Good, GoodCategory
+from django.contrib.auth.hashers import make_password
+
+class ClientRegisterSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True)
+    class Meta:
+        model = Client
+        fields = ['login', 'password', 'name', 'last_name', 'email', 'phone']
+    def create(self, validated_data):
+        # Всегда создаём через менеджер, пользователь сразу активен
+        return Client.objects.create_user(**validated_data)
 
 class ClientSerializer(serializers.ModelSerializer):
     class Meta:

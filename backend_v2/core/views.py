@@ -2,12 +2,18 @@ from rest_framework import viewsets
 from django_filters import rest_framework as filters
 from rest_framework import viewsets
 from django_filters import rest_framework as filters
+from rest_framework.permissions import IsAuthenticated
+from .permissions import IsAdminUserCustom
+
 from .models import Client, ClientUpdate, Order, OrderUpdate, Discount, Cart, CartItem, OrderItem, Template, BotVisitor, Good, GoodCategory
 from .serializers import (
     ClientSerializer, ClientUpdateSerializer, OrderSerializer, OrderUpdateSerializer,
     DiscountSerializer, CartSerializer, CartItemSerializer, OrderItemSerializer, TemplateSerializer, BotVisitorSerializer,
-    GoodSerializer, GoodCategorySerializer
+    GoodSerializer, GoodCategorySerializer, ClientRegisterSerializer
 )
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView, TokenVerifyView
+from rest_framework import generics, permissions
+
 
 def generate_filterset_for_model(model):
     from django.db.models import JSONField
@@ -35,6 +41,7 @@ class OrderViewSet(viewsets.ModelViewSet):
     queryset = Order.objects.all()
     serializer_class = OrderSerializer
     filterset_class = generate_filterset_for_model(Order)
+    permission_classes = [IsAuthenticated]
 
 class OrderUpdateViewSet(viewsets.ModelViewSet):
     queryset = OrderUpdate.objects.all()
@@ -45,6 +52,7 @@ class DiscountViewSet(viewsets.ModelViewSet):
     queryset = Discount.objects.all()
     serializer_class = DiscountSerializer
     filterset_class = generate_filterset_for_model(Discount)
+    permission_classes = [IsAdminUserCustom]
 
 class CartViewSet(viewsets.ModelViewSet):
     queryset = Cart.objects.all()
