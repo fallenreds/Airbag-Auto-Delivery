@@ -82,8 +82,9 @@ def sync_goods():
 
 
 def start_scheduler():
+    logger.info("Scheduler started!")
+
     scheduler = BackgroundScheduler()
     scheduler.add_job(sync_goods, CronTrigger(minute='*'))
     scheduler.start()
-    logger.info("Scheduler started!")
     return scheduler

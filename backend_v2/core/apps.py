@@ -8,5 +8,7 @@ class CoreConfig(AppConfig):
 
     def ready(self):
         import sys
-        if 'runserver' in sys.argv or 'gunicorn' in sys.argv or 'uwsgi' in sys.argv:
+
+        runner: str = sys.argv[0]
+        if 'runserver' in runner or 'gunicorn' in runner or 'uwsgi' in runner:
             start_scheduler()
