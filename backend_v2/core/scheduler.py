@@ -55,9 +55,13 @@ def sync_goods():
     remonline_ids = [item['id'] for item in goods_data]
     logger.info(f"Remonline goods count: {len(goods_data)}")
     logger.info(f"Remonline IDs: {remonline_ids}")
-    # Полностью очищаем таблицу Good
-    Good.objects.all().delete()
+    
+    # Получаем существующие товары по remonline_id
+    existing_goods = {g.id_remonline: g for g in Good.objects.filter(id_remonline__in=remonline_ids)}
+    
     goods_to_create = []
+    goods_to_update = []
+    
     for item in goods_data:
         cat_obj = None
         cat = item.get('category')
@@ -65,20 +69,42 @@ def sync_goods():
             cat_obj = existing_categories.get(cat['id'])
         if cat.get('id') in CATEGORIES_IGNORE_IDS:
             continue
-        goods_to_create.append(Good(
-            id_remonline=item['id'],
-            title=item.get('title', ''),
-            description=item.get('description', ''),
-            images=item.get('image', []),
-            price=int(item.get('price', {})[PRICE_ID_PROD]),
-            residue=int(item.get('residue', 0)),
-            code=item.get('code', ''),
-            category=cat_obj,
-        ))
+            
+        # Подготавливаем данные для товара
+        goods_data_dict = {
+            'title': item.get('title', ''),
+            'description': item.get('description', ''),
+            'images': item.get('image', []),
+            'price': int(item.get('price', {})[PRICE_ID_PROD]),
+            'residue': int(item.get('residue', 0)),
+            'code': item.get('code', ''),
+            'category': cat_obj,
+        }
+        
+        remonline_id = item['id']
+        existing_good = existing_goods.get(remonline_id)
+        
+        if existing_good:
+            # Обновляем существующий товар
+            changed = False
+            for field, value in goods_data_dict.items():
+                if getattr(existing_good, field) != value:
+                    setattr(existing_good, field, value)
+                    changed = True
+            if changed:
+                goods_to_update.append(existing_good)
+        else:
+            # Создаем новый товар
+            new_good = Good(id_remonline=remonline_id, **goods_data_dict)
+            goods_to_create.append(new_good)
+    
     with transaction.atomic():
         if goods_to_create:
             Good.objects.bulk_create(goods_to_create)
-    logger.info(f"Goods sync complete: created {len(goods_to_create)}")
+        if goods_to_update:
+            Good.objects.bulk_update(goods_to_update, ['title', 'description', 'images', 'price', 'residue', 'code', 'category'])
+    
+    logger.info(f"Goods sync complete: created {len(goods_to_create)}, updated {len(goods_to_update)}")
 
 
 def start_scheduler():
