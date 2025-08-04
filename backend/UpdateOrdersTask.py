@@ -2,6 +2,7 @@ from datetime import datetime
 
 from RestAPI.EngineApi import ttn_tracking
 from RestAPI.RemonlineAPI import RemonlineAPI
+from logger import logger
 from engine import _new_remonline_order
 from config import REMONLINE_API_KEY_PROD
 from DB import DBConnection
@@ -145,7 +146,7 @@ def update_order_task():
 
 
         except Exception as error:
-            print(f"ERROR: {error}")
+            logger.error(error)
 
         finally:
             db.connection.close()
