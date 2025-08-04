@@ -1,9 +1,7 @@
 import json
-
-import loguru
-from requests.exceptions import ConnectTimeout
 from config import PRICE_ID_PROD, DEFAULT_BRANCH_PROD
 from DB import DBConnection
+from logger import logger
 
 
 def find_good(goods, good_id):
@@ -27,7 +25,7 @@ def get_user_discount(client_id: int, goods, db: DBConnection):
         return client_discount
 
     except Exception as error:
-        loguru.logger.error(error)
+        logger.error(error)
         return {'procent': 0}  # zero discount_percent
 
 def build_order_suma(order: dict, goods: dict):
@@ -112,4 +110,7 @@ def get_month_money_spent_by_client_id(client_id, all_goods):
     db = DBConnection("info.db")
     orders = db.get_monthly_finished_orders(client_id)
     db.connection.close()
+    ds = get_month_money_spent(orders, all_goods)
+    if int(client_id) == 1058:
+        logger.info(f"Discount {ds}")
     return get_month_money_spent(orders, all_goods)
