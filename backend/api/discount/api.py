@@ -4,6 +4,7 @@ from DB import DBConnection
 from config import DB_PATH, BONUS_ID
 from engine import get_month_money_spent, find_discount
 from loader import get_goods_cache_service
+from logger import logger
 from models import DiscountModel, CustomDiscount
 from services.good.service import GoodsCacheService
 
@@ -33,10 +34,9 @@ def get_month_discount(client_id: int, cache_service: GoodsCacheService = Depend
         return {"success": False, "data": "No orders", "money_spent": money_spent}
 
     money_spent = get_month_money_spent(orders, cache_service.get_goods())
-    print(money_spent)
     discounts = db.get_all_discounts()
     client_discount = find_discount(money_spent, discounts)
-    print("Потрачено:", money_spent)
+    logger.info(f"Потрачено пользователем {client_id}:", money_spent)
     if not client_discount:
         return {"success": False, "data": "No discount", "money_spent": money_spent}
 
