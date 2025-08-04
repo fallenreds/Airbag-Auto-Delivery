@@ -3,6 +3,8 @@ from requests import HTTPError
 import requests
 import json
 
+from logger import logger
+
 
 class BaseRemonline:
 
@@ -88,6 +90,7 @@ class BaseRemonline:
             with open(accepted_params_path) as file:
                 optional = json.load(file)
         data = self.set_params(required, optional, **kwargs)
+
         response = self.get(url=request_url, params=data)
         if str(response.status_code) != "200":
             raise HTTPError(response=response)
@@ -207,6 +210,12 @@ class RemonlineAPI(BaseRemonline):
     def get_orders(self, **kwargs):
         api_path = "order/"
         request_url = f"{self.domain}{api_path}"
+
+        with open("RestAPI/params/order_params.json") as file:
+            optional = json.load(file)
+            required = {"token": self.token}
+            data = self.set_params(required, optional, **kwargs)
+            logger.info(data)
         response =  self.get_objects(api_path=api_path, request_url=request_url,accepted_params_path="RestAPI/params/order_params.json", **kwargs)
         return response
 
