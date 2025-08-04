@@ -107,6 +107,7 @@ def get_month_money_spent(orders, all_goods):
 
 
 def get_month_money_spent_by_client_id(client_id, all_goods):
+    logger.info(f"Discount here")
     db = DBConnection("info.db")
     orders = db.get_monthly_finished_orders(client_id)
     db.connection.close()
