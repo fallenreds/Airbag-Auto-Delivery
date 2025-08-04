@@ -109,9 +109,8 @@ def update_order_task():
 
             CRM = RemonlineAPI(REMONLINE_API_KEY_PROD)
 
-            active_orders: list[dict] = filter(lambda order: order['is_completed'] == 0, db.get_active_orders())
+            active_orders: list[dict] = list(filter(lambda order: order['is_completed'] == 0, db.get_active_orders()))
             ids_remonline: list = [order['remonline_order_id'] for order in active_orders]
-            # remonline_orders = CRM.get_orders(ids=ids_remonline)
             remonline_orders: list[dict] = CRM.get_all_orders(ids=ids_remonline)
 
             for order in active_orders:
@@ -136,13 +135,10 @@ def update_order_task():
 
 
                 elif not filtered_remonline_order and order['remonline_order_id']:
-                    # db.post_order_updates("deleted", order['id'])
-                    # print(f"Order {order['id']}  has been deleted")
                     pass
 
-            # active_orders: list[dict] = db.get_active_orders()
             nova_post_update_status(active_orders, db)
-            print("Status 200. Nova_post_update_status process")
+            logger.info("Status 200. Nova_post_update_status process")
 
 
         except Exception as error:
