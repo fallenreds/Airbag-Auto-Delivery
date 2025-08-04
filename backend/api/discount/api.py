@@ -36,7 +36,7 @@ def get_month_discount(client_id: int, cache_service: GoodsCacheService = Depend
     money_spent = get_month_money_spent(orders, cache_service.get_goods())
     discounts = db.get_all_discounts()
     client_discount = find_discount(money_spent, discounts)
-    logger.info(f"Потрачено пользователем {client_id}:", money_spent)
+    logger.info(f"Потрачено пользователем {client_id}: {money_spent}")
     if not client_discount:
         return {"success": False, "data": "No discount", "money_spent": money_spent}
 
