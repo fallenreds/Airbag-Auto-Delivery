@@ -110,6 +110,7 @@ def update_order_task():
             CRM = RemonlineAPI(REMONLINE_API_KEY_PROD)
 
             active_orders: list[dict] = filter(lambda order: order['is_completed'] == 0, db.get_active_orders())
+
             ids_remonline: list = [order['remonline_order_id'] for order in active_orders]
             # remonline_orders = CRM.get_orders(ids=ids_remonline)
             remonline_orders: list[dict] = CRM.get_all_orders(ids=ids_remonline)
@@ -139,7 +140,7 @@ def update_order_task():
                     # db.post_order_updates("deleted", order['id'])
                     # print(f"Order {order['id']}  has been deleted")
                     pass
-
+            logger.info(f"to nova upd {len(list(active_orders))}")
             # active_orders: list[dict] = db.get_active_orders()
             nova_post_update_status(active_orders, db)
             print("Status 200. Nova_post_update_status process")
