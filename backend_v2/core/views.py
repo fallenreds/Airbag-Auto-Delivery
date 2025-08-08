@@ -1,6 +1,6 @@
 from django_filters import rest_framework as filters
 from rest_framework import viewsets
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -78,6 +78,11 @@ class DiscountViewSet(viewsets.ModelViewSet):
     serializer_class = DiscountSerializer
     filterset_class = generate_filterset_for_model(Discount)
     permission_classes = [IsAdminUserCustom]
+
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return [AllowAny()]
+        return [IsAdminUserCustom()]
 
 
 class CartViewSet(viewsets.ModelViewSet):
