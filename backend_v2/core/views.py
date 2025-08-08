@@ -3,13 +3,15 @@ from django_filters import rest_framework as filters
 from rest_framework import viewsets
 from django_filters import rest_framework as filters
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
 from .permissions import IsAdminUserCustom
 
 from .models import Client, ClientUpdate, Order, OrderUpdate, Discount, Cart, CartItem, OrderItem, Template, BotVisitor, Good, GoodCategory
 from .serializers import (
     ClientSerializer, ClientUpdateSerializer, OrderSerializer, OrderUpdateSerializer,
     DiscountSerializer, CartSerializer, CartItemSerializer, OrderItemSerializer, TemplateSerializer, BotVisitorSerializer,
-    GoodSerializer, GoodCategorySerializer, ClientRegisterSerializer
+    GoodSerializer, GoodCategorySerializer, ClientRegisterSerializer, ClientProfileSerializer
 )
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView, TokenVerifyView
 from rest_framework import generics, permissions
@@ -88,4 +90,13 @@ class GoodCategoryViewSet(viewsets.ModelViewSet):
     queryset = GoodCategory.objects.all()
     serializer_class = GoodCategorySerializer
     filterset_class = generate_filterset_for_model(GoodCategory)
+
+
+class MeView(APIView):
+    """Endpoint to retrieve authenticated user's profile information"""
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        serializer = ClientProfileSerializer(request.user)
+        return Response(serializer.data)
 

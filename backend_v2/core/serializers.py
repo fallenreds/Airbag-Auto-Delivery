@@ -136,3 +136,24 @@ class GoodSerializer(serializers.ModelSerializer):
     class Meta:
         model = Good
         fields = "__all__"
+
+
+class ClientProfileSerializer(serializers.ModelSerializer):
+    """Serializer for the /me endpoint to display user profile information"""
+    
+    class Meta:
+        model = Client
+        fields = [
+            'id',
+            'id_remonline',
+            'telegram_id',
+            'name',
+            'last_name',
+            'email',
+            'phone',
+            'is_staff',
+            'is_superuser',
+            'groups',
+            'user_permissions'
+        ]
+        read_only_fields = fields  # All fields are read-only for profile view

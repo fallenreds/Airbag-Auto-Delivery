@@ -2,7 +2,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     ClientViewSet, ClientUpdateViewSet, OrderViewSet, OrderUpdateViewSet,
     DiscountViewSet, CartViewSet, CartItemViewSet, OrderItemViewSet, TemplateViewSet, BotVisitorViewSet,
-    GoodViewSet, GoodCategoryViewSet
+    GoodViewSet, GoodCategoryViewSet, MeView
 )
 
 router = DefaultRouter()
@@ -27,4 +27,5 @@ urlpatterns = router.urls + [
     path('auth/login/', MyTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('auth/token/verify/', TokenVerifyView.as_view(), name='token_verify'),
+    path('auth/me/', MeView.as_view(), name='me'),
 ]
