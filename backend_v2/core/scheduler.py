@@ -1,36 +1,40 @@
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
 import logging
 
-from config.settings import REMONLINE_API_KEY, PRICE_ID_PROD, BONUS_ID, CATEGORIES_IGNORE_IDS
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
+
+from config.settings import CATEGORIES_IGNORE_IDS, PRICE_ID_PROD, REMONLINE_API_KEY
 from core.services.remonline.api import RemonlineInterface
 
 logger = logging.getLogger(__name__)
 
 
 def sync_goods():
-    from core.models import Good, GoodCategory
     from django.db import transaction
-    from config.settings import BONUS_ID
+
+    from core.models import Good, GoodCategory
 
     remonline = RemonlineInterface(REMONLINE_API_KEY)
     goods_data = remonline.get_goods(remonline.get_main_warehouse_id())
     # --- Категории ---
     categories_data = {}
     for item in goods_data:
-        cat = item.get('category')
-        if cat and 'id' in cat:
-            categories_data[cat['id']] = cat
+        cat = item.get("category")
+        if cat and "id" in cat:
+            categories_data[cat["id"]] = cat
     category_ids = list(categories_data.keys())
 
-    existing_categories = {c.id_remonline: c for c in GoodCategory.objects.filter(id_remonline__in=category_ids)}
+    existing_categories = {
+        c.id_remonline: c
+        for c in GoodCategory.objects.filter(id_remonline__in=category_ids)
+    }
     categories_to_update = []
     categories_to_create = []
     for cat_id, cat in categories_data.items():
         obj = existing_categories.get(cat_id)
         defaults = {
-            'title': cat.get('title', ''),
-            'parent_id': cat.get('parent_id'),
+            "title": cat.get("title", ""),
+            "parent_id": cat.get("parent_id"),
         }
         if obj:
             changed = False
@@ -49,41 +53,45 @@ def sync_goods():
         if categories_to_create:
             GoodCategory.objects.bulk_create(categories_to_create)
         if categories_to_update:
-            GoodCategory.objects.bulk_update(categories_to_update, ['title', 'parent_id'])
+            GoodCategory.objects.bulk_update(
+                categories_to_update, ["title", "parent_id"]
+            )
 
     # --- Товары ---
-    remonline_ids = [item['id'] for item in goods_data]
+    remonline_ids = [item["id"] for item in goods_data]
     logger.info(f"Remonline goods count: {len(goods_data)}")
     logger.info(f"Remonline IDs: {remonline_ids}")
-    
+
     # Получаем существующие товары по remonline_id
-    existing_goods = {g.id_remonline: g for g in Good.objects.filter(id_remonline__in=remonline_ids)}
-    
+    existing_goods = {
+        g.id_remonline: g for g in Good.objects.filter(id_remonline__in=remonline_ids)
+    }
+
     goods_to_create = []
     goods_to_update = []
-    
+
     for item in goods_data:
         cat_obj = None
-        cat = item.get('category')
-        if cat and 'id' in cat:
-            cat_obj = existing_categories.get(cat['id'])
-        if cat.get('id') in CATEGORIES_IGNORE_IDS:
+        cat = item.get("category")
+        if cat and "id" in cat:
+            cat_obj = existing_categories.get(cat["id"])
+        if cat.get("id") in CATEGORIES_IGNORE_IDS:
             continue
-            
+
         # Подготавливаем данные для товара
         goods_data_dict = {
-            'title': item.get('title', ''),
-            'description': item.get('description', ''),
-            'images': item.get('image', []),
-            'price': int(item.get('price', {})[PRICE_ID_PROD]),
-            'residue': int(item.get('residue', 0)),
-            'code': item.get('code', ''),
-            'category': cat_obj,
+            "title": item.get("title", ""),
+            "description": item.get("description", ""),
+            "images": item.get("image", []),
+            "price": int(item.get("price", {})[PRICE_ID_PROD]),
+            "residue": int(item.get("residue", 0)),
+            "code": item.get("code", ""),
+            "category": cat_obj,
         }
-        
-        remonline_id = item['id']
+
+        remonline_id = item["id"]
         existing_good = existing_goods.get(remonline_id)
-        
+
         if existing_good:
             # Обновляем существующий товар
             changed = False
@@ -97,20 +105,33 @@ def sync_goods():
             # Создаем новый товар
             new_good = Good(id_remonline=remonline_id, **goods_data_dict)
             goods_to_create.append(new_good)
-    
+
     with transaction.atomic():
         if goods_to_create:
             Good.objects.bulk_create(goods_to_create)
         if goods_to_update:
-            Good.objects.bulk_update(goods_to_update, ['title', 'description', 'images', 'price', 'residue', 'code', 'category'])
-    
-    logger.info(f"Goods sync complete: created {len(goods_to_create)}, updated {len(goods_to_update)}")
+            Good.objects.bulk_update(
+                goods_to_update,
+                [
+                    "title",
+                    "description",
+                    "images",
+                    "price",
+                    "residue",
+                    "code",
+                    "category",
+                ],
+            )
+
+    logger.info(
+        f"Goods sync complete: created {len(goods_to_create)}, updated {len(goods_to_update)}"
+    )
 
 
 def start_scheduler():
     logger.info("Scheduler started!")
 
     scheduler = BackgroundScheduler()
-    scheduler.add_job(sync_goods, CronTrigger(minute='*'))
+    scheduler.add_job(sync_goods, CronTrigger(minute="*"))
     scheduler.start()
     return scheduler

@@ -3,7 +3,19 @@ from django.contrib.auth.models import (
     BaseUserManager,
     PermissionsMixin,
 )
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+
+
+class CustomPercentageField(models.IntegerField):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.validators.append(
+            MinValueValidator(0, message="Value must be greater than or equal to 0")
+        )
+        self.validators.append(
+            MaxValueValidator(100, message="Value must be less than or equal to 100")
+        )
 
 
 class ClientManager(BaseUserManager):
@@ -69,7 +81,7 @@ class ClientUpdate(models.Model):
 
 class Discount(models.Model):
     id = models.BigAutoField(primary_key=True)
-    procent = models.IntegerField()
+    percentage = CustomPercentageField()
     month_payment = models.IntegerField()
 
 

@@ -1,5 +1,4 @@
 from rest_framework import serializers
-from .validators import validate_email
 
 from .models import (
     BotVisitor,
@@ -15,6 +14,7 @@ from .models import (
     OrderUpdate,
     Template,
 )
+from .validators import validate_email
 
 
 class ClientRegisterSerializer(serializers.ModelSerializer):
@@ -36,7 +36,7 @@ class ClientSerializer(serializers.ModelSerializer):
     class Meta:
         model = Client
         fields = "__all__"
-        
+
     def validate_email(self, value):
         return validate_email(value)
 
@@ -90,6 +90,15 @@ class OrderUpdateSerializer(serializers.ModelSerializer):
 
 
 class DiscountSerializer(serializers.ModelSerializer):
+    percentage = serializers.IntegerField(
+        min_value=0,
+        max_value=100,
+        error_messages={
+            "min_value": "Percentage must be greater than or equal to 0",
+            "max_value": "Percentage must be less than or equal to 100",
+        },
+    )
+
     class Meta:
         model = Discount
         fields = "__all__"
@@ -140,20 +149,20 @@ class GoodSerializer(serializers.ModelSerializer):
 
 class ClientProfileSerializer(serializers.ModelSerializer):
     """Serializer for the /me endpoint to display user profile information"""
-    
+
     class Meta:
         model = Client
         fields = [
-            'id',
-            'id_remonline',
-            'telegram_id',
-            'name',
-            'last_name',
-            'email',
-            'phone',
-            'is_staff',
-            'is_superuser',
-            'groups',
-            'user_permissions'
+            "id",
+            "id_remonline",
+            "telegram_id",
+            "name",
+            "last_name",
+            "email",
+            "phone",
+            "is_staff",
+            "is_superuser",
+            "groups",
+            "user_permissions",
         ]
         read_only_fields = fields  # All fields are read-only for profile view

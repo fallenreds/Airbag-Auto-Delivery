@@ -1,3 +1,4 @@
+from django import forms
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 
@@ -131,10 +132,23 @@ class OrderUpdateAdmin(admin.ModelAdmin):
     search_fields = ("type", "order")
 
 
+class DiscountAdminForm(forms.ModelForm):
+    class Meta:
+        model = Discount
+        fields = "__all__"
+
+    def clean_percentage(self):
+        percentage = self.cleaned_data["percentage"]
+        if percentage < 0 or percentage > 100:
+            raise forms.ValidationError("Percentage must be between 0 and 100")
+        return percentage
+
+
 @admin.register(Discount)
 class DiscountAdmin(admin.ModelAdmin):
-    list_display = ("id", "procent", "month_payment")
-    search_fields = ("procent",)
+    form = DiscountAdminForm
+    list_display = ("id", "percentage", "month_payment")
+    search_fields = ("percentage",)
 
 
 @admin.register(Cart)
