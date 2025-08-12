@@ -1,4 +1,6 @@
 from django_filters import rest_framework as filters
+from drf_yasg import openapi
+from drf_yasg.utils import swagger_auto_schema
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -24,6 +26,7 @@ from .serializers import (
     CartItemSerializer,
     CartSerializer,
     ClientProfileSerializer,
+    ClientRegisterSerializer,
     ClientSerializer,
     ClientUpdateSerializer,
     DiscountSerializer,
@@ -135,3 +138,32 @@ class MeView(APIView):
     def get(self, request):
         serializer = ClientProfileSerializer(request.user)
         return Response(serializer.data)
+
+
+class ClientRegistrationView(APIView):
+    """Endpoint for user registration"""
+
+    @swagger_auto_schema(
+        request_body=ClientRegisterSerializer,
+        responses={
+            201: openapi.Response(
+                description="User registered successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'message': openapi.Schema(type=openapi.TYPE_STRING, description='Success message')
+                    }
+                )
+            ),
+            400: openapi.Response(
+                description="Bad request (validation error)"
+            )
+        },
+        operation_description="Register a new user with required and optional fields"
+    )
+    def post(self, request):
+        serializer = ClientRegisterSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"message": "User registered successfully"}, status=201)
+        return Response(serializer.errors, status=400)

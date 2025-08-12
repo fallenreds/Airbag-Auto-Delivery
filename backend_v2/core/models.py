@@ -125,6 +125,7 @@ class Order(models.Model):
 class OrderItem(models.Model):
     order = models.ForeignKey("Order", on_delete=models.CASCADE, related_name="items")
     good = models.ForeignKey("Good", on_delete=models.SET_NULL, null=True)
+
     count = models.PositiveIntegerField()
 
 

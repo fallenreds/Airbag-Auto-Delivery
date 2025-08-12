@@ -18,17 +18,38 @@ from .validators import validate_email
 
 
 class ClientRegisterSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True)
+    password = serializers.CharField(write_only=True, help_text='Пароль пользователя')
+    confirm_password = serializers.CharField(write_only=True, help_text='Подтверждение пароля')
+    nova_post_address = serializers.CharField(required=False, allow_blank=True, help_text='Адрес отделения Новой Почты (опционально)')
 
     class Meta:
         model = Client
-        fields = ["email", "password", "name", "last_name", "phone"]
+        fields = [
+            "email",
+            "password",
+            "confirm_password",
+            "name",
+            "last_name",
+            "phone",
+            "nova_post_address",
+        ]
+        extra_kwargs = {
+            "phone": {"required": False, "allow_blank": True},
+            "nova_post_address": {"required": False, "allow_blank": True},
+        }
 
     def validate_email(self, value):
         return validate_email(value)
 
+    def validate(self, data):
+        if data["password"] != data.pop("confirm_password"):
+            raise serializers.ValidationError(
+                {"confirm_password": "Passwords do not match."}
+            )
+        return data
+
     def create(self, validated_data):
-        # Всегда создаём через менеджер, пользователь сразу активен
+        # Create user through the manager to properly hash the password
         return Client.objects.create_user(**validated_data)
 
 

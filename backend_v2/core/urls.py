@@ -7,6 +7,7 @@ from .views import (
     BotVisitorViewSet,
     CartItemViewSet,
     CartViewSet,
+    ClientRegistrationView,
     ClientUpdateViewSet,
     ClientViewSet,
     DiscountViewSet,
@@ -38,4 +39,5 @@ urlpatterns = router.urls + [
     path("auth/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
     path("auth/token/verify/", TokenVerifyView.as_view(), name="token_verify"),
     path("auth/me/", MeView.as_view(), name="me"),
+    path("auth/register/", ClientRegistrationView.as_view(), name="register"),
 ]
