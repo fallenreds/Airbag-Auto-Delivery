@@ -60,7 +60,6 @@ def sync_goods():
     # --- Товары ---
     remonline_ids = [item["id"] for item in goods_data]
     logger.info(f"Remonline goods count: {len(goods_data)}")
-    logger.info(f"Remonline IDs: {remonline_ids}")
 
     # Получаем существующие товары по remonline_id
     existing_goods = {

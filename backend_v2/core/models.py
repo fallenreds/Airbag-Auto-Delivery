@@ -48,6 +48,7 @@ class Client(AbstractBaseUser, PermissionsMixin):
     login = models.CharField(max_length=128, unique=True, null=True)
     email = models.EmailField(blank=False, unique=True, null=False, max_length=100)
     phone = models.CharField(max_length=20, blank=True, null=True)
+    nova_post_address = models.TextField(blank=True, null=True)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     is_superuser = models.BooleanField(default=False)

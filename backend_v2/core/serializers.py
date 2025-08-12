@@ -18,9 +18,15 @@ from .validators import validate_email
 
 
 class ClientRegisterSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, help_text='Пароль пользователя')
-    confirm_password = serializers.CharField(write_only=True, help_text='Подтверждение пароля')
-    nova_post_address = serializers.CharField(required=False, allow_blank=True, help_text='Адрес отделения Новой Почты (опционально)')
+    password = serializers.CharField(write_only=True, help_text="User password")
+    confirm_password = serializers.CharField(
+        write_only=True, help_text="Password confirmation"
+    )
+    nova_post_address = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Nova Poshta branch address (optional)",
+    )
 
     class Meta:
         model = Client
@@ -181,6 +187,7 @@ class ClientProfileSerializer(serializers.ModelSerializer):
             "last_name",
             "email",
             "phone",
+            "nova_post_address",
             "is_staff",
             "is_superuser",
             "groups",
