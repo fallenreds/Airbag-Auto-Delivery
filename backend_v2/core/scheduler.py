@@ -69,12 +69,14 @@ def sync_goods():
     goods_to_create = []
     goods_to_update = []
 
+    logging.info(CATEGORIES_IGNORE_IDS)
     for item in goods_data:
         cat_obj = None
         cat = item.get("category")
         if cat and "id" in cat:
             cat_obj = existing_categories.get(cat["id"])
         if cat.get("id") in CATEGORIES_IGNORE_IDS:
+            logging.info(cat.get("id"))
             continue
 
         # Подготавливаем данные для товара
