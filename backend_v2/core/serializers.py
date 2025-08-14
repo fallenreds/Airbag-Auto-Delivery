@@ -163,7 +163,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
             "id",
             "order",
             "good",
-            "good_id",
+            "good_external_id",
             "id_remonline",
             "title",
             "code",
@@ -171,9 +171,8 @@ class OrderItemSerializer(serializers.ModelSerializer):
             "quantity",
             "currency",
             "original_price_minor",
-            "created_at",
         ]
-        read_only_fields = ["id", "created_at"]
+        read_only_fields = ["id"]
 
 
 class OrderSerializer(serializers.ModelSerializer):
@@ -210,8 +209,6 @@ class OrderSerializer(serializers.ModelSerializer):
             "subtotal_minor",
             "discount_total_minor",
             "grand_total_minor",
-            "fx_rate",
-            "fx_at",
             "date",
             "remember_count",
             "branch_remember_count",
