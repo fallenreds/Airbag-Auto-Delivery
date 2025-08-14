@@ -20,7 +20,7 @@ from .models import (
 
 @admin.register(Good)
 class GoodAdmin(admin.ModelAdmin):
-    list_display = ("id", "title", "price", "residue", "code", "category")
+    list_display = ("id", "title", "price_minor", "residue", "code")
     search_fields = ("title", "code")
     list_filter = ("category",)
 
@@ -165,7 +165,7 @@ class CartItemAdmin(admin.ModelAdmin):
 
 @admin.register(OrderItem)
 class OrderItemAdmin(admin.ModelAdmin):
-    list_display = ("id", "order", "good", "count")
+    list_display = ("id", "order", "title", "quantity", "original_price_minor")
     search_fields = ("order__id", "good__title")
 
 

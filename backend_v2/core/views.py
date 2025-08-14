@@ -105,6 +105,51 @@ class OrderItemViewSet(viewsets.ModelViewSet):
     serializer_class = OrderItemSerializer
     filterset_class = generate_filterset_for_model(OrderItem)
 
+    def perform_create(self, serializer):
+        """
+        Автоснэпшот базовых полей из Good, если клиент их не прислал.
+        Поля из модели OrderItem:
+          - original_price_minor, currency, title, code, id_remonline, category_id
+        """
+        good = serializer.validated_data.get("good")
+        defaults = {}
+        if good:
+            # только если поле не передано во входных данных
+            if "original_price_minor" not in serializer.validated_data:
+                defaults["original_price_minor"] = good.price_minor
+            if "currency" not in serializer.validated_data:
+                defaults["currency"] = good.currency
+            if "title" not in serializer.validated_data:
+                defaults["title"] = good.title
+            if "code" not in serializer.validated_data:
+                defaults["code"] = good.code
+            if "id_remonline" not in serializer.validated_data:
+                defaults["id_remonline"] = good.id_remonline
+            if "category_id" not in serializer.validated_data:
+                defaults["category_id"] = getattr(good.category, "id_remonline", None)
+        serializer.save(**defaults)
+
+    def perform_update(self, serializer):
+        """
+        При смене good обновляем снэпшот, если поля не присланы явно.
+        """
+        good = serializer.validated_data.get("good")
+        defaults = {}
+        if good:
+            if "original_price_minor" not in serializer.validated_data:
+                defaults["original_price_minor"] = good.price_minor
+            if "currency" not in serializer.validated_data:
+                defaults["currency"] = good.currency
+            if "title" not in serializer.validated_data:
+                defaults["title"] = good.title
+            if "code" not in serializer.validated_data:
+                defaults["code"] = good.code
+            if "id_remonline" not in serializer.validated_data:
+                defaults["id_remonline"] = good.id_remonline
+            if "category_id" not in serializer.validated_data:
+                defaults["category_id"] = getattr(good.category, "id_remonline", None)
+        serializer.save(**defaults)
+
 
 class TemplateViewSet(viewsets.ModelViewSet):
     queryset = Template.objects.all()
@@ -151,15 +196,15 @@ class ClientRegistrationView(APIView):
                 schema=openapi.Schema(
                     type=openapi.TYPE_OBJECT,
                     properties={
-                        'message': openapi.Schema(type=openapi.TYPE_STRING, description='Success message')
-                    }
-                )
+                        "message": openapi.Schema(
+                            type=openapi.TYPE_STRING, description="Success message"
+                        )
+                    },
+                ),
             ),
-            400: openapi.Response(
-                description="Bad request (validation error)"
-            )
+            400: openapi.Response(description="Bad request (validation error)"),
         },
-        operation_description="Register a new user with required and optional fields"
+        operation_description="Register a new user with required and optional fields",
     )
     def post(self, request):
         serializer = ClientRegisterSerializer(data=request.data)

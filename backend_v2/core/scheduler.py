@@ -1,4 +1,5 @@
 import logging
+from decimal import ROUND_HALF_UP, Decimal
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -69,22 +70,22 @@ def sync_goods():
     goods_to_create = []
     goods_to_update = []
 
-    logging.info(CATEGORIES_IGNORE_IDS)
     for item in goods_data:
         cat_obj = None
         cat = item.get("category")
         if cat and "id" in cat:
             cat_obj = existing_categories.get(cat["id"])
         if cat.get("id") in CATEGORIES_IGNORE_IDS:
-            logging.info(cat.get("id"))
             continue
 
+        # Подготавливаем данные для товара
         # Подготавливаем данные для товара
         goods_data_dict = {
             "title": item.get("title", ""),
             "description": item.get("description", ""),
             "images": item.get("image", []),
-            "price": int(item.get("price", {})[PRICE_ID_PROD]),
+            # цена в минимальных единицах и +100
+            "price_minor": to_minor(item.get("price", {}).get(PRICE_ID_PROD, 0)),
             "residue": int(item.get("residue", 0)),
             "code": item.get("code", ""),
             "category": cat_obj,
@@ -117,7 +118,7 @@ def sync_goods():
                     "title",
                     "description",
                     "images",
-                    "price",
+                    "price_minor",
                     "residue",
                     "code",
                     "category",
@@ -126,6 +127,14 @@ def sync_goods():
 
     logger.info(
         f"Goods sync complete: created {len(goods_to_create)}, updated {len(goods_to_update)}"
+    )
+
+
+def to_minor(v):
+    return int(
+        (Decimal(str(v)) * Decimal("100")).quantize(
+            Decimal("1"), rounding=ROUND_HALF_UP
+        )
     )
 
 

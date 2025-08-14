@@ -5,17 +5,23 @@ from django.contrib.auth.models import (
 )
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+from django.utils import timezone  # keep import
+
+# ===== Common =====
 
 
-class CustomPercentageField(models.IntegerField):
+class CustomPercentageField(models.DecimalField):
+    """0–100 with two decimal places."""
+
     def __init__(self, *args, **kwargs):
+        kwargs.setdefault("max_digits", 5)
+        kwargs.setdefault("decimal_places", 2)
         super().__init__(*args, **kwargs)
-        self.validators.append(
-            MinValueValidator(0, message="Value must be greater than or equal to 0")
-        )
-        self.validators.append(
-            MaxValueValidator(100, message="Value must be less than or equal to 100")
-        )
+        self.validators.append(MinValueValidator(0))
+        self.validators.append(MaxValueValidator(100))
+
+
+# ===== User =====
 
 
 class ClientManager(BaseUserManager):
@@ -23,7 +29,7 @@ class ClientManager(BaseUserManager):
         if not email:
             raise ValueError("Email must be set")
         extra_fields.setdefault("is_active", True)
-        user = self.model(email=email, **extra_fields)
+        user = self.model(email=self.normalize_email(email), **extra_fields)
         user.set_password(password)
         user.save(using=self._db)
         return user
@@ -42,16 +48,19 @@ class ClientManager(BaseUserManager):
 class Client(AbstractBaseUser, PermissionsMixin):
     id = models.BigAutoField(primary_key=True)
     id_remonline = models.BigIntegerField(null=True, blank=True)
-    telegram_id = models.BigIntegerField(null=True, blank=True)
+    telegram_id = models.BigIntegerField(null=True, blank=True, db_index=True)
+
     name = models.CharField(max_length=255)
     last_name = models.CharField(max_length=255)
-    login = models.CharField(max_length=128, unique=True, null=True)
-    email = models.EmailField(blank=False, unique=True, null=False, max_length=100)
+    login = models.CharField(max_length=128, unique=True, null=True, blank=True)
+
+    email = models.EmailField(unique=True, max_length=100)
     phone = models.CharField(max_length=20, blank=True, null=True)
     nova_post_address = models.TextField(blank=True, null=True)
+
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
-    is_superuser = models.BooleanField(default=False)
+
     groups = models.ManyToManyField(
         "auth.Group",
         related_name="client_set",
@@ -66,6 +75,7 @@ class Client(AbstractBaseUser, PermissionsMixin):
         help_text="Specific permissions for this user.",
         verbose_name="user permissions",
     )
+
     objects = ClientManager()
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []
@@ -78,18 +88,133 @@ class ClientUpdate(models.Model):
     id = models.BigAutoField(primary_key=True)
     type = models.CharField(max_length=32)
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="updates")
+    # Use default for existing rows and auto-fill new ones
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+
+
+# ===== Catalog =====
+
+
+class GoodCategory(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    id_remonline = models.BigIntegerField()
+    title = models.CharField(max_length=255)
+    parent_id = models.BigIntegerField(null=True, blank=True)
+
+
+class Good(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    id_remonline = models.BigIntegerField()
+    title = models.CharField(max_length=255)
+    description = models.TextField(null=True, blank=True)
+    images = models.JSONField(null=True, blank=True)
+
+    # List price in minor units
+    price_minor = models.BigIntegerField(default=0)  # >= 0
+    currency = models.CharField(max_length=3, default="UAH")  # ISO-4217
+
+    residue = models.IntegerField(default=0)
+    code = models.CharField(max_length=32, null=True, blank=True)
+    category = models.ForeignKey(
+        "GoodCategory",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="goods",
+    )
+
+
+# ===== Discounts (history-based etc.) =====
 
 
 class Discount(models.Model):
     id = models.BigAutoField(primary_key=True)
     percentage = CustomPercentageField()
-    month_payment = models.IntegerField()
+    month_payment = models.BigIntegerField(
+        help_text="Total payments for the month in minor units"
+    )
+
+
+# ===== Orders =====
+
+
+class Order(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    remonline_order_id = models.BigIntegerField(blank=True, null=True, db_index=True)
+
+    client = models.ForeignKey(
+        "Client", on_delete=models.SET_NULL, null=True, related_name="orders"
+    )
+    telegram_id = models.BigIntegerField(null=True, blank=True, db_index=True)
+
+    # Contact snapshot at order time
+    name = models.CharField(max_length=255)
+    last_name = models.CharField(max_length=255)
+    phone = models.CharField(max_length=20)
+    nova_post_address = models.TextField()
+
+    prepayment = models.BooleanField(default=False)
+    is_paid = models.BooleanField(default=False)
+    ttn = models.TextField(blank=True, null=True)
+    is_completed = models.BooleanField(default=False)
+
+    # Order aggregates in minor units
+    discount_percent = CustomPercentageField(null=True, blank=True)
+    subtotal_minor = models.BigIntegerField(default=0)  # before discounts/taxes
+    discount_total_minor = models.BigIntegerField(default=0)  # total discount
+    grand_total_minor = models.BigIntegerField(default=0)  # payable total
+
+    description = models.TextField(blank=True, null=True)
+
+    remember_count = models.IntegerField(default=0)
+    branch_remember_count = models.IntegerField(default=0)
+    in_branch_datetime = models.DateTimeField(blank=True, null=True)
+
+    date = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["date"]),
+            models.Index(fields=["client", "date"]),
+        ]
+
+
+class OrderItem(models.Model):
+    order = models.ForeignKey("Order", on_delete=models.CASCADE, related_name="items")
+    good = models.ForeignKey("Good", on_delete=models.SET_NULL, null=True, blank=True)
+
+    # Product snapshot at purchase time
+    good_external_id = models.BigIntegerField(null=False)
+    id_remonline = models.BigIntegerField()  # external Remonline ID
+    title = models.CharField(max_length=255)
+    code = models.CharField(max_length=32, blank=True, null=True)
+    category_id = models.BigIntegerField(null=True, blank=True)
+
+    quantity = models.PositiveIntegerField()
+
+    currency = models.CharField(max_length=3, default="UAH")
+
+    # Pricing in minor units
+    original_price_minor = models.BigIntegerField(default=0)  # per-unit before discount
+    discount_percent = CustomPercentageField(null=True, blank=True)  # optional
+    discount_minor = models.BigIntegerField(default=0)  # row-level discount
+    unit_price_minor = models.BigIntegerField(default=0)  # per-unit after discount
+    line_subtotal_minor = models.BigIntegerField(
+        default=0
+    )  # unit_price_minor * quantity
+    line_total_minor = models.BigIntegerField(default=0)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["order"]),
+        ]
 
 
 class OrderUpdate(models.Model):
     id = models.BigAutoField(primary_key=True)
     type = models.CharField(max_length=32)
     details = models.TextField(blank=True, null=True)
+    # keep both raw textual order id and FK link if available
     order = models.CharField(max_length=255, blank=True, null=True)
     order_ref = models.ForeignKey(
         "Order",
@@ -98,36 +223,10 @@ class OrderUpdate(models.Model):
         blank=True,
         related_name="order_updates",
     )
+    created_at = models.DateTimeField(auto_now_add=True)
 
 
-class Order(models.Model):
-    id = models.BigAutoField(primary_key=True)
-    remonline_order_id = models.BigIntegerField(blank=True, null=True)
-    client = models.ForeignKey(
-        "Client", on_delete=models.SET_NULL, null=True, related_name="orders"
-    )
-    telegram_id = models.BigIntegerField()
-    name = models.CharField(max_length=255)
-    last_name = models.CharField(max_length=255)
-    prepayment = models.BooleanField(default=False)
-    phone = models.CharField(max_length=20)
-    nova_post_address = models.TextField()
-    description = models.TextField(blank=True, null=True)
-    is_paid = models.BooleanField(default=False)
-    ttn = models.TextField(blank=True, null=True)
-    is_completed = models.BooleanField(default=False)
-    date = models.DateTimeField(auto_now_add=True)
-    remember_count = models.IntegerField(default=0)
-    branch_remember_count = models.IntegerField(default=0)
-    in_branch_datetime = models.DateTimeField(blank=True, null=True)
-    # Теперь связь с товарами через OrderItem
-
-
-class OrderItem(models.Model):
-    order = models.ForeignKey("Order", on_delete=models.CASCADE, related_name="items")
-    good = models.ForeignKey("Good", on_delete=models.SET_NULL, null=True)
-
-    count = models.PositiveIntegerField()
+# ===== Cart =====
 
 
 class Cart(models.Model):
@@ -135,6 +234,8 @@ class Cart(models.Model):
         "Client", on_delete=models.CASCADE, related_name="cart", null=True, blank=True
     )
     telegram_id = models.BigIntegerField(null=True, blank=True, unique=True)
+    currency = models.CharField(max_length=3, default="UAH")
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -146,6 +247,9 @@ class CartItem(models.Model):
 
     class Meta:
         unique_together = ("cart", "good")
+
+
+# ===== Templates and bot visitors =====
 
 
 class Template(models.Model):
@@ -160,28 +264,3 @@ class BotVisitor(models.Model):
 
     def __str__(self):
         return str(self.telegram_id)
-
-
-class Good(models.Model):
-    id = models.BigAutoField(primary_key=True)
-    id_remonline = models.BigIntegerField()
-    title = models.CharField(max_length=255)
-    description = models.TextField()
-    images = models.JSONField(null=True, blank=True)
-    price = models.IntegerField()
-    residue = models.IntegerField()
-    code = models.CharField(max_length=32)
-    category = models.ForeignKey(
-        "GoodCategory",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="goods",
-    )
-
-
-class GoodCategory(models.Model):
-    id = models.BigAutoField(primary_key=True)
-    id_remonline = models.BigIntegerField()
-    title = models.CharField(max_length=255)
-    parent_id = models.BigIntegerField(null=True, blank=True)
