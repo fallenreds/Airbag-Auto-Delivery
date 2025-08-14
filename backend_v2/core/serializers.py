@@ -179,24 +179,31 @@ class OrderItemCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating OrderItems as part of Order creation"""
 
     good = serializers.PrimaryKeyRelatedField(
-        queryset=Good.objects.all(), required=False, allow_null=True
-    )
-    currency = serializers.CharField(validators=[validate_currency], required=False)
-    original_price_minor = serializers.IntegerField(
-        validators=[validate_nonneg_int], required=False
+        queryset=Good.objects.all(), required=True
     )
     quantity = serializers.IntegerField(min_value=1)
+
+    # These fields are defined but not exposed in the serializer fields list
+    # They will be populated from the Good object
+    good_external_id = serializers.IntegerField(read_only=True)
+    id_remonline = serializers.IntegerField(read_only=True)
+    title = serializers.CharField(read_only=True)
+    code = serializers.CharField(read_only=True)
+    category_id = serializers.IntegerField(read_only=True)
+    currency = serializers.CharField(read_only=True)
+    original_price_minor = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = OrderItem
         fields = [
             "good",
+            "quantity",
+            # These fields are read-only and will be populated from Good
             "good_external_id",
             "id_remonline",
             "title",
             "code",
             "category_id",
-            "quantity",
             "currency",
             "original_price_minor",
         ]
@@ -215,24 +222,24 @@ class OrderItemCreateSerializer(serializers.ModelSerializer):
 
 
 class OrderCreateSerializer(serializers.ModelSerializer):
-    """Serializer for creating an Order with only OrderItems data"""
+    """Serializer for creating an Order with customer info and OrderItems data"""
 
     items = OrderItemCreateSerializer(many=True)
+    name = serializers.CharField(required=True)
+    last_name = serializers.CharField(required=True)
+    phone = serializers.CharField(required=True)
+    nova_post_address = serializers.CharField(required=True)
 
     class Meta:
         model = Order
-        fields = ["items"]
+        fields = ["name", "last_name", "phone", "nova_post_address", "items"]
 
     def create(self, validated_data):
         items_data = validated_data.pop("items")
 
-        # Create order with placeholder values
-        order = Order.objects.create(
-            name="Placeholder",
-            last_name="Placeholder",
-            phone="Placeholder",
-            nova_post_address="Placeholder",
-            currency="UAH",
+        # Create order with user-provided values
+        order: Order = Order.objects.create(
+            **validated_data,
             subtotal_minor=0,
             discount_total_minor=0,
             grand_total_minor=0,
@@ -241,28 +248,24 @@ class OrderCreateSerializer(serializers.ModelSerializer):
         # Create order items
         for item_data in items_data:
             good = item_data.get("good")
+            quantity = item_data.get("quantity")
 
-            # Set default values from Good if not provided
-            if good:
-                if "original_price_minor" not in item_data:
-                    item_data["original_price_minor"] = good.price_minor
-                if "currency" not in item_data:
-                    item_data["currency"] = good.currency
-                if "title" not in item_data:
-                    item_data["title"] = good.title
-                if "code" not in item_data:
-                    item_data["code"] = good.code
-                if "id_remonline" not in item_data:
-                    item_data["id_remonline"] = good.id_remonline
-                if "category_id" not in item_data:
-                    item_data["category_id"] = getattr(
-                        good.category, "id_remonline", None
-                    )
-                if "good_external_id" not in item_data:
-                    item_data["good_external_id"] = good.id_remonline
+            # Create new item_data with only good and quantity
+            # All other fields will be populated from the Good object
+            new_item_data = {
+                "good": good,
+                "quantity": quantity,
+                "original_price_minor": good.price_minor,
+                "currency": good.currency,
+                "title": good.title,
+                "code": good.code,
+                "id_remonline": good.id_remonline,
+                "category_id": getattr(good.category, "id_remonline", None),
+                "good_external_id": good.id_remonline,
+            }
 
             # Create the order item
-            OrderItem.objects.create(order=order, **item_data)
+            OrderItem.objects.create(order=order, **new_item_data)
 
         return order
 
@@ -273,7 +276,7 @@ class OrderCreateSerializer(serializers.ModelSerializer):
 
 class OrderSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)
-    currency = serializers.CharField(validators=[validate_currency])
+    # Remove currency field as it doesn't exist in the Order model
     subtotal_minor = serializers.IntegerField(
         validators=[validate_nonneg_int], required=False
     )
@@ -301,7 +304,6 @@ class OrderSerializer(serializers.ModelSerializer):
             "ttn",
             "is_completed",
             "discount_percent",
-            "currency",
             "subtotal_minor",
             "discount_total_minor",
             "grand_total_minor",
