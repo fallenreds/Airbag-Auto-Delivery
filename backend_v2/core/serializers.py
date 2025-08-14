@@ -40,6 +40,8 @@ class ClientRegisterSerializer(serializers.ModelSerializer):
             "nova_post_address",
         ]
         extra_kwargs = {
+            "name": {"required": False, "allow_blank": True},
+            "last_name": {"required": False, "allow_blank": True},
             "phone": {"required": False, "allow_blank": True},
             "nova_post_address": {"required": False, "allow_blank": True},
         }
