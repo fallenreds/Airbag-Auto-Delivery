@@ -1,7 +1,8 @@
 from django_filters import rest_framework as filters
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
-from rest_framework import viewsets
+from rest_framework import status, viewsets
+from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -32,6 +33,7 @@ from .serializers import (
     DiscountSerializer,
     GoodCategorySerializer,
     GoodSerializer,
+    OrderCreateSerializer,
     OrderItemSerializer,
     OrderSerializer,
     OrderUpdateSerializer,
@@ -68,6 +70,41 @@ class OrderViewSet(viewsets.ModelViewSet):
     serializer_class = OrderSerializer
     filterset_class = generate_filterset_for_model(Order)
     permission_classes = [IsAuthenticated]
+
+    def get_serializer_class(self):
+        if self.action == "create_with_items":
+            return OrderCreateSerializer
+        return super().get_serializer_class()
+
+    @swagger_auto_schema(
+        request_body=OrderCreateSerializer,
+        responses={
+            201: openapi.Response(
+                description="Order created successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        "id": openapi.Schema(
+                            type=openapi.TYPE_INTEGER, description="Order ID"
+                        ),
+                        "items": openapi.Schema(
+                            type=openapi.TYPE_ARRAY, description="Order items"
+                        ),
+                        # Other fields from OrderSerializer
+                    },
+                ),
+            ),
+            400: openapi.Response(description="Bad request (validation error)"),
+        },
+        operation_description="Create an order with only OrderItems data, other fields are filled with placeholders",
+    )
+    @action(detail=False, methods=["post"])
+    def create_with_items(self, request):
+        serializer = self.get_serializer(data=request.data)
+        if serializer.is_valid():
+            order = serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class OrderUpdateViewSet(viewsets.ModelViewSet):
