@@ -88,7 +88,9 @@ class OrderViewSet(viewsets.ModelViewSet):
                             type=openapi.TYPE_INTEGER, description="Order ID"
                         ),
                         "items": openapi.Schema(
-                            type=openapi.TYPE_ARRAY, description="Order items"
+                            type=openapi.TYPE_ARRAY,
+                            description="Order items",
+                            items=openapi.Schema(type=openapi.TYPE_OBJECT),
                         ),
                         # Other fields from OrderSerializer
                     },
