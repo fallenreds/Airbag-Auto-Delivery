@@ -12,20 +12,19 @@ from core.serializers import (
     OrderSerializer,
     OrderUpdateSerializer,
 )
+from core.views.utils import get_own_queryset
 
-from .utils import generate_filterset_for_model, get_own_queryset
+from .utils import generate_filterset_for_model
 
 
 class OrderViewSet(viewsets.ModelViewSet):
     serializer_class = OrderSerializer
     filterset_class = generate_filterset_for_model(Order)
-    queryset = Order.objects.none()  # безопасный дефолт
+    queryset = Order.objects.all()  # безопасный дефолт
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        # staff видит всё, обычный пользователь — только своё
-        qs = Order.objects.select_related("user").prefetch_related("items")
-        return get_own_queryset(self.request.user, qs)
+        return get_own_queryset(self)
 
     def get_serializer_class(self):
         if self.action == "create":
@@ -70,12 +69,11 @@ class OrderViewSet(viewsets.ModelViewSet):
 class OrderItemViewSet(viewsets.ModelViewSet):
     serializer_class = OrderItemSerializer
     filterset_class = generate_filterset_for_model(OrderItem)
-    queryset = OrderItem.objects.none()
+    queryset = OrderItem.objects.all()
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        qs = OrderItem.objects.select_related("order", "good")
-        return get_own_queryset(self.request.user, qs)
+        return get_own_queryset(self)
 
     def perform_create(self, serializer):
         good = serializer.validated_data.get("good")
@@ -119,9 +117,8 @@ class OrderItemViewSet(viewsets.ModelViewSet):
 class OrderUpdateViewSet(viewsets.ModelViewSet):
     serializer_class = OrderUpdateSerializer
     filterset_class = generate_filterset_for_model(OrderUpdate)
-    queryset = OrderUpdate.objects.none()
+    queryset = OrderUpdate.objects.all()
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        qs = OrderUpdate.objects.select_related("order", "user")
-        return get_own_queryset(self.request.user, qs)
+        return get_own_queryset(self)

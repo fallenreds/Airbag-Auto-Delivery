@@ -1,8 +1,6 @@
 from django_filters import rest_framework as filters
 from rest_framework.permissions import IsAdminUser
 
-from core.models import Client
-
 
 def generate_filterset_for_model(model):
     field_names = [
@@ -16,8 +14,8 @@ def generate_filterset_for_model(model):
     return type(f"{model.__name__}AutoFilterSet", (filters.FilterSet,), {"Meta": meta})
 
 
-def get_own_queryset(user: Client, queryset):
-    qs = queryset
-    if not IsAdminUser.has_permission(user):
-        qs = qs.filter(user=user)
+def get_own_queryset(view):
+    qs = view.queryset
+    if not IsAdminUser().has_permission(view.request, view):
+        qs = qs.filter(client=view.request.user)
     return qs
