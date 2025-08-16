@@ -219,8 +219,8 @@ class OrderCreateSerializer(serializers.ModelSerializer):
         order.grand_total_minor = order_total_price["grand_total_minor"]
         order.save()
 
-        response = self.create_remonline_order(order)
-        print(response)
+        # response = self.create_remonline_order(order) #Пока пропускаю что бы не создавать заказы в Remonline
+
         return order
 
     def to_representation(self, instance):
