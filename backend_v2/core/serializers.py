@@ -1,3 +1,5 @@
+from typing import TypedDict
+
 from rest_framework import serializers
 
 from .models import (
@@ -234,10 +236,90 @@ class OrderCreateSerializer(serializers.ModelSerializer):
         model = Order
         fields = ["name", "last_name", "phone", "nova_post_address", "items"]
 
-    def create(self, validated_data):
-        items_data = validated_data.pop("items")
+    class BasePriceCalculationResult(TypedDict):
+        line_total_minor: int  # total price before discount
+        good_price_minor: int  # unit price in minor units
+        discount_total_minor: float  # discount amount in minor units
+        grand_total_minor: float  # final price after discount
 
-        # Create order with user-provided values
+    class PriceCalculationResult(BasePriceCalculationResult):
+        quantity: int  # number of items
+
+    def calculate_total_prices(
+        self, order_prices: list[PriceCalculationResult]
+    ) -> BasePriceCalculationResult:
+        """
+        Calculate total pricing for an order.
+
+        Args:
+            order_prices (list[PriceCalculationResult]): List of price calculation results for each item.
+
+        Returns:
+            PriceCalculationResult: Dictionary with structured pricing information:
+                - line_total_minor: Total price before discount.
+                - good_price_minor: Price of a single product unit (minor units).
+                - quantity: Quantity of products.
+                - discount_total_minor: Discount amount in minor units.
+                - grand_total_minor: Final total after discount.
+        """
+        order_total_price: self.BasePriceCalculationResult = {
+            "line_total_minor": 0,
+            "good_price_minor": 0,
+            "discount_total_minor": 0,
+            "grand_total_minor": 0,
+        }
+        for price in order_prices:
+            order_total_price["line_total_minor"] += price["line_total_minor"]
+            order_total_price["good_price_minor"] += price["good_price_minor"]
+            order_total_price["discount_total_minor"] += price["discount_total_minor"]
+            order_total_price["grand_total_minor"] += price["grand_total_minor"]
+
+        return order_total_price
+
+    def calculate_prices(
+        self, good: Good, quantity: int, discount: int
+    ) -> PriceCalculationResult:
+        """
+        Calculate detailed pricing for a product.
+
+        Args:
+            good (Good): Product object with attribute price_minor (int).
+            quantity (int): Number of units.
+            discount (int): Discount percentage (0–100).
+
+        Returns:
+            PriceCalculationResult: Dictionary with structured pricing information:
+                - line_total_minor: Total price before discount.
+                - good_price_minor: Price of a single product unit (minor units).
+                - quantity: Quantity of products.
+                - discount_total_minor: Discount amount in minor units.
+                - grand_total_minor: Final total after discount.
+        """
+        good_price_minor: int = good.price_minor
+        line_total_minor: int = good_price_minor * quantity
+        discount_total_minor: float = line_total_minor * discount / 100
+        grand_total_minor: float = line_total_minor - discount_total_minor
+
+        return {
+            "line_total_minor": line_total_minor,
+            "good_price_minor": good_price_minor,
+            "quantity": quantity,
+            "discount_total_minor": discount_total_minor,
+            "grand_total_minor": grand_total_minor,
+        }
+
+    def create(
+        self, validated_data: dict["name", "last_name", "phone", "nova_post_address"]
+    ):
+        """
+        Order creating
+        """
+
+        user: Client = self.context["request"].user  # вытаскиваем из контекста
+
+        items_data = validated_data.pop(
+            "items"
+        )  # Create order with user-provided values
         order: Order = Order.objects.create(
             **validated_data,
             subtotal_minor=0,
@@ -245,6 +327,7 @@ class OrderCreateSerializer(serializers.ModelSerializer):
             grand_total_minor=0,
         )
 
+        order_prices: list[self.PriceCalculationResult] = []
         # Create order items
         for item_data in items_data:
             good = item_data.get("good")
@@ -266,7 +349,15 @@ class OrderCreateSerializer(serializers.ModelSerializer):
 
             # Create the order item
             OrderItem.objects.create(order=order, **new_item_data)
+            order_prices.append(
+                self.calculate_prices(good, quantity, user.discount_percent)
+            )
 
+        order_total_price = self.calculate_total_prices(order_prices)
+        order.subtotal_minor = order_total_price["line_total_minor"]
+        order.discount_total_minor = order_total_price["discount_total_minor"]
+        order.grand_total_minor = order_total_price["grand_total_minor"]
+        order.save()
         return order
 
     def to_representation(self, instance):
@@ -383,6 +474,7 @@ class ClientProfileSerializer(serializers.ModelSerializer):
             "email",
             "phone",
             "nova_post_address",
+            "discount_percent",
             "is_staff",
             "is_superuser",
             "groups",

@@ -102,7 +102,9 @@ class OrderViewSet(viewsets.ModelViewSet):
     )
     @action(detail=False, methods=["post"])
     def create_with_items(self, request):
-        serializer = self.get_serializer(data=request.data)
+        serializer: OrderCreateSerializer = self.get_serializer(
+            data=request.data, context={"request": request}
+        )
         if serializer.is_valid():
             order = serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
