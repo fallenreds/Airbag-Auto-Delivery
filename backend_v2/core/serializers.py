@@ -226,15 +226,25 @@ class OrderItemCreateSerializer(serializers.ModelSerializer):
 class OrderCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating an Order with customer info and OrderItems data"""
 
-    items = OrderItemCreateSerializer(many=True)
     name = serializers.CharField(required=True)
     last_name = serializers.CharField(required=True)
     phone = serializers.CharField(required=True)
     nova_post_address = serializers.CharField(required=True)
+    prepayment = serializers.BooleanField(required=True)
+    items = OrderItemCreateSerializer(many=True)
+    description = serializers.CharField(required=False)
 
     class Meta:
         model = Order
-        fields = ["name", "last_name", "phone", "nova_post_address", "items"]
+        fields = [
+            "name",
+            "last_name",
+            "phone",
+            "nova_post_address",
+            "prepayment",
+            "description",
+            "items",
+        ]
 
     class BasePriceCalculationResult(TypedDict):
         line_total_minor: int  # total price before discount
@@ -325,6 +335,9 @@ class OrderCreateSerializer(serializers.ModelSerializer):
             subtotal_minor=0,
             discount_total_minor=0,
             grand_total_minor=0,
+            client=user,
+            telegram_id=user.telegram_id,
+            discount_percent=user.discount_percent,
         )
 
         order_prices: list[self.PriceCalculationResult] = []
