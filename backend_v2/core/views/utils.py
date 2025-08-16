@@ -1,0 +1,12 @@
+from django_filters import rest_framework as filters
+
+def generate_filterset_for_model(model):
+    field_names = [
+        f.name
+        for f in model._meta.get_fields()
+        if hasattr(f, "get_internal_type") and f.get_internal_type() != "JSONField"
+    ]
+    if model.__name__ == "Good":
+        field_names = [f for f in field_names if f != "images"]
+    meta = type("Meta", (), {"model": model, "fields": field_names})
+    return type(f"{model.__name__}AutoFilterSet", (filters.FilterSet,), {"Meta": meta})
