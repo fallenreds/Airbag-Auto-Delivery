@@ -1,7 +1,6 @@
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status, viewsets
-from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -12,6 +11,7 @@ from core.serializers import (
     OrderSerializer,
     OrderUpdateSerializer,
 )
+
 from .utils import generate_filterset_for_model
 
 
@@ -22,7 +22,8 @@ class OrderViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_serializer_class(self):
-        if self.action == "create_with_items":
+        # Use OrderCreateSerializer only for create action
+        if self.action == "create":
             return OrderCreateSerializer
         return super().get_serializer_class()
 
@@ -49,15 +50,16 @@ class OrderViewSet(viewsets.ModelViewSet):
         },
         operation_description="Create an order with only OrderItems data, other fields are filled with placeholders",
     )
-    @action(detail=False, methods=["post"])
-    def create_with_items(self, request):
-        serializer: OrderCreateSerializer = self.get_serializer(
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(
             data=request.data, context={"request": request}
         )
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        serializer.is_valid(raise_exception=True)
+        order = serializer.save()
+        return Response(
+            OrderSerializer(order).data,  # можно вернуть финальный сериалайзер
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class OrderItemViewSet(viewsets.ModelViewSet):
