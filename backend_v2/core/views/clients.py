@@ -1,7 +1,6 @@
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
-from rest_framework import status, viewsets
-from rest_framework.decorators import action
+from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -13,6 +12,7 @@ from core.serializers import (
     ClientSerializer,
     ClientUpdateSerializer,
 )
+
 from .utils import generate_filterset_for_model
 
 
@@ -20,12 +20,14 @@ class ClientViewSet(viewsets.ModelViewSet):
     queryset = Client.objects.all()
     serializer_class = ClientSerializer
     filterset_class = generate_filterset_for_model(Client)
+    permission_classes = [IsAuthenticated]
 
 
 class ClientUpdateViewSet(viewsets.ModelViewSet):
     queryset = ClientUpdate.objects.all()
     serializer_class = ClientUpdateSerializer
     filterset_class = generate_filterset_for_model(ClientUpdate)
+    permission_classes = [IsAuthenticated]
 
 
 class MeView(APIView):

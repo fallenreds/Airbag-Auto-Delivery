@@ -1,3 +1,4 @@
+# views.py
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status, viewsets
@@ -12,20 +13,27 @@ from core.serializers import (
     OrderUpdateSerializer,
 )
 
-from .utils import generate_filterset_for_model
+from .utils import generate_filterset_for_model, get_own_queryset
 
 
 class OrderViewSet(viewsets.ModelViewSet):
-    queryset = Order.objects.all()
     serializer_class = OrderSerializer
     filterset_class = generate_filterset_for_model(Order)
+    queryset = Order.objects.none()  # безопасный дефолт
     permission_classes = [IsAuthenticated]
 
+    def get_queryset(self):
+        # staff видит всё, обычный пользователь — только своё
+        qs = Order.objects.select_related("user").prefetch_related("items")
+        return get_own_queryset(self.request.user, qs)
+
     def get_serializer_class(self):
-        # Use OrderCreateSerializer only for create action
         if self.action == "create":
             return OrderCreateSerializer
         return super().get_serializer_class()
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
 
     @swagger_auto_schema(
         request_body=OrderCreateSerializer,
@@ -56,32 +64,35 @@ class OrderViewSet(viewsets.ModelViewSet):
         )
         serializer.is_valid(raise_exception=True)
         order = serializer.save()
-        return Response(
-            OrderSerializer(order).data,  # можно вернуть финальный сериалайзер
-            status=status.HTTP_201_CREATED,
-        )
+        return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
 
 
 class OrderItemViewSet(viewsets.ModelViewSet):
-    queryset = OrderItem.objects.all()
     serializer_class = OrderItemSerializer
     filterset_class = generate_filterset_for_model(OrderItem)
+    queryset = OrderItem.objects.none()
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        qs = OrderItem.objects.select_related("order", "good")
+        return get_own_queryset(self.request.user, qs)
 
     def perform_create(self, serializer):
         good = serializer.validated_data.get("good")
         defaults = {}
         if good:
-            if "original_price_minor" not in serializer.validated_data:
+            vd = serializer.validated_data
+            if "original_price_minor" not in vd:
                 defaults["original_price_minor"] = good.price_minor
-            if "currency" not in serializer.validated_data:
+            if "currency" not in vd:
                 defaults["currency"] = good.currency
-            if "title" not in serializer.validated_data:
+            if "title" not in vd:
                 defaults["title"] = good.title
-            if "code" not in serializer.validated_data:
+            if "code" not in vd:
                 defaults["code"] = good.code
-            if "id_remonline" not in serializer.validated_data:
+            if "id_remonline" not in vd:
                 defaults["id_remonline"] = good.id_remonline
-            if "category_id" not in serializer.validated_data:
+            if "category_id" not in vd:
                 defaults["category_id"] = getattr(good.category, "id_remonline", None)
         serializer.save(**defaults)
 
@@ -89,22 +100,28 @@ class OrderItemViewSet(viewsets.ModelViewSet):
         good = serializer.validated_data.get("good")
         defaults = {}
         if good:
-            if "original_price_minor" not in serializer.validated_data:
+            vd = serializer.validated_data
+            if "original_price_minor" not in vd:
                 defaults["original_price_minor"] = good.price_minor
-            if "currency" not in serializer.validated_data:
+            if "currency" not in vd:
                 defaults["currency"] = good.currency
-            if "title" not in serializer.validated_data:
+            if "title" not in vd:
                 defaults["title"] = good.title
-            if "code" not in serializer.validated_data:
+            if "code" not in vd:
                 defaults["code"] = good.code
-            if "id_remonline" not in serializer.validated_data:
+            if "id_remonline" not in vd:
                 defaults["id_remonline"] = good.id_remonline
-            if "category_id" not in serializer.validated_data:
+            if "category_id" not in vd:
                 defaults["category_id"] = getattr(good.category, "id_remonline", None)
         serializer.save(**defaults)
 
 
 class OrderUpdateViewSet(viewsets.ModelViewSet):
-    queryset = OrderUpdate.objects.all()
     serializer_class = OrderUpdateSerializer
     filterset_class = generate_filterset_for_model(OrderUpdate)
+    queryset = OrderUpdate.objects.none()
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        qs = OrderUpdate.objects.select_related("order", "user")
+        return get_own_queryset(self.request.user, qs)
