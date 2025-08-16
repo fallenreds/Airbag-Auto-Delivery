@@ -40,7 +40,8 @@ ALLOWED_HOSTS = os.getenv(
 
 # Remonline  settings
 REMONLINE_API_KEY = os.getenv("REMONLINE_API_KEY")
-BRANCH_PROD = os.getenv("BRANCH_PROD")
+REMONLINE_ORDER_TYPE_ID = os.getenv("REMONLINE_ORDER_TYPE_ID")
+REMONLINE_BRANCH_PROD_ID = os.getenv("REMONLINE_BRANCH_PROD_ID")
 PRICE_ID_PROD = os.getenv("PRICE_ID_PROD")
 BONUS_ID = os.getenv("BONUS_ID")
 DELETE_ORDER_STATUS_ID = os.getenv("DELETE_ORDER_STATUS_ID")  # Used for merge orders

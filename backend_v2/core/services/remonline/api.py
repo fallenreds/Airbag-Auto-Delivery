@@ -1,9 +1,8 @@
 import json
 import os
+from typing import List, Optional
 
 import requests
-
-from typing import List, Dict, Optional, Union
 
 
 class RemonlineInterface:
@@ -20,8 +19,7 @@ class RemonlineInterface:
     def get_user_token(self) -> str:
         """Получает токен по API ключу"""
         response = requests.post(
-            url=self._url_builder("token/new"),
-            data={"api_key": self.api_key}
+            url=self._url_builder("token/new"), data={"api_key": self.api_key}
         )
         response.raise_for_status()
 
@@ -48,14 +46,18 @@ class RemonlineInterface:
             return self._refresh_token_and_retry(requests.post, url, data=data)
         return response
 
-    def get_objects(self, api_path: str, accepted_params_path: Optional[str] = None, **kwargs) -> dict:
+    def get_objects(
+        self, api_path: str, accepted_params_path: Optional[str] = None, **kwargs
+    ) -> dict:
         """Общий метод для получения данных (GET) по API"""
         url = self._url_builder(api_path)
         params = {"token": self.token}
 
         if accepted_params_path:
             # Всегда строим путь относительно папки params рядом с этим файлом
-            params_path = os.path.join(os.path.dirname(__file__), 'params', accepted_params_path)
+            params_path = os.path.join(
+                os.path.dirname(__file__), "params", accepted_params_path
+            )
             with open(params_path) as file:
                 optional = json.load(file)
                 for key, value in kwargs.items():
@@ -70,13 +72,18 @@ class RemonlineInterface:
         response = self.get(url, params=params)
         return response.json()
 
-    def post_objects(self, api_path: str, accepted_params_path: Optional[str] = None, **kwargs) -> dict:
+    def post_objects(
+        self, api_path: str, accepted_params_path: Optional[str] = None, **kwargs
+    ) -> dict:
         """Общий метод для отправки данных (POST) по API"""
         url = self._url_builder(api_path)
         data = {"token": self.token}
 
         if accepted_params_path:
-            with open(accepted_params_path) as file:
+            params_path = os.path.join(
+                os.path.dirname(__file__), "params", accepted_params_path
+            )
+            with open(params_path) as file:
                 optional = json.load(file)
                 for key, value in kwargs.items():
                     if key in optional:
@@ -107,7 +114,7 @@ class RemonlineInterface:
             response = self.get_objects(
                 f"warehouse/goods/{warehouse_id}",
                 accepted_params_path="goods_params.json",
-                page=page
+                page=page,
             )
             goods.extend(response.get("data", []))
             if len(goods) >= response.get("count", 0):
@@ -117,33 +124,25 @@ class RemonlineInterface:
     def get_clients(self) -> List[dict]:
         """Возвращает список всех клиентов"""
         return self.get_objects(
-            "clients/",
-            accepted_params_path="params/clients_params.json"
+            "clients/", accepted_params_path="clients_params.json"
         ).get("data", [])
 
     def create_client(self, name: str, phone: str) -> dict:
         """Создает нового клиента по имени и телефону"""
         return self.post_objects(
-            "clients/",
-            accepted_params_path="new_client.json",
-            name=name,
-            phone=phone
+            "clients/", accepted_params_path="new_client.json", name=name, phone=phone
         )
 
     def find_or_create_client(self, phone: str, name: str) -> dict:
         """Ищет клиента по телефону или создает нового, если не найден"""
         existing = self.get_objects(
-            "clients/",
-            accepted_params_path="params/clients_params.json",
-            phones=phone
+            "clients/", accepted_params_path="clients_params.json", phones=phone
         )
         if existing["data"]:
             return existing["data"][0]
         self.create_client(name=name, phone=phone)
         new_client = self.get_objects(
-            "clients/",
-            accepted_params_path="params/clients_params.json",
-            phones=phone
+            "clients/", accepted_params_path="clients_params.json", phones=phone
         )
         return new_client["data"][0]
 
@@ -154,16 +153,20 @@ class RemonlineInterface:
         while True:
             page += 1
             response = self.get_objects(
-                "order/",
-                accepted_params_path="order_params.json",
-                page=page
+                "order/", accepted_params_path="order_params.json", page=page
             )
             orders.extend(response.get("data", []))
             if len(orders) >= response.get("count", 0):
                 break
         return orders
 
-    def create_order(self, branch_id: int, order_type: int, client_id: int, model: str) -> dict:
+    def create_order(
+        self,
+        branch_id: int,
+        order_type: int,
+        client_id: int,
+        manager_notes: str,
+    ) -> dict:
         """Создает новый заказ"""
         return self.post_objects(
             "order/",
@@ -171,7 +174,7 @@ class RemonlineInterface:
             branch_id=branch_id,
             order_type=order_type,
             client_id=client_id,
-            model=model
+            manager_notes=manager_notes,
         )
 
     def update_order_status(self, order_id: int, status_id: int) -> dict:
@@ -180,7 +183,7 @@ class RemonlineInterface:
             "order/status/",
             accepted_params_path="update_status.json",
             order_id=order_id,
-            status_id=status_id
+            status_id=status_id,
         )
 
     def get_order_types(self) -> List[dict]:

@@ -126,6 +126,10 @@ class Good(models.Model):
         related_name="goods",
     )
 
+    @staticmethod
+    def convert_minore_to_major(price_minor):
+        return price_minor / 100
+
 
 # ===== Discounts (history-based etc.) =====
 

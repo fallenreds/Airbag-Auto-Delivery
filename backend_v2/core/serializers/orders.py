@@ -2,7 +2,14 @@ from typing import TypedDict
 
 from rest_framework import serializers
 
-from core.models import Order, OrderItem, Good, OrderUpdate, Client
+from config.settings import (
+    REMONLINE_API_KEY,
+    REMONLINE_BRANCH_PROD_ID,
+    REMONLINE_ORDER_TYPE_ID,
+)
+from core.models import Client, Good, Order, OrderItem, OrderUpdate
+from core.services.remonline import RemonlineInterface
+
 from .common import validate_currency, validate_nonneg_int
 
 
@@ -34,7 +41,9 @@ class OrderItemSerializer(serializers.ModelSerializer):
 
 
 class OrderItemCreateSerializer(serializers.ModelSerializer):
-    good = serializers.PrimaryKeyRelatedField(queryset=Good.objects.all(), required=True)
+    good = serializers.PrimaryKeyRelatedField(
+        queryset=Good.objects.all(), required=True
+    )
     quantity = serializers.IntegerField(min_value=1)
 
     good_external_id = serializers.IntegerField(read_only=True)
@@ -101,7 +110,9 @@ class OrderCreateSerializer(serializers.ModelSerializer):
     class PriceCalculationResult(BasePriceCalculationResult):
         quantity: int
 
-    def calculate_total_prices(self, order_prices: list["OrderCreateSerializer.PriceCalculationResult"]) -> "OrderCreateSerializer.BasePriceCalculationResult":
+    def calculate_total_prices(
+        self, order_prices: list["OrderCreateSerializer.PriceCalculationResult"]
+    ) -> "OrderCreateSerializer.BasePriceCalculationResult":
         order_total_price: OrderCreateSerializer.BasePriceCalculationResult = {
             "line_total_minor": 0,
             "good_price_minor": 0,
@@ -115,7 +126,9 @@ class OrderCreateSerializer(serializers.ModelSerializer):
             order_total_price["grand_total_minor"] += price["grand_total_minor"]
         return order_total_price
 
-    def calculate_prices(self, good: Good, quantity: int, discount: int) -> "OrderCreateSerializer.PriceCalculationResult":
+    def calculate_prices(
+        self, good: Good, quantity: int, discount: int
+    ) -> "OrderCreateSerializer.PriceCalculationResult":
         good_price_minor: int = good.price_minor
         line_total_minor: int = good_price_minor * quantity
         discount_total_minor: float = line_total_minor * discount / 100
@@ -128,8 +141,46 @@ class OrderCreateSerializer(serializers.ModelSerializer):
             "grand_total_minor": grand_total_minor,
         }
 
+    @staticmethod
+    def manager_notes_builder(order: Order, user: Client):
+        goods_info = (
+            f"ID Клієнта: {order.client.id}\n"
+            f"ФІО: {order.name} {order.last_name}\n"
+            f"Телефон: {order.phone}\n"
+            f"Адреса: {order.nova_post_address}\n"
+            f"Коментар: {order.description if order.description else 'Відсутній'}\n"
+            f"Тип платежа: {'Предоплата' if order.prepayment else 'Накладений платеж'}\n"
+            f"Знижка клієнта {user.discount_percent}%\n"
+            f"Сума до сплати {Good.convert_minore_to_major(order.subtotal_minor)} UAH\n"
+            f"До сплати зі знижкою: {Good.convert_minore_to_major(order.grand_total_minor)} UAH"
+        )
+
+        order_items: list[OrderItem] = order.items.all()
+        for order_item in order_items:
+            goods_info += (
+                f"\n\nТовар: {order_item.title} - Кількість: {order_item.quantity}"
+            )
+
+        return goods_info
+
+    def find_discount(self, money_spent, discounts):
+        discounts.sort(key=lambda x: x["month_payment"])
+        for discount in discounts[::-1]:
+            if money_spent >= discount["month_payment"]:
+                return discount
+
     def create_remonline_order(self, order: Order):
-        pass
+        remonline = RemonlineInterface(REMONLINE_API_KEY)
+
+        client = Client.objects.get(pk=order.client.id)
+        manager_notes = self.manager_notes_builder(order=order, user=client)
+        response = remonline.create_order(
+            branch_id=REMONLINE_BRANCH_PROD_ID,
+            order_type=REMONLINE_ORDER_TYPE_ID,
+            client_id=client.id_remonline,
+            manager_notes=manager_notes,
+        )
+        return response
 
     def create(self, validated_data: dict):
         user: Client = self.context["request"].user
@@ -159,12 +210,17 @@ class OrderCreateSerializer(serializers.ModelSerializer):
                 "good_external_id": good.id_remonline,
             }
             OrderItem.objects.create(order=order, **new_item_data)
-            order_prices.append(self.calculate_prices(good, quantity, user.discount_percent))
+            order_prices.append(
+                self.calculate_prices(good, quantity, user.discount_percent)
+            )
         order_total_price = self.calculate_total_prices(order_prices)
         order.subtotal_minor = order_total_price["line_total_minor"]
         order.discount_total_minor = order_total_price["discount_total_minor"]
         order.grand_total_minor = order_total_price["grand_total_minor"]
         order.save()
+
+        response = self.create_remonline_order(order)
+        print(response)
         return order
 
     def to_representation(self, instance):
@@ -173,9 +229,15 @@ class OrderCreateSerializer(serializers.ModelSerializer):
 
 class OrderSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)
-    subtotal_minor = serializers.IntegerField(validators=[validate_nonneg_int], required=False)
-    discount_total_minor = serializers.IntegerField(validators=[validate_nonneg_int], required=False)
-    grand_total_minor = serializers.IntegerField(validators=[validate_nonneg_int], required=False)
+    subtotal_minor = serializers.IntegerField(
+        validators=[validate_nonneg_int], required=False
+    )
+    discount_total_minor = serializers.IntegerField(
+        validators=[validate_nonneg_int], required=False
+    )
+    grand_total_minor = serializers.IntegerField(
+        validators=[validate_nonneg_int], required=False
+    )
 
     class Meta:
         model = Order
