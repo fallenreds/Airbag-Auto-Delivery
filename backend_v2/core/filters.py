@@ -35,19 +35,22 @@ class UniversalFieldFilterBackend(BaseFilterBackend):
         
         for param, value in request.query_params.items():
             # поддержка __lookup
-            parts = param.split("__", 1)
-            base_field = parts[0]
+            base_field = param.split("__", 1)[0]
             if base_field in field_names:
-                # Специальная обработка для __isnull: ожидает bool
-                if len(parts) == 2 and parts[1] == "isnull":
+                # Специальная обработка для __isnull (включая вложенные: foo__0__isnull)
+                if param.endswith("__isnull"):
                     try:
                         filter_kwargs[param] = self._parse_bool(value)
                     except ValueError as e:
-                        logger.warning(f"Invalid boolean for isnull: param={param}, value={value}. Error: {e}")
-                        raise DRFValidationError({
-                            "detail": "Invalid boolean for isnull lookup. Use true/false or 1/0.",
-                            "invalid_params": [param],
-                        })
+                        logger.warning(
+                            f"Invalid boolean for isnull: param={param}, value={value}. Error: {e}"
+                        )
+                        raise DRFValidationError(
+                            {
+                                "detail": "Invalid boolean for isnull lookup. Use true/false or 1/0.",
+                                "invalid_params": [param],
+                            }
+                        )
                 else:
                     filter_kwargs[param] = value
         
