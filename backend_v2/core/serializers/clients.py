@@ -14,6 +14,11 @@ class ClientRegisterSerializer(serializers.ModelSerializer):
         allow_blank=True,
         help_text="Nova Poshta branch address (optional)",
     )
+    guest_id = serializers.IntegerField(
+        required=False,
+        write_only=True,
+        help_text="ID of guest client to convert to registered client"
+    )
 
     class Meta:
         model = Client
@@ -25,6 +30,7 @@ class ClientRegisterSerializer(serializers.ModelSerializer):
             "last_name",
             "phone",
             "nova_post_address",
+            "guest_id",
         ]
         extra_kwargs = {
             "name": {"required": False, "allow_blank": True},
@@ -44,6 +50,32 @@ class ClientRegisterSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data):
+        guest_id = validated_data.pop('guest_id', None)
+        
+        if guest_id:
+            try:
+                # Try to find the guest client
+                guest_client = Client.objects.get(id=guest_id, is_guest=True)
+                
+                # Update the guest client with the new data
+                for key, value in validated_data.items():
+                    setattr(guest_client, key, value)
+                
+                # Convert from guest to regular client
+                guest_client.is_guest = False
+                
+                # Set the password
+                password = validated_data.get('password')
+                if password:
+                    guest_client.set_password(password)
+                
+                guest_client.save()
+                return guest_client
+            except Client.DoesNotExist:
+                # If guest client not found, proceed with normal registration
+                pass
+        
+        # Normal registration flow
         return Client.objects.create_user(**validated_data)
 
 
@@ -76,6 +108,7 @@ class ClientProfileSerializer(serializers.ModelSerializer):
             "discount_percent",
             "is_staff",
             "is_superuser",
+            "is_guest",
             "groups",
             "user_permissions",
         ]

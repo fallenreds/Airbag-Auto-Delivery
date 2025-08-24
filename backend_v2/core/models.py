@@ -34,6 +34,24 @@ class ClientManager(BaseUserManager):
         user.save(using=self._db)
         return user
 
+    def create_guest(self, **extra_fields):
+        """
+        Create a guest client with no email and no password.
+        Guest clients can be created with just an ID - no other fields required.
+        Guest clients can be converted to regular clients later.
+        """
+        # Set minimal defaults but allow them to be null/blank
+        extra_fields.setdefault("is_guest", True)
+        extra_fields.setdefault("is_active", True)
+
+        # Create with just the required fields
+        # Skip email validation for guest users
+        user = self.model(**extra_fields)
+        user._skip_email_validation = True  # Add a flag to skip validation
+        user.set_unusable_password()  # Set an unusable password
+        user.save(using=self._db)
+        return user
+
     def create_superuser(self, email, password=None, **extra_fields):
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
@@ -50,11 +68,11 @@ class Client(AbstractBaseUser, PermissionsMixin):
     id_remonline = models.BigIntegerField(null=True, blank=True)
     telegram_id = models.BigIntegerField(null=True, blank=True, db_index=True)
 
-    name = models.CharField(max_length=255)
-    last_name = models.CharField(max_length=255)
+    name = models.CharField(max_length=255, null=True, blank=True)
+    last_name = models.CharField(max_length=255, null=True, blank=True)
     login = models.CharField(max_length=128, unique=True, null=True, blank=True)
 
-    email = models.EmailField(unique=True, max_length=100)
+    email = models.EmailField(unique=True, max_length=100, null=True, blank=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
     nova_post_address = models.TextField(blank=True, null=True)
 
@@ -63,6 +81,7 @@ class Client(AbstractBaseUser, PermissionsMixin):
 
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
+    is_guest = models.BooleanField(default=False)
 
     groups = models.ManyToManyField(
         "auth.Group",
@@ -83,8 +102,23 @@ class Client(AbstractBaseUser, PermissionsMixin):
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []
 
+    def save(self, *args, **kwargs):
+        # Allow saving without email only for guest clients
+        if getattr(self, "_skip_email_validation", False) or self.is_guest:
+            # Skip the email validation for guest clients
+            super(AbstractBaseUser, self).save(*args, **kwargs)
+        else:
+            # Normal save with validation for regular clients
+            super().save(*args, **kwargs)
+
     def __str__(self):
-        return f"{self.name} {self.last_name} ({self.email})"
+        name = self.name or ""
+        last_name = self.last_name or ""
+        email_part = f" ({self.email})" if self.email else ""
+
+        if name or last_name:
+            return f"{name} {last_name}{email_part}"
+        return f"Guest{email_part}" if self.is_guest else "Client"
 
 
 class ClientUpdate(models.Model):

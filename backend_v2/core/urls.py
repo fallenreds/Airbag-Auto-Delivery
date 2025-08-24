@@ -1,8 +1,8 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
-from rest_framework_simplejwt.views import TokenRefreshView, TokenVerifyView
+from rest_framework_simplejwt.views import TokenVerifyView
 
-from .jwt_views import MyTokenObtainPairView
+from .jwt_views import MyTokenObtainPairView, CustomTokenRefreshView
 from .views import (
     BotVisitorViewSet,
     CartItemViewSet,
@@ -19,6 +19,7 @@ from .views import (
     OrderViewSet,
     TemplateViewSet,
 )
+from .views.guest_clients import GuestClientCreationView
 
 router = DefaultRouter()
 router.register(r"clients", ClientViewSet)
@@ -36,8 +37,9 @@ router.register(r"good-categories", GoodCategoryViewSet)
 
 urlpatterns = router.urls + [
     path("auth/login/", MyTokenObtainPairView.as_view(), name="token_obtain_pair"),
-    path("auth/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
+    path("auth/token/refresh/", CustomTokenRefreshView.as_view(), name="token_refresh"),
     path("auth/token/verify/", TokenVerifyView.as_view(), name="token_verify"),
     path("auth/me/", MeView.as_view(), name="me"),
     path("auth/register/", ClientRegistrationView.as_view(), name="register"),
+    path("auth/guest/", GuestClientCreationView.as_view(), name="create_guest"),
 ]

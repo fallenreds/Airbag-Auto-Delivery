@@ -32,7 +32,12 @@ class OrderViewSet(viewsets.ModelViewSet):
         return super().get_serializer_class()
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        # Check if user is authenticated before using as FK
+        if self.request.user.is_authenticated:
+            serializer.save(user=self.request.user)
+        else:
+            # For anonymous users, don't set the user field
+            serializer.save()
 
     @swagger_auto_schema(
         request_body=OrderCreateSerializer,

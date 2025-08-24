@@ -17,6 +17,11 @@ def generate_filterset_for_model(model):
 def get_own_queryset(view):
     qs = view.queryset
     if not IsAdminUser().has_permission(view.request, view):
+        # Check if user is authenticated before filtering
+        if not view.request.user.is_authenticated:
+            # Return empty queryset for unauthenticated users
+            return qs.none()
+            
         model = qs.model
         field_names = {f.name for f in model._meta.get_fields()}
         if "client" in field_names:
@@ -29,5 +34,5 @@ def get_own_queryset(view):
             qs = qs.filter(order_ref__client=view.request.user)
         else:
             # No filtering applied if model lacks client linkage
-            qs = qs.none() if view.request.user.is_authenticated else qs
+            qs = qs.none()
     return qs
