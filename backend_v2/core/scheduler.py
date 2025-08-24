@@ -80,6 +80,7 @@ def sync_goods():
         cat = item.get("category")
         if cat and "id" in cat:
             cat_obj = existing_categories.get(cat["id"])
+
         if cat.get("id") in CATEGORIES_IGNORE_IDS:
             continue
 
@@ -99,7 +100,6 @@ def sync_goods():
                 )
             ),
         }
-        print(goods_data_dict.get("together_buy"))
         remonline_id = item["id"]
         existing_good = existing_goods.get(remonline_id)
 
