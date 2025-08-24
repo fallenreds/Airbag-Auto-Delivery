@@ -1,11 +1,12 @@
 from datetime import datetime
 
 import requests
-from models import Order
+from django.utils import timezone
 
 from config.settings import (
     REMONLINE_API_KEY,
 )
+from core.models import Order, OrderEvent, OrderEventType
 from core.services.remonline.api import RemonlineInterface
 
 
@@ -24,28 +25,49 @@ def process_order(remonline_order: dict, local_order: Order):
     TTN = None
     if "закрит" in remonline_order["status"]["name"].lower():
         local_order.is_completed = True
-        # CREATE EVENT
+        # Create FINISHED event
+        OrderEvent.objects.create(
+            type=OrderEventType.FINISHED,
+            order=local_order,
+            details="Order marked as completed",
+        )
 
     TTN = parse_engineer_notes(remonline_order.get("engineer_notes", ""))
 
     if TTN is not None and TTN != local_order.ttn:
         local_order.ttn = TTN
-        # CREATE EVENT
+        # Create TTN_UPDATED event
+        OrderEvent.objects.create(
+            type=OrderEventType.TTN_UPDATED,
+            order=local_order,
+            details=f"TTN updated to {TTN}",
+        )
 
     if TTN is not None:
         ttn_data = {"DocumentNumber": TTN, "Phone": local_order.phone}
         ttn_details = get_ttn_details([ttn_data]).get("data")[0]
         if ttn_details["StatusCode"] in (9, 10):
             local_order.is_completed = True
-            # CREATE EVENT
+            # Create FINISHED event
+            OrderEvent.objects.create(
+                type=OrderEventType.FINISHED,
+                order=local_order,
+                details="Order marked as completed due to TTN status",
+            )
 
         if ttn_details["StatusCode"] in (7):
             if local_order.branch_remember_count == 0 or (
                 local_order.branch_remember_count == 1
                 and one_day_difference(local_order)
             ):
-                pass
-            # CREATE EVENT
+                # Create IN_BRANCH event
+                OrderEvent.objects.create(
+                    type=OrderEventType.IN_BRANCH,
+                    order=local_order,
+                    details="Order is in branch",
+                )
+                local_order.in_branch_datetime = timezone.now()
+                local_order.branch_remember_count += 1
 
     return local_order.save()
 

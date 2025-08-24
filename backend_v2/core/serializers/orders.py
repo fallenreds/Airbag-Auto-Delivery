@@ -7,7 +7,7 @@ from config.settings import (
     REMONLINE_BRANCH_PROD_ID,
     REMONLINE_ORDER_TYPE_ID,
 )
-from core.models import Client, Good, Order, OrderItem, OrderUpdate
+from core.models import Client, Good, Order, OrderItem, OrderEvent
 from core.services.remonline import RemonlineInterface
 
 from .common import validate_currency, validate_nonneg_int
@@ -268,7 +268,7 @@ class OrderSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "date"]
 
 
-class OrderUpdateSerializer(serializers.ModelSerializer):
+class OrderEventSerializer(serializers.ModelSerializer):
     class Meta:
-        model = OrderUpdate
+        model = OrderEvent
         fields = "__all__"

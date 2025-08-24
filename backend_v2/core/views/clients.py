@@ -5,12 +5,12 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from core.models import Client, ClientUpdate
+from core.models import Client, ClientEvent
 from core.serializers import (
     ClientProfileSerializer,
     ClientRegisterSerializer,
     ClientSerializer,
-    ClientUpdateSerializer,
+    ClientEventSerializer,
 )
 
 from .utils import generate_filterset_for_model
@@ -23,10 +23,10 @@ class ClientViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
 
-class ClientUpdateViewSet(viewsets.ModelViewSet):
-    queryset = ClientUpdate.objects.all()
-    serializer_class = ClientUpdateSerializer
-    filterset_class = generate_filterset_for_model(ClientUpdate)
+class ClientEventViewSet(viewsets.ModelViewSet):
+    queryset = ClientEvent.objects.all()
+    serializer_class = ClientEventSerializer
+    filterset_class = generate_filterset_for_model(ClientEvent)
     permission_classes = [IsAuthenticated]
 
 

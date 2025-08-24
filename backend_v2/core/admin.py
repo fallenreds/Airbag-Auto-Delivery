@@ -7,13 +7,13 @@ from .models import (
     Cart,
     CartItem,
     Client,
-    ClientUpdate,
+    ClientEvent,
     Discount,
     Good,
     GoodCategory,
     Order,
     OrderItem,
-    OrderUpdate,
+    OrderEvent,
     Template,
 )
 
@@ -96,8 +96,8 @@ class ClientAdmin(UserAdmin):
     )
 
 
-@admin.register(ClientUpdate)
-class ClientUpdateAdmin(admin.ModelAdmin):
+@admin.register(ClientEvent)
+class ClientEventAdmin(admin.ModelAdmin):
     list_display = ("id", "type", "client")
     search_fields = ("type", "client__email")
 
@@ -126,10 +126,10 @@ class OrderAdmin(admin.ModelAdmin):
     list_filter = ("is_paid", "is_completed")
 
 
-@admin.register(OrderUpdate)
-class OrderUpdateAdmin(admin.ModelAdmin):
-    list_display = ("id", "type", "order", "order_ref")
-    search_fields = ("type", "order")
+@admin.register(OrderEvent)
+class OrderEventAdmin(admin.ModelAdmin):
+    list_display = ("id", "type", "order")
+    search_fields = ("type", "order__id")
 
 
 class DiscountAdminForm(forms.ModelForm):

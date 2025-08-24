@@ -1,7 +1,7 @@
 from .clients import (
     ClientRegisterSerializer,
     ClientSerializer,
-    ClientUpdateSerializer,
+    ClientEventSerializer,
     ClientProfileSerializer,
 )
 from .guest_clients import GuestClientSerializer
@@ -12,7 +12,7 @@ from .orders import (
     OrderItemCreateSerializer,
     OrderCreateSerializer,
     OrderSerializer,
-    OrderUpdateSerializer,
+    OrderEventSerializer,
 )
 from .carts import CartItemSerializer, CartSerializer
 from .misc import TemplateSerializer, BotVisitorSerializer
@@ -20,7 +20,7 @@ from .misc import TemplateSerializer, BotVisitorSerializer
 __all__ = [
     'ClientRegisterSerializer',
     'ClientSerializer',
-    'ClientUpdateSerializer',
+    'ClientEventSerializer',
     'ClientProfileSerializer',
     'GuestClientSerializer',
     'GoodCategorySerializer',
@@ -30,7 +30,7 @@ __all__ = [
     'OrderItemCreateSerializer',
     'OrderCreateSerializer',
     'OrderSerializer',
-    'OrderUpdateSerializer',
+    'OrderEventSerializer',
     'CartItemSerializer',
     'CartSerializer',
     'TemplateSerializer',
