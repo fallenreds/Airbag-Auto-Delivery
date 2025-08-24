@@ -15,6 +15,19 @@ class UniversalFieldFilterBackend(BaseFilterBackend):
       - сравнения: ?field__gte=5&field__lte=10
       - ForeignKey: ?related_id=1
     """
+    def _parse_bool(self, raw: str):
+        """Parse common truthy/falsey strings into booleans.
+        Returns True/False or raises ValueError if not recognizable.
+        """
+        if raw is None:
+            raise ValueError("None is not a valid boolean string")
+        val = str(raw).strip().lower()
+        if val in {"1", "true", "t", "yes", "y"}:
+            return True
+        if val in {"0", "false", "f", "no", "n"}:
+            return False
+        raise ValueError(f"Unrecognized boolean value: {raw}")
+
     def filter_queryset(self, request, queryset, view):
         model = queryset.model
         field_names = set(f.name for f in model._meta.get_fields() if isinstance(f, Field))
@@ -22,9 +35,21 @@ class UniversalFieldFilterBackend(BaseFilterBackend):
         
         for param, value in request.query_params.items():
             # поддержка __lookup
-            base_field = param.split('__', 1)[0]
+            parts = param.split("__", 1)
+            base_field = parts[0]
             if base_field in field_names:
-                filter_kwargs[param] = value
+                # Специальная обработка для __isnull: ожидает bool
+                if len(parts) == 2 and parts[1] == "isnull":
+                    try:
+                        filter_kwargs[param] = self._parse_bool(value)
+                    except ValueError as e:
+                        logger.warning(f"Invalid boolean for isnull: param={param}, value={value}. Error: {e}")
+                        raise DRFValidationError({
+                            "detail": "Invalid boolean for isnull lookup. Use true/false or 1/0.",
+                            "invalid_params": [param],
+                        })
+                else:
+                    filter_kwargs[param] = value
         
         try:
             return queryset.filter(**filter_kwargs)

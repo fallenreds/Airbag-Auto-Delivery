@@ -111,6 +111,12 @@ class Good(models.Model):
     title = models.CharField(max_length=255)
     description = models.TextField(null=True, blank=True)
     images = models.JSONField(null=True, blank=True)
+    together_buy = models.JSONField(
+        null=True,
+        blank=True,
+        default=list,
+        help_text="Optional list of related Good IDs (bigint) often bought together",
+    )
 
     # List price in minor units
     price_minor = models.BigIntegerField(default=0)  # >= 0
@@ -129,6 +135,29 @@ class Good(models.Model):
     @staticmethod
     def convert_minore_to_major(price_minor):
         return price_minor / 100
+
+    @staticmethod
+    def parse_ids_string(value: str):
+        """Convert a string like "1, 2,3" into a list of ints [1,2,3], ignoring spaces.
+
+        Non-integer tokens are skipped. Empty or None returns [].
+        """
+        if not value:
+            return []
+        # Remove all spaces and split by comma
+        compact = value.replace(" ", "")
+        if not compact:
+            return []
+        result = []
+        for token in compact.split(","):
+            if not token:
+                continue
+            try:
+                result.append(int(token))
+            except ValueError:
+                # Skip non-numeric tokens silently
+                continue
+        return result
 
 
 # ===== Discounts (history-based etc.) =====

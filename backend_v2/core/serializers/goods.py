@@ -21,6 +21,11 @@ class GoodSerializer(serializers.ModelSerializer):
     )
     price_minor = serializers.IntegerField(validators=[validate_nonneg_int])
     currency = serializers.CharField(validators=[validate_currency])
+    together_buy = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=False,
+        allow_null=True,
+    )
 
     class Meta:
         model = Good

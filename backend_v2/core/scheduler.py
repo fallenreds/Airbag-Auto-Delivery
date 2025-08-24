@@ -4,7 +4,12 @@ from decimal import ROUND_HALF_UP, Decimal
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from config.settings import CATEGORIES_IGNORE_IDS, PRICE_ID_PROD, REMONLINE_API_KEY
+from config.settings import (
+    CATEGORIES_IGNORE_IDS,
+    PRICE_ID_PROD,
+    REMONLINE_API_KEY,
+    REMONLINE_TOGETHERBUY_CUSTOM_FIELD_ID,
+)
 from core.services.remonline.api import RemonlineInterface
 
 logger = logging.getLogger(__name__)
@@ -79,7 +84,6 @@ def sync_goods():
             continue
 
         # Подготавливаем данные для товара
-        # Подготавливаем данные для товара
         goods_data_dict = {
             "title": item.get("title", ""),
             "description": item.get("description", ""),
@@ -89,8 +93,13 @@ def sync_goods():
             "residue": int(item.get("residue", 0)),
             "code": item.get("code", ""),
             "category": cat_obj,
+            "together_buy": Good.parse_ids_string(
+                item.get("custom_fields", dict()).get(
+                    REMONLINE_TOGETHERBUY_CUSTOM_FIELD_ID, ""
+                )
+            ),
         }
-
+        print(goods_data_dict.get("together_buy"))
         remonline_id = item["id"]
         existing_good = existing_goods.get(remonline_id)
 
@@ -101,6 +110,7 @@ def sync_goods():
                 if getattr(existing_good, field) != value:
                     setattr(existing_good, field, value)
                     changed = True
+
             if changed:
                 goods_to_update.append(existing_good)
         else:
@@ -122,6 +132,7 @@ def sync_goods():
                     "residue",
                     "code",
                     "category",
+                    "together_buy",
                 ],
             )
 
