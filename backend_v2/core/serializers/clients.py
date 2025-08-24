@@ -1,6 +1,8 @@
 from rest_framework import serializers
 
+from config.settings import REMONLINE_API_KEY
 from core.models import Client, ClientUpdate
+from core.services.remonline import RemonlineInterface
 from core.validators import validate_email
 
 
@@ -17,7 +19,7 @@ class ClientRegisterSerializer(serializers.ModelSerializer):
     guest_id = serializers.IntegerField(
         required=False,
         write_only=True,
-        help_text="ID of guest client to convert to registered client"
+        help_text="ID of guest client to convert to registered client",
     )
 
     class Meta:
@@ -46,37 +48,59 @@ class ClientRegisterSerializer(serializers.ModelSerializer):
         pwd = data.get("password")
         cpw = data.pop("confirm_password", None)
         if pwd != cpw:
-            raise serializers.ValidationError({"confirm_password": "Passwords do not match."})
+            raise serializers.ValidationError(
+                {"confirm_password": "Passwords do not match."}
+            )
         return data
 
     def create(self, validated_data):
-        guest_id = validated_data.pop('guest_id', None)
-        
+        guest_id = validated_data.pop("guest_id", None)
+
         if guest_id:
             try:
                 # Try to find the guest client
                 guest_client = Client.objects.get(id=guest_id, is_guest=True)
-                
+
                 # Update the guest client with the new data
                 for key, value in validated_data.items():
                     setattr(guest_client, key, value)
-                
+
                 # Convert from guest to regular client
                 guest_client.is_guest = False
-                
+
                 # Set the password
-                password = validated_data.get('password')
+                password = validated_data.get("password")
                 if password:
                     guest_client.set_password(password)
-                
+
                 guest_client.save()
                 return guest_client
             except Client.DoesNotExist:
                 # If guest client not found, proceed with normal registration
                 pass
-        
-        # Normal registration flow
-        return Client.objects.create_user(**validated_data)
+
+        # Normal registration flow - create user in Django
+        client = Client.objects.create_user(**validated_data)
+
+        # Create client in Remonline (only for new registrations, not for guest conversions)
+        name = validated_data.get("name", "")
+        phone = validated_data.get("phone", "")
+        if name and phone:
+            try:
+                remonline = RemonlineInterface(REMONLINE_API_KEY)
+                remonline_client = remonline.find_or_create_client(
+                    phone=phone, name=name
+                )
+
+                # Update client with Remonline ID if available
+                if remonline_client and "id" in remonline_client:
+                    client.id_remonline = remonline_client["id"]
+                    client.save(update_fields=["id_remonline"])
+            except Exception as e:
+                # Log the error but don't fail the request
+                print(f"Error creating Remonline client: {e}")
+
+        return client
 
 
 class ClientSerializer(serializers.ModelSerializer):
