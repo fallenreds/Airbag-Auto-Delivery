@@ -73,7 +73,7 @@ class Client(AbstractBaseUser, PermissionsMixin):
     login = models.CharField(max_length=128, unique=True, null=True, blank=True)
 
     email = models.EmailField(unique=True, max_length=100, null=True, blank=True)
-    phone = models.CharField(max_length=20, blank=True, null=True)
+    phone = models.CharField(max_length=20, blank=True, null=True, unique=True)
     nova_post_address = models.TextField(blank=True, null=True)
 
     # Personal discount percent 0–100

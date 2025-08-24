@@ -37,6 +37,16 @@ class GuestClientSerializer(serializers.ModelSerializer):
             "email": {"required": False, "allow_blank": True, "allow_null": True},
         }
 
+    def validate_email(self, value):
+        if value and Client.objects.filter(email=value).exists():
+            raise serializers.ValidationError("A user with this email already exists.")
+        return value
+        
+    def validate_phone(self, value):
+        if value and Client.objects.filter(phone=value).exists():
+            raise serializers.ValidationError("A user with this phone number already exists.")
+        return value
+        
     def create(self, validated_data):
         # Create guest with required and optional data
         guest_client = Client.objects.create_guest(**validated_data)

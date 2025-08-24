@@ -42,7 +42,15 @@ class ClientRegisterSerializer(serializers.ModelSerializer):
         }
 
     def validate_email(self, value):
-        return validate_email(value)
+        value = validate_email(value)
+        if value and Client.objects.filter(email=value).exists():
+            raise serializers.ValidationError("A user with this email already exists.")
+        return value
+        
+    def validate_phone(self, value):
+        if value and Client.objects.filter(phone=value).exists():
+            raise serializers.ValidationError("A user with this phone number already exists.")
+        return value
 
     def validate(self, data):
         pwd = data.get("password")
@@ -109,6 +117,22 @@ class ClientSerializer(serializers.ModelSerializer):
     class Meta:
         model = Client
         exclude = ("password", "last_login")
+        
+    def validate_email(self, value):
+        # Check if email exists but exclude the current instance
+        instance = getattr(self, 'instance', None)
+        if value and instance and instance.email != value:
+            if Client.objects.filter(email=value).exists():
+                raise serializers.ValidationError("A user with this email already exists.")
+        return value
+        
+    def validate_phone(self, value):
+        # Check if phone exists but exclude the current instance
+        instance = getattr(self, 'instance', None)
+        if value and instance and instance.phone != value:
+            if Client.objects.filter(phone=value).exists():
+                raise serializers.ValidationError("A user with this phone number already exists.")
+        return value
 
 
 class ClientUpdateSerializer(serializers.ModelSerializer):
