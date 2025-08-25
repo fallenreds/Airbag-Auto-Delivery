@@ -7,7 +7,7 @@ from config.settings import (
     REMONLINE_BRANCH_PROD_ID,
     REMONLINE_ORDER_TYPE_ID,
 )
-from core.models import Client, Good, Order, OrderItem, OrderEvent
+from core.models import Client, Good, Order, OrderEvent, OrderItem
 from core.services.remonline import RemonlineInterface
 
 from .common import validate_currency, validate_nonneg_int
@@ -217,10 +217,10 @@ class OrderCreateSerializer(serializers.ModelSerializer):
         order.subtotal_minor = order_total_price["line_total_minor"]
         order.discount_total_minor = order_total_price["discount_total_minor"]
         order.grand_total_minor = order_total_price["grand_total_minor"]
+        response = self.create_remonline_order(order)
+        order.remonline_order_id = response.get("data").get("id")
         order.save()
-
-        # response = self.create_remonline_order(order) #Пока пропускаю что бы не создавать заказы в Remonline
-
+        print(response)
         return order
 
     def to_representation(self, instance):
