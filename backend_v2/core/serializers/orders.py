@@ -220,7 +220,6 @@ class OrderCreateSerializer(serializers.ModelSerializer):
         response = self.create_remonline_order(order)
         order.remonline_order_id = response.get("data").get("id")
         order.save()
-        print(response)
         return order
 
     def to_representation(self, instance):
