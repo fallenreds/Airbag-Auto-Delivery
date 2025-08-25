@@ -121,10 +121,10 @@ class Client(AbstractBaseUser, PermissionsMixin):
         return f"Guest{email_part}" if self.is_guest else "Client"
 
 
-class ClientUpdate(models.Model):
+class ClientEvent(models.Model):
     id = models.BigAutoField(primary_key=True)
     type = models.CharField(max_length=32)
-    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="updates")
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="events")
     # Use default for existing rows and auto-fill new ones
     created_at = models.DateTimeField(default=timezone.now, editable=False)
 
@@ -280,18 +280,34 @@ class OrderItem(models.Model):
         ]
 
 
-class OrderUpdate(models.Model):
+class OrderEventType:
+    MERGED = "MERGED"
+    CREATED_ADMIN_MESSAGE = "CREATED_ADMIN_MESSAGE"
+    CREATED_CLIENT_MESSAGE = "CREATED_CLIENT_MESSAGE"
+    FINISHED = "FINISHED"
+    TTN_UPDATED = "TTN_UPDATED"
+    IN_BRANCH = "IN_BRANCH"
+
+    CHOICES = [
+        (MERGED, "Merged"),
+        (CREATED_ADMIN_MESSAGE, "Created Admin Message"),
+        (CREATED_CLIENT_MESSAGE, "Created Client Message"),
+        (FINISHED, "Finished"),
+        (TTN_UPDATED, "TTN Updated"),
+        (IN_BRANCH, "In Branch"),
+    ]
+
+
+class OrderEvent(models.Model):
     id = models.BigAutoField(primary_key=True)
-    type = models.CharField(max_length=32)
+    type = models.CharField(max_length=32, choices=OrderEventType.CHOICES)
     details = models.TextField(blank=True, null=True)
-    # keep both raw textual order id and FK link if available
-    order = models.CharField(max_length=255, blank=True, null=True)
-    order_ref = models.ForeignKey(
+    order = models.ForeignKey(
         "Order",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name="order_updates",
+        related_name="order_events",
     )
     created_at = models.DateTimeField(auto_now_add=True)
 

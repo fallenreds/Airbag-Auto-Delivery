@@ -2,15 +2,15 @@
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status, viewsets
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 
-from core.models import Order, OrderItem, OrderUpdate
+from core.models import Order, OrderEvent, OrderItem
 from core.serializers import (
     OrderCreateSerializer,
+    OrderEventSerializer,
     OrderItemSerializer,
     OrderSerializer,
-    OrderUpdateSerializer,
 )
 from core.views.utils import get_own_queryset
 
@@ -119,11 +119,11 @@ class OrderItemViewSet(viewsets.ModelViewSet):
         serializer.save(**defaults)
 
 
-class OrderUpdateViewSet(viewsets.ModelViewSet):
-    serializer_class = OrderUpdateSerializer
-    filterset_class = generate_filterset_for_model(OrderUpdate)
-    queryset = OrderUpdate.objects.all()
-    permission_classes = [IsAuthenticated]
+class OrderEventViewSet(viewsets.ModelViewSet):
+    serializer_class = OrderEventSerializer
+    filterset_class = generate_filterset_for_model(OrderEvent)
+    queryset = OrderEvent.objects.all()
+    permission_classes = [IsAuthenticated, IsAdminUser]
 
     def get_queryset(self):
         return get_own_queryset(self)

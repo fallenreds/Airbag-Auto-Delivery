@@ -21,7 +21,7 @@ def get_own_queryset(view):
         if not view.request.user.is_authenticated:
             # Return empty queryset for unauthenticated users
             return qs.none()
-            
+
         model = qs.model
         field_names = {f.name for f in model._meta.get_fields()}
         if "client" in field_names:
@@ -29,9 +29,9 @@ def get_own_queryset(view):
         elif "order" in field_names:
             # e.g., OrderItem has FK 'order' -> Order has 'client'
             qs = qs.filter(order__client=view.request.user)
-        elif "order_ref" in field_names:
-            # e.g., OrderUpdate has FK 'order_ref' -> Order has 'client'
-            qs = qs.filter(order_ref__client=view.request.user)
+        elif "order" in field_names and model.__name__ == "OrderEvent":
+            # OrderEvent has FK 'order' -> Order has 'client'
+            qs = qs.filter(order__client=view.request.user)
         else:
             # No filtering applied if model lacks client linkage
             qs = qs.none()

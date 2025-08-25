@@ -8,14 +8,14 @@ from .views import (
     CartItemViewSet,
     CartViewSet,
     ClientRegistrationView,
-    ClientUpdateViewSet,
+    ClientEventViewSet,
     ClientViewSet,
     DiscountViewSet,
     GoodCategoryViewSet,
     GoodViewSet,
     MeView,
     OrderItemViewSet,
-    OrderUpdateViewSet,
+    OrderEventViewSet,
     OrderViewSet,
     TemplateViewSet,
 )
@@ -23,9 +23,9 @@ from .views.guest_clients import GuestClientCreationView
 
 router = DefaultRouter()
 router.register(r"clients", ClientViewSet)
-router.register(r"client-updates", ClientUpdateViewSet)
+router.register(r"client-events", ClientEventViewSet)
 router.register(r"orders", OrderViewSet)
-router.register(r"order-updates", OrderUpdateViewSet)
+router.register(r"order-events", OrderEventViewSet)
 router.register(r"discounts", DiscountViewSet)
 router.register(r"carts", CartViewSet)
 router.register(r"cart-items", CartItemViewSet)

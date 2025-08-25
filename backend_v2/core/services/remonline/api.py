@@ -160,6 +160,32 @@ class RemonlineInterface:
                 break
         return orders
 
+    def get_orders_by_ids(self, ids: List[int]) -> List[dict]:
+        """Возвращает список заказов по их ID с учетом пагинации"""
+        orders: List[dict] = []
+        page = 0
+
+        # Convert list of IDs to comma-separated string for API parameter
+        ids_str = ",".join(map(str, ids))
+
+        while True:
+            page += 1
+            response = self.get_objects(
+                "order/",
+                accepted_params_path="order_params.json",
+                page=page,
+                ids=ids_str,
+            )
+            orders.extend(response.get("data", []))
+
+            # Break the loop if we've received all orders or no more data
+            if len(response.get("data", [])) == 0 or len(orders) >= response.get(
+                "count", 0
+            ):
+                break
+
+        return orders
+
     def create_order(
         self,
         branch_id: int,
