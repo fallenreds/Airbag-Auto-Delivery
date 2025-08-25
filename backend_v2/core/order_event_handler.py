@@ -25,7 +25,6 @@ def process_order(remonline_order: dict, local_order: Order):
     TTN = None
     if "закрит" in remonline_order["status"]["name"].lower():
         local_order.is_completed = True
-        # Create FINISHED event
         OrderEvent.objects.create(
             type=OrderEventType.FINISHED,
             order=local_order,
@@ -36,7 +35,6 @@ def process_order(remonline_order: dict, local_order: Order):
 
     if TTN is not None and TTN != local_order.ttn:
         local_order.ttn = TTN
-        # Create TTN_UPDATED event
         OrderEvent.objects.create(
             type=OrderEventType.TTN_UPDATED,
             order=local_order,
@@ -48,7 +46,6 @@ def process_order(remonline_order: dict, local_order: Order):
         ttn_details = get_ttn_details([ttn_data]).get("data")[0]
         if ttn_details["StatusCode"] in (9, 10):
             local_order.is_completed = True
-            # Create FINISHED event
             OrderEvent.objects.create(
                 type=OrderEventType.FINISHED,
                 order=local_order,
@@ -60,7 +57,6 @@ def process_order(remonline_order: dict, local_order: Order):
                 local_order.branch_remember_count == 1
                 and one_day_difference(local_order)
             ):
-                # Create IN_BRANCH event
                 OrderEvent.objects.create(
                     type=OrderEventType.IN_BRANCH,
                     order=local_order,
