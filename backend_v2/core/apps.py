@@ -10,6 +10,9 @@ class CoreConfig(AppConfig):
     def ready(self):
         import sys
 
-        runner: str = sys.argv[-1]
-        if "runserver" in runner or "gunicorn" in runner or "uwsgi" in runner:
+        # Previously we only checked the last CLI argument, which fails under Gunicorn
+        # because the last arg is typically the bind address (e.g., "0.0.0.0:8000").
+        # Scan all arguments instead to detect the runner reliably.
+        argv = " ".join(sys.argv)
+        if any(name in argv for name in ("runserver", "gunicorn", "uwsgi")):
             start_scheduler()
