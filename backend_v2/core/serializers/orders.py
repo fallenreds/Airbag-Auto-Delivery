@@ -87,7 +87,7 @@ class OrderCreateSerializer(serializers.ModelSerializer):
     phone = serializers.CharField(required=True)
     nova_post_address = serializers.CharField(required=True)
     prepayment = serializers.BooleanField(required=True)
-    description = serializers.CharField(required=False)
+    description = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
     class Meta:
         model = Order
