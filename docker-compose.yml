@@ -1,6 +1,7 @@
 version: '3.7'
 
 services:
+  
   backend:
     build: backend/
     ports:
@@ -8,6 +9,9 @@ services:
     volumes:
       - ./backend:/app
     restart: unless-stopped
+    env_file:
+      - backend/.env 
+    
   bot:
     build: bot/
     ports:
