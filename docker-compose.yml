@@ -1,22 +1,12 @@
 version: '3.7'
 
 services:
-  #back:
-  #  build: backend/
-  #  ports:
-  #    - "8000:8000"
-  #  volumes: 
-  #    - type: bind
-  #      source: ./info.db
-  #      target: /backend/info.db
-  #      read_only: false
-  #  restart: unless-stopped
-  backend_v2:
-    build: backend_v2/
+  backend:
+    build: backend/
     ports:
       - "8000:8000"
     volumes:
-      - ./backend_v2:/app
+      - ./backend:/app
     restart: unless-stopped
   bot:
     build: bot/
@@ -27,10 +17,3 @@ services:
         source: ./props.json
         target: /bot/props.json
         read_only: false
-  #front:
-  #  environment:
-  #    - NODE_OPTIONS=--openssl-legacy-provider
-  #    - SKIP_PREFLIGHT_CHECK=true
-  #  build: front/
-  #  ports:
-  #    - "3000:3000"
