@@ -75,9 +75,17 @@ class RemonlineInterface:
     def post_objects(
         self, api_path: str, accepted_params_path: Optional[str] = None, **kwargs
     ) -> dict:
-        """Общий метод для отправки данных (POST) по API"""
         url = self._url_builder(api_path)
-        data = {"token": self.token}
+
+        # собираем как список пар, чтобы requests сделал key=1&key=2
+        data_items = [("token", self.token)]
+
+        def push(key, value, is_array: bool):
+            if is_array and isinstance(value, (list, tuple)):
+                for v in value:
+                    data_items.append((key, v))
+            else:
+                data_items.append((key, value))
 
         if accepted_params_path:
             params_path = os.path.join(
@@ -85,17 +93,45 @@ class RemonlineInterface:
             )
             with open(params_path) as file:
                 optional = json.load(file)
-                for key, value in kwargs.items():
-                    if key in optional:
-                        if optional[key] == "array":
-                            data[f"{key}[]"] = value
-                        else:
-                            data[key] = value
+            for key, value in kwargs.items():
+                is_array = optional.get(key) == "array"
+                push(key, value, is_array)
         else:
-            data.update(kwargs)
+            for key, value in kwargs.items():
+                # если пользователь передал list/tuple — считаем массивом
+                push(key, value, isinstance(value, (list, tuple)))
 
-        response = self.post(url, data=data)
+        # передаём список пар — requests сформирует ids=1&ids=2&ids=3
+        response = self.post(url, data=data_items)
+        print("HERE")
+        print(url)
+        print(response.request)
         return response.json()
+
+    # def post_objects(
+    #     self, api_path: str, accepted_params_path: Optional[str] = None, **kwargs
+    # ) -> dict:
+    #     """Общий метод для отправки данных (POST) по API"""
+    #     url = self._url_builder(api_path)
+    #     data = {"token": self.token}
+
+    #     if accepted_params_path:
+    #         params_path = os.path.join(
+    #             os.path.dirname(__file__), "params", accepted_params_path
+    #         )
+    #         with open(params_path) as file:
+    #             optional = json.load(file)
+    #             for key, value in kwargs.items():
+    #                 if key in optional:
+    #                     if optional[key] == "array":
+    #                         data[f"{key}[]"] = value
+    #                     else:
+    #                         data[key] = value
+    #     else:
+    #         data.update(kwargs)
+
+    #     response = self.post(url, data=data)
+    #     return response.json()
 
     def get_warehouses(self) -> List[dict]:
         """Возвращает список всех складов"""
@@ -165,16 +201,13 @@ class RemonlineInterface:
         orders: List[dict] = []
         page = 0
 
-        # Convert list of IDs to comma-separated string for API parameter
-        ids_str = ",".join(map(str, ids))
-
         while True:
             page += 1
             response = self.get_objects(
                 "order/",
                 accepted_params_path="order_params.json",
                 page=page,
-                ids=ids_str,
+                ids=ids,  # Pass the list directly, let get_objects handle array parameters
             )
             orders.extend(response.get("data", []))
 

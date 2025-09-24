@@ -1,8 +1,8 @@
 import logging
+from datetime import datetime, timedelta
 from typing import Optional
 
 from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
 
 logger = logging.getLogger(__name__)
 
@@ -22,12 +22,29 @@ def start_scheduler() -> BackgroundScheduler:
 
     logger.info("Starting APScheduler background scheduler")
 
-    _scheduler = BackgroundScheduler()
+    # Configure job defaults for the entire scheduler
+    job_defaults = {"coalesce": True, "max_instances": 1, "misfire_grace_time": 60}
+
+    _scheduler = BackgroundScheduler(job_defaults=job_defaults)
+
     # Run sync_goods every minute
-    _scheduler.add_job(sync_goods, CronTrigger(minute="*"))
-    # Run order_event_handler every minute
-    _scheduler.add_job(order_event_handler, CronTrigger(minute="*"))
+    _scheduler.add_job(
+        sync_goods, "cron", minute="*", name="sync_goods", max_instances=1
+    )
+
+    # Run order_event_handler every minute with sequential execution
+    _scheduler.add_job(
+        order_event_handler,
+        "interval",
+        minutes=1,
+        name="order_event_handler",
+        max_instances=1,
+        next_run_time=datetime.now()
+        + timedelta(seconds=1),  # Start with 1 second delay
+    )
 
     _scheduler.start()
-    logger.info("Scheduler started with jobs: %s", [job.id for job in _scheduler.get_jobs()])
+    logger.info(
+        "Scheduler started with jobs: %s", [job.id for job in _scheduler.get_jobs()]
+    )
     return _scheduler

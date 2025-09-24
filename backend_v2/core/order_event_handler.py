@@ -1,5 +1,3 @@
-from datetime import datetime
-
 import requests
 from django.utils import timezone
 
@@ -11,10 +9,22 @@ from core.services.remonline.api import RemonlineInterface
 
 
 def order_event_handler():
-    active_local_orders = Order.objects.filter(is_completed=False)
+    # Get active orders with valid remonline_order_id
+    active_local_orders = Order.objects.filter(
+        is_completed=False, remonline_order_id__isnull=False
+    )
+    print(f"active_local_orders: {active_local_orders}")
+    if not active_local_orders.exists():
+        return  # No orders to process
+
+    # Get remonline orders data for valid orders
+    print(len(active_local_orders))
     active_remonline_orders = RemonlineInterface(REMONLINE_API_KEY).get_orders_by_ids(
         ids=[order.remonline_order_id for order in active_local_orders]
     )
+    print(len(active_remonline_orders))
+
+    # Process each order with its corresponding remonline data
     for remonline_order, local_order in zip(
         active_remonline_orders, active_local_orders
     ):
@@ -93,10 +103,11 @@ def parse_engineer_notes(engineer_notes: str):
 def one_day_difference(order: Order):
     if not order.in_branch_datetime:
         return False
-    days_diff = (
-        datetime.now()
-        - datetime.strptime(order.in_branch_datetime, "%Y-%m-%d %H:%M:%S")
-    ).days
-    if days_diff == 1:
-        return True
-    return False
+
+    # Handle timezone-aware datetime object
+    current_time = timezone.now()
+
+    # Calculate the difference in days
+    days_diff = (current_time - order.in_branch_datetime).days
+
+    return days_diff == 1
