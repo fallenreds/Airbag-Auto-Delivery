@@ -1,28 +1,31 @@
-import ast
 from logger import logger
-
+import types
 from api import get_order_updates, delete_order_updates, get_order_by_id, no_paid_along_time, \
-    update_no_paid_remember_count, get_clients_updates, delete_client_update
+    update_no_paid_remember_count, get_clients_updates, delete_client_update,get_client_by_id
 from buttons import get_our_contact_button, get_to_pay_button, get_no_paid_orders_button
 from engine import send_messages_to_admins
-from notifications import *
+from notifications import deleted_notifications, merge_order_notification, new_order_notification, new_order_client_notification, deactivated_notifications, ttn_update_notification, order_in_branch_notifications
 import asyncio
+
+
 
 
 async def order_updates(bot, admin_list):
     while True:
         try:
             updates = await get_order_updates()
-            logger.info(f"Polling for order updates. Found {len(updates) if updates else 0} updates.")
+            updates = updates.get("results", [])
+            # logger.info(f"Polling for order updates. Found {len(updates) if updates else 0} updates.")
+
             if updates and updates != [] and updates is not None:
                 for record in updates:
-                    order = await get_order_by_id(record['order_id'])
 
-                    if record['type'] == "deleted":
+                    order = await get_order_by_id(record['order'])
+                    if record['type'] == "DELETED":
                         await send_messages_to_admins( bot,admin_list, 'delete')
                         await deleted_notifications(
                             bot,
-                            ast.literal_eval(record['order']),
+                            order,
                             record.get('details'),
                             admin_list
                         )
@@ -31,13 +34,13 @@ async def order_updates(bot, admin_list):
                         await delete_order_updates(record['id'])
                         continue
 
-                    if record['type'] == 'merged':
+                    if record['type'] == 'MERGED':
                         await  merge_order_notification(bot, order)
 
-                    if record['type'] == "new order":  # crm remonline
+                    if record['type'] == "CREATED_ADMIN_MESSAGE":  # crm remonline
                         await new_order_notification(bot, order, admin_list)
 
-                    if record['type'] == "new_order_client_notification":
+                    if record['type'] == "CREATED_CLIENT_MESSAGE":
                         await new_order_client_notification(bot, order)
 
                         if order['prepayment'] == 1:
@@ -46,24 +49,23 @@ async def order_updates(bot, admin_list):
                             await send_messages_to_admins(bot, admin_list,
                                                           "Створено нове замовлення з типом накладений платіж")
 
-                    if record['type'] == "deactivated":
+                    if record['type'] == "FINISHED":
                         await deactivated_notifications(bot, order, admin_list)
 
 
 
-                    if record['type'] == "ttn updated":
+                    if record['type'] == "TTN_UPDATED":
                         await ttn_update_notification(bot, order)
 
-                    if record['type'] == "order in branch" and order['branch_remember_count'] <= 1:
+                    if record['type'] == "IN_BRANCH" and order['branch_remember_count'] <= 1:
                         await order_in_branch_notifications(bot, order)
+                        
                     if record['type'] == "remonline timeout error":
                         await send_messages_to_admins(admin_ids=admin_list, text=f"Запит на створення замовлення {record['order_id']} був надісланий, але Remonline не дала відповідь. Почекайте автоматичне створення.")
 
                     await delete_order_updates(record['id'])
         except Exception as error:
-            logger.error("Error with orderupdates", error=error)
-            ##await send_error_log(bot, 516842877, error)
-
+            logger.error("Error with order updates", error=error)
         await asyncio.sleep(10)
 
 
@@ -97,7 +99,6 @@ async def get_no_paid_orders(bot, admin_list):
                                                   reply_markup=markup_i_admin)
         except Exception as error:
             logger.error("Error with no paid orders", error=error)
-            ##await send_error_log(bot, 516842877, error)
         await asyncio.sleep(3600)
 
 
@@ -107,11 +108,12 @@ async def client_updates(bot, admin_list):
         await asyncio.sleep(10)
         try:
             updates = await get_clients_updates()
+            updates = updates.get("result", [])
             if not updates:
                 continue
 
             for record in updates:
-                client = await get_client_by_id(record['client_id'])
+                client = await get_client_by_id(record['client'])
 
                 if record['type'] == "CREATED":
                     await send_messages_to_admins(
@@ -122,6 +124,5 @@ async def client_updates(bot, admin_list):
 
                 await delete_client_update(record['id'])
         except Exception as error:
-            logger.error("Error with orderupdates", error=error)
-            ##await send_error_log(bot, 516842877, error)
+            logger.error("Error with client updates", error=error)
 

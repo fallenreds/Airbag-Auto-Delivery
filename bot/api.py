@@ -131,7 +131,7 @@ async def get_order_updates() -> list:
 
 async def delete_order_updates(order_updates_id):
     async with aiohttp.ClientSession() as session:
-        async with session.delete(f'{base_url}api/v2/order-events/{order_updates_id}', headers=headers) as resp:
+        async with session.delete(f'{base_url}api/v2/order-events/{order_updates_id}/', headers=headers) as resp:
             if resp.status == 200:
                 return await resp.json()
 
@@ -144,7 +144,7 @@ async def get_visitors() -> list:
 
 async def delete_visitor(telegram_id: int):
     async with aiohttp.ClientSession() as session:
-        async with session.delete(f'{base_url}api/v2/bot-visitors/{telegram_id}', headers=headers) as resp:
+        async with session.delete(f'{base_url}api/v2/bot-visitors/{telegram_id}/', headers=headers) as resp:
             if resp.status == 200:
                 return await resp.json()
 
@@ -210,7 +210,7 @@ async def post_discount(procent, month_payment):
 
 async def delete_order(order_id):
     async with aiohttp.ClientSession() as session:
-        async with session.delete(f'{base_url}api/v2/order/{order_id}', headers=headers) as resp:
+        async with session.delete(f'{base_url}api/v2/order/{order_id}/', headers=headers) as resp:
             if resp.status == 200:
                 return await resp.json()
 
@@ -224,7 +224,7 @@ async def merge_order(source_order_id, target_order_id):
             
 async def delete_discount(discount_id):
     async with aiohttp.ClientSession() as session:
-        async with session.delete(f'{base_url}api/v2/discounts/{discount_id}', headers=headers) as resp:
+        async with session.delete(f'{base_url}api/v2/discounts/{discount_id}/', headers=headers) as resp:
             if resp.status == 200:
                 return await resp.json()
 
