@@ -1,6 +1,8 @@
 from django import forms
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin
+from django.urls import path, reverse
+from django.utils.html import format_html
 
 from .models import (
     BotVisitor,
@@ -40,12 +42,14 @@ class ClientAdmin(UserAdmin):
         "name",
         "last_name",
         "telegram_id",
+        "api_key",
         "is_active",
         "is_staff",
         "is_superuser",
     )
     search_fields = ("email", "name", "last_name", "telegram_id")
     ordering = ("id",)
+    readonly_fields = ('api_key', 'regenerate_api_key_button')
     fieldsets = (
         (None, {"fields": ("email", "password")}),
         (
@@ -72,6 +76,12 @@ class ClientAdmin(UserAdmin):
                 )
             },
         ),
+        (
+            "API Key",
+            {
+                "fields": ("api_key", "regenerate_api_key_button")
+            }
+        ),
     )
     add_fieldsets = (
         (
@@ -94,6 +104,31 @@ class ClientAdmin(UserAdmin):
             },
         ),
     )
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                '<path:object_id>/regenerate-api-key/',
+                self.admin_site.admin_view(self.regenerate_api_key_view),
+                name='core_client_regenerate_api_key',
+            ),
+        ]
+        return custom_urls + urls
+
+    def regenerate_api_key_button(self, obj):
+        if obj.pk:
+            url = reverse('admin:core_client_regenerate_api_key', args=[obj.pk])
+            return format_html('<a class="button" href="{}">Regenerate API Key</a>', url)
+        return '-'
+    regenerate_api_key_button.short_description = 'Action'
+
+    def regenerate_api_key_view(self, request, object_id):
+        client = self.get_object(request, object_id)
+        client.generate_api_key()
+        client.save()
+        self.message_user(request, 'API key has been regenerated successfully.', messages.SUCCESS)
+        return self.response_change(request, client)
 
 
 @admin.register(ClientEvent)

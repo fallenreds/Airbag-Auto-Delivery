@@ -1,3 +1,5 @@
+import secrets
+
 from django.contrib.auth.models import (
     AbstractBaseUser,
     BaseUserManager,
@@ -76,6 +78,8 @@ class Client(AbstractBaseUser, PermissionsMixin):
     phone = models.CharField(max_length=20, blank=True, null=True, unique=True)
     nova_post_address = models.TextField(blank=True, null=True)
 
+    api_key = models.CharField(max_length=255, unique=True, null=True, blank=True)
+
     # Personal discount percent 0–100
     discount_percent = CustomPercentageField(default=0)
 
@@ -102,8 +106,14 @@ class Client(AbstractBaseUser, PermissionsMixin):
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []
 
+    def generate_api_key(self):
+        self.api_key = secrets.token_urlsafe(32)
+
     def save(self, *args, **kwargs):
         # Allow saving without email only for guest clients
+        if not self.pk:
+            self.generate_api_key()
+
         if getattr(self, "_skip_email_validation", False) or self.is_guest:
             # Skip the email validation for guest clients
             super(AbstractBaseUser, self).save(*args, **kwargs)
