@@ -1,25 +1,21 @@
 import asyncio
 import json
-import functools
-import logging
 
 from aiogram.utils.exceptions import *
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
-from aiogram.dispatcher.filters import Filter
 from aiogram.utils.callback_data import CallbackData
 
 import api
 from updates import order_updates, get_no_paid_orders, client_updates
 
 from api import *
-from aiogram import Bot, Dispatcher, executor, filters
-
+from aiogram import Bot, Dispatcher, executor, filters, types
 
 from buttons import *
 from config import *
 from engine import manager_notes_builder, id_spliter, ttn_info_builder, send_error_log, make_order, show_order_goods
-from States import NewTTN, NewPost, NewClientDiscount, NewPaymentData, NewProps, NewTextPost, NewTemplate, \
+from States import NewTTN, NewPost, NewClientDiscount, NewPaymentData, NewProps, NewTemplate, \
     MergeOrderState
 from handlers.client_handler import show_clients
 from labels import AdminLabels
@@ -692,6 +688,13 @@ async def ttn_state(message: types.Message, state: FSMContext):
     except Exception as error:
         await send_error_log(bot, 516842877, error)
 
+
+async def on_startup(dp):
+    asyncio.create_task(order_updates(bot, admin_list))
+    asyncio.create_task(get_no_paid_orders(bot, admin_list))
+    asyncio.create_task(client_updates(bot, admin_list))
+
+
 @dp.callback_query_handler()
 async def callback_admin_panel(callback: types.CallbackQuery):
     # try:
@@ -867,4 +870,5 @@ async def update(_):
     asyncio.create_task(client_updates(bot, admin_list))
 
 
-executor.start_polling(dp, skip_updates=True, on_startup=update)
+if __name__ == '__main__':
+    executor.start_polling(dp, skip_updates=True, on_startup=on_startup)

@@ -1,10 +1,10 @@
 import ast
-import typing
+from logger import logger
 
 from api import get_order_updates, delete_order_updates, get_order_by_id, no_paid_along_time, \
     update_no_paid_remember_count, get_clients_updates, delete_client_update
 from buttons import get_our_contact_button, get_to_pay_button, get_no_paid_orders_button
-from engine import send_messages_to_admins, send_error_log
+from engine import send_messages_to_admins
 from notifications import *
 import asyncio
 
@@ -13,7 +13,7 @@ async def order_updates(bot, admin_list):
     while True:
         try:
             updates = await get_order_updates()
-            print("Starting orders updates")
+            logger.info(f"Polling for order updates. Found {len(updates) if updates else 0} updates.")
             if updates and updates != [] and updates is not None:
                 for record in updates:
                     order = await get_order_by_id(record['order_id'])
@@ -61,7 +61,7 @@ async def order_updates(bot, admin_list):
 
                     await delete_order_updates(record['id'])
         except Exception as error:
-            print("Error with orderupdates", error)
+            logger.error("Error with orderupdates", error=error)
             ##await send_error_log(bot, 516842877, error)
 
         await asyncio.sleep(10)
@@ -70,7 +70,7 @@ async def order_updates(bot, admin_list):
 async def get_no_paid_orders(bot, admin_list):
     while True:
         try:
-            print("Starting no paid updates")
+            logger.info("Starting no paid updates")
             client_notification = """<b>Шановний клієнт, у вас є несплачені замовлення.</b>\nДля оплати натисніть на <b>Статус замовлень 📦</b>.\nАбо натисніть на <b>Зв‘язок з нами 📞</b> .
                      """
 
@@ -79,7 +79,7 @@ async def get_no_paid_orders(bot, admin_list):
             if orders:
                 count_no_paid_order = len(orders['data'])
                 filtered_orders = list(filter(lambda x: x['remember_count'] < 2, orders['data']))
-                print(f"Updating get_no_paid_orders. Count of orders:{len(orders)}")
+                logger.info(f"Updating get_no_paid_orders. Count of orders:{len(orders)}")
                 if orders['success']:
                     markup_i_client = types.InlineKeyboardMarkup()
                     markup_i_client.add(get_our_contact_button(), get_to_pay_button())
@@ -96,7 +96,7 @@ async def get_no_paid_orders(bot, admin_list):
                                                   text=f"Наразі є несплачені замовлення у кількості {count_no_paid_order}",
                                                   reply_markup=markup_i_admin)
         except Exception as error:
-            print("Error with no paid orders", error)
+            logger.error("Error with no paid orders", error=error)
             ##await send_error_log(bot, 516842877, error)
         await asyncio.sleep(3600)
 
@@ -122,6 +122,6 @@ async def client_updates(bot, admin_list):
 
                 await delete_client_update(record['id'])
         except Exception as error:
-            print("Error with orderupdates", error)
+            logger.error("Error with orderupdates", error=error)
             ##await send_error_log(bot, 516842877, error)
 
