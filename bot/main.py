@@ -9,17 +9,31 @@ from aiogram.utils.callback_data import CallbackData
 import api
 from updates import order_updates, get_no_paid_orders, client_updates
 
-from api import *
+from api import (
+    add_new_visitor, check_auth, get_orders_by_tg_id, get_all_goods, get_discounts_info, get_client_by_tg_id,
+    get_money_spend_cur_month, get_discount, post_discount, get_order_by_id, delete_order, 
+    get_active_orders, add_bonus_client_discount, get_visitors, delete_visitor,
+    make_pay_order, merge_order, get_templates, create_template, 
+    get_template, update_ttn
+)
 from aiogram import Bot, Dispatcher, executor, filters, types
 
-from buttons import *
-from config import *
+from buttons import (
+    get_active_orders_button, get_not_paid_along_time_button, get_edit_discount_button, get_all_clients_button,
+    get_make_post, get_set_props, get_props_info_button, get_deactive_order_button, get_delete_order_button,
+    get_merge_order_button, get_check_ttn_button, get_to_not_prepayment_button, get_make_paid_button,
+    get_order_info_button, get_send_payment_photo_button
+)
+from config import BOT_TOKEN
 from engine import manager_notes_builder, id_spliter, ttn_info_builder, send_error_log, make_order, show_order_goods
 from States import NewTTN, NewPost, NewClientDiscount, NewPaymentData, NewProps, NewTemplate, \
     MergeOrderState
 from handlers.client_handler import show_clients
 from labels import AdminLabels
-from notifications import *
+from notifications import (
+    ttn_update_notification, unknown_error_notifications, no_connection_with_server_notification,
+    client_added_bonus_notifications
+)
 from utils.inline import inline_paginator
 from logger import logger
 admin_list = [516842877, 5783466675]
@@ -83,64 +97,6 @@ async def admin_panel(message):
     return await bot.send_message(message.chat.id, text=AdminLabels.enter_notifications.value, reply_markup=markup_i)
 
 
-# async def make_order(bot, telegram_id, data, goods, order, client):
-#     markup_i = types.InlineKeyboardMarkup(row_width=2)
-#
-#     text = f"<b>Номер замовлення</b> {order['id']}\n<b>Ім'я:</b> {order['name']}\n<b>Прізвище</b>: {order['last_name']}\n<b>Адреса доставки:</b> {order['nova_post_address']} \n"
-#     if ttn := order['ttn']:
-#         text += f"<b>Номер ТТН</b>: {ttn}\n"
-#         check_ttn_button = get_check_ttn_button(order['ttn'])
-#         markup_i.add(check_ttn_button)
-#
-#     if order["prepayment"]:
-#         text += f'<b>Тип платежу:</b> Передплата\n'
-#         if order['is_paid'] == 1:
-#             text += f'<b>Статус оплати:</b> Оплачено\n\n'
-#         else:
-#             text += f'<b>Статус оплати:</b> Потребує оплати\n\n'
-#     else:
-#         text += f'<b>Тип платежу:</b> Накладений платіж\n\n'
-#     to_pay = 0
-#
-#
-#     for obj in data:
-#         good = find_good(goods, obj['good_id'])
-#         to_pay += good["price"][PRICE_ID_PROD] * obj['count']
-#         text += f"<b>Товар:</b> {good['title']} - Кількість: {obj['count']}\n\n"
-#
-#     discount = await get_discount(client['id'])
-#     if discount['success']:
-#         to_pay -= to_pay / 100 * discount['data']['procent']
-#
-#     if not order['is_paid']:
-#         text += f"<b>До сплати {to_pay}💳</b>"
-#
-#     if order['prepayment'] == 1 and order['is_paid'] == 0:
-#         delete_button = get_delete_order_button(order['id'])
-#         markup_i.add(delete_button)
-#
-#     if order["prepayment"] and not order["is_paid"]:
-#         props: dict
-#         with open('props.json', "r", encoding='utf-8') as f:
-#             props = json.load(f)
-#         text += "\n\nДля того щоб отримати реквізити натисніть на кнопку <b>Переглянути реквізити👇</b>" \
-#                 "\nПісля сплати замовлення натисніть кнопку <b>Відправити фото з оплатою</b>"
-#         markup_i.add(get_props_info_button())
-#         markup_i.add(get_send_payment_photo_button(order['id']))
-#     await bot.send_message(telegram_id, text=text, reply_markup=markup_i)
-
-    # Оплата рабочая, ждет пока он не сделает ФОП
-    # if order["prepayment"] and not order["is_paid"]:
-    #     await bot.send_invoice(chat_id=telegram_id,
-    #                            title=f"Сплатити замовлення №{order['id']}",
-    #                            description=f'Шановний клієнт, для завершення потрібно лише сплатити замовлення #{order["id"]}',
-    #                            provider_token='632593626:TEST:sandbox_i93395288591',
-    #                            currency="uah",
-    #                            is_flexible=False,
-    #                            prices=[types.LabeledPrice(label='Оплата послуг Airbag AutoDelivery',
-    #                                                       amount=(int(to_pay * 100)))],
-    #                            payload=order['id']
-    #                            )
 
 
 
@@ -371,10 +327,10 @@ async def order_list_builder(bot, orders, admin_id, goods):
         merge_button = get_merge_order_button(order['id'])
 
         if not order["ttn"]:
-            add_ttn_button = types.InlineKeyboardButton(f"Додати ttn", callback_data=f"add_ttn/{order['id']}")
+            add_ttn_button = types.InlineKeyboardButton("Додати ttn", callback_data=f"add_ttn/{order['id']}")
             markup_i.add(add_ttn_button)
         else:
-            add_ttn_button = types.InlineKeyboardButton(f"Оновити ttn", callback_data=f"add_ttn/{order['id']}")
+            add_ttn_button = types.InlineKeyboardButton("Оновити ttn", callback_data=f"add_ttn/{order['id']}")
             check_ttn_button = get_check_ttn_button(order['ttn'])
             markup_i.add(add_ttn_button, check_ttn_button)
         if order['prepayment']:
@@ -472,6 +428,17 @@ async def show_props(callback: types.CallbackQuery):
     await bot.send_message(callback.message.chat.id, await get_props())
 
 
+@dp.callback_query_handler(lambda call: call.data.startswith('add_ttn/'))
+async def add_ttn_callback_handler(callback: types.CallbackQuery):
+    order_id = id_spliter(callback.data)
+    await NewTTN.order_id.set()
+    state = dp.current_state()
+    async with state.proxy() as data:
+        data['order_id'] = order_id
+    await bot.send_message(callback.message.chat.id, "Напишіть номер TTN")
+    await NewTTN.next()
+
+
 @dp.message_handler(content_types=['text'], state=NewPaymentData.order_id)
 async def new_payment_order_id_state(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
@@ -507,7 +474,7 @@ async def new_client_discount_state(message: types.Message, state: FSMContext):
 
 
 @dp.message_handler(content_types=['text'], state=NewClientDiscount.count)
-async def new_client_discount_state(message: types.Message, state: FSMContext):
+async def new_client_discount_count_state(message: types.Message, state: FSMContext):
     try:
         async with state.proxy() as data:
             data['count'] = message.text
@@ -599,11 +566,6 @@ async def show_templates(callback:types.CallbackQuery):
     )
     await bot.send_message(callback.message.chat.id, text="Тут, ви можете відправити шаблон, видалити шаблон, та додати новий шаблон", reply_markup=kb)
 
-@dp.callback_query_handler(lambda callback: callback.data.startswith(send_template_callback.prefix) and check_admin_permission(callback.message))
-async def send_template(callback:types.CallbackQuery):
-    template_id = send_template_callback.parse(callback_data=callback.data).get('template_id')
-    template = await get_template(template_id=template_id)
-    asyncio.create_task(send_template_to_visitors(template['text']))
 
 @dp.callback_query_handler(lambda callback: callback.data.startswith(send_template_callback.prefix) and check_admin_permission(callback.message))
 async def send_template(callback:types.CallbackQuery):
@@ -869,3 +831,64 @@ async def update(_):
 
 if __name__ == '__main__':
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+    
+    
+# async def make_order_with_payment(bot, telegram_id, data, goods, order, client):
+#     Оплата рабочая, ждет пока он не сделает ФОП
+#     markup_i = types.InlineKeyboardMarkup(row_width=2)
+#
+#     text = f"<b>Номер замовлення</b> {order['id']}\n<b>Ім'я:</b> {order['name']}\n<b>Прізвище</b>: {order['last_name']}\n<b>Адреса доставки:</b> {order['nova_post_address']} \n"
+#     if ttn := order['ttn']:
+#         text += f"<b>Номер ТТН</b>: {ttn}\n"
+#         check_ttn_button = get_check_ttn_button(order['ttn'])
+#         markup_i.add(check_ttn_button)
+#
+#     if order["prepayment"]:
+#         text += f'<b>Тип платежу:</b> Передплата\n'
+#         if order['is_paid'] == 1:
+#             text += f'<b>Статус оплати:</b> Оплачено\n\n'
+#         else:
+#             text += f'<b>Статус оплати:</b> Потребує оплати\n\n'
+#     else:
+#         text += f'<b>Тип платежу:</b> Накладений платіж\n\n'
+#     to_pay = 0
+#
+#
+#     for obj in data:
+#         good = find_good(goods, obj['good_id'])
+#         to_pay += good["price"][PRICE_ID_PROD] * obj['count']
+#         text += f"<b>Товар:</b> {good['title']} - Кількість: {obj['count']}\n\n"
+#
+#     discount = await get_discount(client['id'])
+#     if discount['success']:
+#         to_pay -= to_pay / 100 * discount['data']['procent']
+#
+#     if not order['is_paid']:
+#         text += f"<b>До сплати {to_pay}💳</b>"
+#
+#     if order['prepayment'] == 1 and order['is_paid'] == 0:
+#         delete_button = get_delete_order_button(order['id'])
+#         markup_i.add(delete_button)
+#
+#     if order["prepayment"] and not order["is_paid"]:
+#         props: dict
+#         with open('props.json', "r", encoding='utf-8') as f:
+#             props = json.load(f)
+#         text += "\n\nДля того щоб отримати реквізити натисніть на кнопку <b>Переглянути реквізити👇</b>" \
+#                 "\nПісля сплати замовлення натисніть кнопку <b>Відправити фото з оплатою</b>"
+#         markup_i.add(get_props_info_button())
+#         markup_i.add(get_send_payment_photo_button(order['id']))
+#     await bot.send_message(telegram_id, text=text, reply_markup=markup_i)
+
+    
+    # if order["prepayment"] and not order["is_paid"]:
+    #     await bot.send_invoice(chat_id=telegram_id,
+    #                            title=f"Сплатити замовлення №{order['id']}",
+    #                            description=f'Шановний клієнт, для завершення потрібно лише сплатити замовлення #{order["id"]}',
+    #                            provider_token='632593626:TEST:sandbox_i93395288591',
+    #                            currency="uah",
+    #                            is_flexible=False,
+    #                            prices=[types.LabeledPrice(label='Оплата послуг Airbag AutoDelivery',
+    #                                                       amount=(int(to_pay * 100)))],
+    #                            payload=order['id']
+    #                            )
