@@ -144,11 +144,11 @@ async def get_all_clients(limit: Optional[int] = None) -> list:
 
 async def get_active_orders(limit: Optional[int] = None) -> list:
     """Get active orders, with an optional limit."""
-    return await _fetch_paginated('api/v2/orders?is_completed=false', limit=limit)
+    return await _fetch_paginated('api/v2/orders?is_completed=0', limit=limit)
 
 async def get_active_orders_by_telegram_id(telegram_id:int) -> list:
     async with aiohttp.ClientSession() as session:
-        async with session.get(f'{base_url}api/v2/orders?is_completed=false&telegram_id={telegram_id}', headers=headers) as resp:
+        async with session.get(f'{base_url}api/v2/orders?is_completed=0&telegram_id={telegram_id}', headers=headers) as resp:
             if resp.status == 200:
                 return await resp.json()
 
