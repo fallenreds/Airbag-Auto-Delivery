@@ -63,8 +63,8 @@ REST_FRAMEWORK = {
         "core.filters.UniversalFieldFilterBackend",
     ),
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
         "core.authentication.ApiKeyAuthentication",
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
 }
 SIMPLE_JWT = {

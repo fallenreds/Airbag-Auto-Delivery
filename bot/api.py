@@ -1,20 +1,59 @@
 import aiohttp
 import config
 from logger import logger
+from typing import Optional
 
 base_url = config.BASE_URL
-headers = {"X-Api-Key": config.BACKEND_API_KEY}
+headers = {"x-api-key": config.BACKEND_API_KEY}
+
+
+async def _fetch_paginated(endpoint: str, limit: Optional[int] = None) -> list:
+    """Generic function to fetch items from a paginated endpoint."""
+    items = []
+    page_limit = 100  # Default page size for pagination
+    offset = 0
+    url = f"{base_url}{endpoint}"
+
+    # Determine if the URL already has query parameters
+    separator = '&' if '?' in url else '?'
+
+    async with aiohttp.ClientSession() as session:
+        while True:
+            if limit is not None and len(items) >= limit:
+                break
+
+            paginated_url = f"{url}{separator}limit={page_limit}&offset={offset}"
+            async with session.get(paginated_url, headers=headers) as resp:
+                if resp.status != 200:
+                    logger.error(f"Failed to fetch from {endpoint}: {resp.status} {await resp.text()}")
+                    break
+
+                data = await resp.json()
+
+                if isinstance(data, dict) and "results" in data:
+                    results = data.get("results", [])
+                    items.extend(results)
+
+                    if limit is not None and len(items) >= limit:
+                        items = items[:limit]
+                        break
+
+                    if not data.get("next"):
+                        break  # No more pages
+                    offset += page_limit
+                else:
+                    # Handle non-paginated response or error
+                    return data[:limit] if limit is not None else data
+
+    return items
 
 
 #------------------------ User updates  -----------------------#
 
 
-async def get_clients_updates()->list[dict]:
-    """Get list of templates"""
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f'{base_url}api/v2/client-events', headers=headers) as resp:
-            if resp.status == 200:
-                return await resp.json()
+async def get_clients_updates(limit: Optional[int] = None)->list[dict]:
+    """Get list of client updates"""
+    return await _fetch_paginated('api/v2/client-events/', limit=limit)
 
 async def get_client_update(client_update_id)->dict:
     """Get template by id"""
@@ -38,12 +77,9 @@ async def delete_client_update(client_update_id)->None:
 #------------------------ Шаблони  -----------------------#
 
 
-async def get_templates()->list[dict]:
+async def get_templates(limit: Optional[int] = None)->list[dict]:
     """Get list of templates"""
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f'{base_url}api/v2/templates', headers=headers) as resp:
-            if resp.status == 200:
-                return await resp.json()
+    return await _fetch_paginated('api/v2/templates/', limit=limit)
 
 async def get_template(template_id)->dict:
     """Get template by id"""
@@ -73,11 +109,9 @@ async def create_template(name:str, text:str)->dict:
 #------------------------ Шаблони.END  -----------------------#
 
 
-async def get_all_goods():
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f'{base_url}api/v2/goods/', headers=headers) as resp:
-            if resp.status == 200:
-                return await resp.json()
+async def get_all_goods(limit: Optional[int] = None) -> list[dict]:
+    """Fetch all goods from backend, with an optional limit."""
+    return await _fetch_paginated('api/v2/goods/', limit=limit)
 
 
 async def get_orders_by_tg_id(telegram_id) -> list:
@@ -103,18 +137,14 @@ async def get_order_by_id(order_id):
                 return await resp.json()
 
 
-async def get_all_client() -> list:
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f'{base_url}api/v2/clients', headers=headers) as resp:
-            if resp.status == 200:
-                return await resp.json()
+async def get_all_clients(limit: Optional[int] = None) -> list:
+    """Get all clients, with an optional limit."""
+    return await _fetch_paginated('api/v2/clients/', limit=limit)
 
 
-async def get_active_orders() -> list:
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f'{base_url}api/v2/orders?is_completed=false', headers=headers) as resp:
-            if resp.status == 200:
-                return await resp.json()
+async def get_active_orders(limit: Optional[int] = None) -> list:
+    """Get active orders, with an optional limit."""
+    return await _fetch_paginated('api/v2/orders?is_completed=false', limit=limit)
 
 async def get_active_orders_by_telegram_id(telegram_id:int) -> list:
     async with aiohttp.ClientSession() as session:
@@ -122,11 +152,9 @@ async def get_active_orders_by_telegram_id(telegram_id:int) -> list:
             if resp.status == 200:
                 return await resp.json()
 
-async def get_order_updates() -> list:
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f'{base_url}api/v2/order-events/', headers=headers) as resp:
-            if resp.status == 200:
-                return await resp.json()
+async def get_order_updates(limit: Optional[int] = None) -> list:
+    """Get order updates, with an optional limit."""
+    return await _fetch_paginated('api/v2/order-events/', limit=limit)
             
 
 async def delete_order_updates(order_updates_id):
@@ -192,11 +220,9 @@ async def get_money_spend_cur_month(client_id):
                 return await resp.json()
 
 
-async def get_discounts_info():
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f'{base_url}api/v2/discounts/', headers=headers) as resp:
-            if resp.status == 200:
-                return await resp.json()
+async def get_discounts_info(limit: Optional[int] = None):
+    """Get discounts info, with an optional limit."""
+    return await _fetch_paginated('api/v2/discounts/', limit=limit)
 
 
 async def post_discount(procent, month_payment):

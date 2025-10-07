@@ -21,7 +21,7 @@ from handlers.client_handler import show_clients
 from labels import AdminLabels
 from notifications import *
 from utils.inline import inline_paginator
-
+from logger import logger
 admin_list = [516842877, 5783466675]
 storage = MemoryStorage()
 
@@ -698,10 +698,7 @@ async def on_startup(dp):
 @dp.callback_query_handler()
 async def callback_admin_panel(callback: types.CallbackQuery):
     # try:
-
-
         goods = await get_all_goods()
-
         admin_id = callback.from_user.id
         if callback.data == "active_order":
             active_orders = await get_active_orders()
