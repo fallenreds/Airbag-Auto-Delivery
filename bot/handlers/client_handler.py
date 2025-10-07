@@ -1,4 +1,4 @@
-from api import get_all_client, get_discount, get_money_spend_cur_month
+from api import get_all_clients, get_discount, get_money_spend_cur_month
 from aiogram import types
 from buttons import get_add_month_payment_button
 
@@ -25,6 +25,6 @@ async def client_builder(bot, admin_id, clients: list):
 
 
 async def show_clients(message, bot):
-    all_clients = await get_all_client()
+    all_clients = await get_all_clients()
     if all_clients:
         await client_builder(bot, message.chat.id, all_clients)

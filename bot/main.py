@@ -662,8 +662,10 @@ async def callback_admin_panel(callback: types.CallbackQuery):
     # try:
         goods = await get_all_goods()
         admin_id = callback.from_user.id
+
         if callback.data == "active_order":
             active_orders = await get_active_orders()
+            logger.info(f"Active orders: {len(active_orders)}")
             if not active_orders:
                 return await bot.send_message(admin_id, text="На данний момент немає активних замовлень")
             await order_list_builder(bot, active_orders, admin_id, goods)
@@ -674,7 +676,6 @@ async def callback_admin_panel(callback: types.CallbackQuery):
         if "check_order/" in callback.data:
             order_id = await id_spliter(callback.data)
             order = [await get_order_by_id(order_id)]
-            print(order)
             await order_list_builder(bot, order, callback.message.chat.id, goods)
 
         if callback.data == "discount_info":
