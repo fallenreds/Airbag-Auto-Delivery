@@ -16,8 +16,11 @@ services:
     build: bot/
     ports:
       - "88:88"
+      - "5678:5678"
     volumes:
       - type: bind
         source: ./props.json
         target: /bot/props.json
         read_only: false
+    env_file:
+      - ./bot/.env
