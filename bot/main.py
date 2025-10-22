@@ -214,7 +214,7 @@ async def check_discount(message: types.Message):
             print(client_discount)
             client_procent = 0
             if client_discount["success"]:
-                client_procent = client_discount['data']["procent"]
+                client_procent = client_discount["procent"]
                 reply_text += f'Наразі Вам доступна знижка <b>{client_procent}%</b>.\nЗагальна сума замовлень у цьому місяці <b>{client_money_spend} грн</b>\n\n'
 
             else:

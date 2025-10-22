@@ -214,9 +214,11 @@ async def get_discount(client_id):
 
 
 async def get_money_spend_cur_month(client_id):
-    #TODO: CHANGE METHOD
+    """
+    Метод получает сумму трат клиента за текущий месяц
+    """
     async with aiohttp.ClientSession() as session:
-        async with session.get(f'{base_url}api/v2/curmonthspendmoney/{client_id}', headers=headers) as resp:
+        async with session.get(f'{base_url}api/v2/clients/{client_id}/current-month-spending/', headers=headers) as resp:
             if resp.status == 200:
                 return await resp.json()
 
