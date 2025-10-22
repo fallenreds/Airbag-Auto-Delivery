@@ -28,6 +28,7 @@ async def client_builder(bot, admin_id, clients: list):
         markup_i.add(get_add_month_payment_button(client['id']))
         client_text = await make_client(client) #Генерирует текст карточки клиента
         await bot.send_message(admin_id, client_text, reply_markup=markup_i)
+        return
 
 
 async def show_clients(message, bot):

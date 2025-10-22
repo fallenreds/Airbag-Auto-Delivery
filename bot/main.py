@@ -813,12 +813,12 @@ async def callback_admin_panel(callback: types.CallbackQuery):
             await bot.send_message(callback.message.chat.id,
                                    f"Добре, пришліть мені ID клієнта. ID цього клієнта: {client_id}")
             await NewClientDiscount.client_id.set()
-
+    
     # except TypeError as error:
     #     await no_connection_with_server_notification(bot, callback.message)
     # except Exception as error:
     #     await send_error_log(bot, 516842877, error)
-
+        return
 
 
 

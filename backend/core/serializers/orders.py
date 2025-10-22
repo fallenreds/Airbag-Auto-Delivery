@@ -87,7 +87,9 @@ class OrderCreateSerializer(serializers.ModelSerializer):
     phone = serializers.CharField(required=True)
     nova_post_address = serializers.CharField(required=True)
     prepayment = serializers.BooleanField(required=True)
-    description = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    description = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True
+    )
 
     class Meta:
         model = Order
@@ -129,10 +131,20 @@ class OrderCreateSerializer(serializers.ModelSerializer):
     def calculate_prices(
         self, good: Good, quantity: int, discount: int
     ) -> "OrderCreateSerializer.PriceCalculationResult":
-        good_price_minor: int = good.price_minor
-        line_total_minor: int = good_price_minor * quantity
-        discount_total_minor: float = line_total_minor * discount / 100
-        grand_total_minor: float = line_total_minor - discount_total_minor
+        """
+        Подсчет того, сколько будет стоить товар в зависимости от количества и скидки.
+
+        :param good: товар
+        :param quantity: количество
+        :param discount: скидка
+        :return: словарь с ценами
+        """
+        good_price_minor: int = good.price_minor  # Оригинальная цена одного товара
+        line_total_minor: int = good_price_minor * quantity  # Сумма за все товары
+        discount_total_minor: float = line_total_minor * discount / 100  # Сумма скидки
+        grand_total_minor: float = (
+            line_total_minor - discount_total_minor
+        )  # Итоговая сумма с вычетом скидки
         return {
             "line_total_minor": line_total_minor,
             "good_price_minor": good_price_minor,
