@@ -348,4 +348,7 @@ async def ttn_tracking(ttn, recipient_phone):
 
 
 async def get_client_by_tg_id(telegram_id):
-    return await check_auth(telegram_id)
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f'{base_url}api/v2/clients?telegram_id={telegram_id}', headers=headers) as resp:
+            if resp.status == 200:
+                return await resp.json()

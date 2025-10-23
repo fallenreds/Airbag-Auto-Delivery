@@ -36,6 +36,7 @@ from notifications import (
 )
 from utils.inline import inline_paginator
 from logger import logger
+from utils.utils import to_major
 admin_list = [516842877, 5783466675]
 storage = MemoryStorage()
 
@@ -201,32 +202,35 @@ async def show_info(message):
 
 @dp.message_handler(filters.Text(contains="знижки", ignore_case=True))
 async def check_discount(message: types.Message):
+    """
+    Функция которая показывает клиенту его скидку и общие скидки системы
+    """
     try:
         telegram_id = message.chat.id
         reply_text = "В магазині <b>Airbag “AutoDelivery”</b> діють накопичувальні знижки для гуртових покупців.\n\n"
         discounts_info = await get_discounts_info()
-
-        client = await get_client_by_tg_id(telegram_id)
-        print(client)
-        if client['success']:
-            client_money_spend = await get_money_spend_cur_month(client['id'])
-            client_discount = await get_discount(client['id'])
-            print(client_discount)
-            client_procent = 0
-            if client_discount["success"]:
-                client_procent = client_discount["procent"]
-                reply_text += f'Наразі Вам доступна знижка <b>{client_procent}%</b>.\nЗагальна сума замовлень у цьому місяці <b>{client_money_spend} грн</b>\n\n'
-
+        
+        clients = await get_client_by_tg_id(telegram_id)
+        client = (clients.get("results") or [None])[0] #Получаем первого клиента из списка
+        
+        if client is None:
+            return await bot.send_message(telegram_id, "Ви не авторизовані")
+        else:
+            client_money_spend = to_major((await get_money_spend_cur_month(client['id'])).get('total_spending'))
+            
+            client_discount_percent = client.get('discount_percent')
+            if client_discount_percent:
+                reply_text += f'Наразі Вам доступна знижка <b>{client_discount_percent}%</b>.\nЗагальна сума замовлень у цьому місяці <b>{client_money_spend}</b>\n\n'
             else:
-                reply_text += f'<b>Нажаль, ви поки не маєте знижки</b>.\nЗагальна сума замовлень у цьому місяці <b>{client_money_spend} грн</b>\n\n '
+                reply_text += f'<b>Нажаль, ви поки не маєте знижки</b>.\nЗагальна сума замовлень у цьому місяці <b>{client_money_spend}</b>\n\n '
 
         reply_text += "В залежності від суми замовлення в минулому місяці, надається знижка на всі замовлення у поточному місяці:\n"
 
         for n in range(len(discounts_info)):
             if n != len(discounts_info) - 1:
-                reply_text += f"⚪ Від <b>{discounts_info[n]['month_payment']}</b> до <b>{discounts_info[n + 1]['month_payment']}</b> грн  — <b>{discounts_info[n]['procent']}%</b>\n"
+                reply_text += f"⚪ Від <b>{to_major(discounts_info[n]['month_payment'])}</b> до <b>{to_major(discounts_info[n + 1]['month_payment'])}</b> грн  — <b>{discounts_info[n]['percentage']}%</b>\n"
             else:
-                reply_text += f"⚪ Від <b>{discounts_info[n]['month_payment']}</b> грн  — <b>{discounts_info[n]['procent']}%</b>\n"
+                reply_text += f"⚪ Від <b>{to_major(discounts_info[n]['month_payment'])}</b> грн  — <b>{discounts_info[n]['percentage']}%</b>\n"
 
         reply_text += "\n<b>Порядок нарахування:</b>"
         reply_text += "\n⚪ Розрахунок знижки проводиться <b>щомісяця</b>;"
@@ -234,8 +238,8 @@ async def check_discount(message: types.Message):
 
         reply_text += "\n\n<b>Сподіваємось, що накопичувальна знижка дозволить зробити нашу співпрацю ще більш успішною.</b>"
         await bot.send_message(telegram_id, reply_text)
-    except TypeError as error:
-        await send_error_log(bot, 516842877, error)
+    except Exception as error:
+        logger.error(error)
         await no_connection_with_server_notification(bot, message)
 
 
