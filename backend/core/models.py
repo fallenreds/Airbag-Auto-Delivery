@@ -80,9 +80,6 @@ class Client(AbstractBaseUser, PermissionsMixin):
 
     api_key = models.CharField(max_length=255, unique=True, null=True, blank=True)
 
-    # Personal discount percent 0–100
-    discount_percent = CustomPercentageField(default=0)
-
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     is_guest = models.BooleanField(default=False)

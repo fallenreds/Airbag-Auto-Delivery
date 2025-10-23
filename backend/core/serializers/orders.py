@@ -8,6 +8,7 @@ from config.settings import (
     REMONLINE_ORDER_TYPE_ID,
 )
 from core.models import Client, Good, Order, OrderEvent, OrderItem
+from core.services.discount_service import DiscountService
 from core.services.remonline import RemonlineInterface
 
 from .common import validate_currency, validate_nonneg_int
@@ -155,6 +156,7 @@ class OrderCreateSerializer(serializers.ModelSerializer):
 
     @staticmethod
     def manager_notes_builder(order: Order, user: Client):
+        discount_info = DiscountService.get_client_discount_info(user)
         goods_info = (
             f"ID Клієнта: {order.client.id}\n"
             f"ФІО: {order.name} {order.last_name}\n"
@@ -162,7 +164,7 @@ class OrderCreateSerializer(serializers.ModelSerializer):
             f"Адреса: {order.nova_post_address}\n"
             f"Коментар: {order.description if order.description else 'Відсутній'}\n"
             f"Тип платежа: {'Предоплата' if order.prepayment else 'Накладений платеж'}\n"
-            f"Знижка клієнта {user.discount_percent}%\n"
+            f"Знижка клієнта {discount_info['discount_percentage']}%\n"
             f"Сума до сплати {Good.convert_minore_to_major(order.subtotal_minor)} UAH\n"
             f"До сплати зі знижкою: {Good.convert_minore_to_major(order.grand_total_minor)} UAH"
         )
@@ -197,6 +199,9 @@ class OrderCreateSerializer(serializers.ModelSerializer):
     def create(self, validated_data: dict):
         user: Client = self.context["request"].user
         items_data = validated_data.pop("items")
+        # Get client's discount info
+        discount_info = DiscountService.get_client_discount_info(user)
+
         order: Order = Order.objects.create(
             **validated_data,
             subtotal_minor=0,
@@ -204,7 +209,7 @@ class OrderCreateSerializer(serializers.ModelSerializer):
             grand_total_minor=0,
             client=user,
             telegram_id=user.telegram_id,
-            discount_percent=user.discount_percent,
+            discount_percent=discount_info["discount_percentage"],
         )
         order_prices: list[OrderCreateSerializer.PriceCalculationResult] = []
         for item_data in items_data:
@@ -223,7 +228,9 @@ class OrderCreateSerializer(serializers.ModelSerializer):
             }
             OrderItem.objects.create(order=order, **new_item_data)
             order_prices.append(
-                self.calculate_prices(good, quantity, user.discount_percent)
+                self.calculate_prices(
+                    good, quantity, discount_info["discount_percentage"]
+                )
             )
         order_total_price = self.calculate_total_prices(order_prices)
         order.subtotal_minor = order_total_price["line_total_minor"]
