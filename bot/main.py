@@ -10,7 +10,7 @@ import api
 from updates import order_updates, get_no_paid_orders, client_updates
 
 from api import (
-    add_new_visitor, check_auth, get_orders_by_tg_id, get_all_goods, get_discounts_info, get_client_by_tg_id,
+    add_new_visitor, check_auth, get_orders_by_tg_id, get_all_goods, get_discounts_info, get_discount_percentage, get_client_by_tg_id,
     get_money_spend_cur_month, get_discount, post_discount, get_order_by_id, delete_order, 
     get_active_orders, add_bonus_client_discount, get_visitors, delete_visitor,
     make_pay_order, merge_order, get_templates, create_template, 
@@ -218,8 +218,8 @@ async def check_discount(message: types.Message):
         else:
             client_money_spend = to_major((await get_money_spend_cur_month(client['id'])).get('total_spending'))
             
-            client_discount_percent = client.get('discount_percent')
-            if client_discount_percent:
+            client_discount_percent = await get_discount_percentage(client['id'])
+            if client_discount_percent > 0:
                 reply_text += f'Наразі Вам доступна знижка <b>{client_discount_percent}%</b>.\nЗагальна сума замовлень у цьому місяці <b>{client_money_spend}</b>\n\n'
             else:
                 reply_text += f'<b>Нажаль, ви поки не маєте знижки</b>.\nЗагальна сума замовлень у цьому місяці <b>{client_money_spend}</b>\n\n '

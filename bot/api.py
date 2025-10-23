@@ -223,6 +223,16 @@ async def get_money_spend_cur_month(client_id):
                 return await resp.json()
 
 
+async def get_discount_percentage(client_id):
+    url = f"{base_url}api/v2/clients/{client_id}/discount-info/"
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                return data.get('discount_percentage', 0)
+            return 0
+
+
 async def get_discounts_info(limit: Optional[int] = None):
     """Get discounts info, with an optional limit."""
     return await _fetch_paginated('api/v2/discounts/', limit=limit)
