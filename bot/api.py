@@ -84,14 +84,14 @@ async def get_templates(limit: Optional[int] = None)->list[dict]:
 async def get_template(template_id)->dict:
     """Get template by id"""
     async with aiohttp.ClientSession() as session:
-        async with session.get(f'{base_url}api/v2/templates/{template_id}', headers=headers) as resp:
+        async with session.get(f'{base_url}api/v2/templates/{template_id}/', headers=headers) as resp:
             if resp.status == 200:
                 return await resp.json()
 
 async def delete_template(template_id)->None:
     """Delete template by id"""
     async with aiohttp.ClientSession() as session:
-        async with session.delete(f'{base_url}api/v2/templates/{template_id}', headers=headers) as resp:
+        async with session.delete(f'{base_url}api/v2/templates/{template_id}/', headers=headers) as resp:
             if resp.status == 200:
                 return await resp.json()
 
@@ -164,16 +164,18 @@ async def delete_order_updates(order_updates_id):
             if resp.status == 200:
                 return await resp.json()
 
-
-async def get_visitors() -> list:
+async def add_new_visitor(telegram_id) -> dict:
     async with aiohttp.ClientSession() as session:
-        async with session.get(f'{base_url}api/v2/bot-visitors/', headers=headers) as resp:
+        async with session.post(f'{base_url}api/v2/bot-visitors/', json={"telegram_id": telegram_id, }, headers=headers) as resp:
             if resp.status == 200:
                 return await resp.json()
 
-async def delete_visitor(telegram_id: int):
+async def get_visitors(limit: Optional[int] = None) -> list:
+    return await _fetch_paginated('api/v2/bot-visitors/', limit=limit)
+
+async def delete_visitor(id: int):
     async with aiohttp.ClientSession() as session:
-        async with session.delete(f'{base_url}api/v2/bot-visitors/{telegram_id}/', headers=headers) as resp:
+        async with session.delete(f'{base_url}api/v2/bot-visitors/{id}/', headers=headers) as resp:
             if resp.status == 200:
                 return await resp.json()
 
@@ -183,16 +185,6 @@ async def make_pay_order(order_id):
     async with aiohttp.ClientSession() as session:
 
         async with session.post(f'{base_url}api/v2/payorder/{order_id}', headers=headers) as resp:
-            if resp.status == 200:
-                return await resp.json()
-
-
-async def add_new_visitor(telegram_id) -> dict:
-    #TODO: CHANGE METHOD
-
-    async with aiohttp.ClientSession() as session:
-        async with session.post(f'{base_url}api/v2/visitors/{telegram_id}', json={"telegram_id": telegram_id, }, headers=headers) as resp:
-            print(telegram_id)
             if resp.status == 200:
                 return await resp.json()
 

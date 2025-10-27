@@ -2,10 +2,10 @@ import asyncio
 import json
 
 from aiogram.utils.exceptions import *
+from aiogram.utils.exceptions import ChatNotFound, BotBlocked
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
 from aiogram.utils.callback_data import CallbackData
-
 import api
 from updates import order_updates, get_no_paid_orders, client_updates
 
@@ -529,15 +529,24 @@ async def new_post(callback:types.CallbackQuery, state:FSMContext):
 
 
 async def send_post_to_visitors(messages: list[types.Message]):
+    """
+    Отправляет всем телеграм пользователям сообщения  
+    """
     visitors = await get_visitors()
+    
     for visitor in visitors:
+        visitor_telegram_id = visitor.get('telegram_id')
+        
+        if not visitor_telegram_id:
+            continue
+        
         for message in messages:
             try:
-                await message.bot.copy_message(chat_id=visitor['telegram_id'], from_chat_id=message.chat.id, message_id=message.message_id)
+                await message.bot.copy_message(chat_id=visitor_telegram_id, from_chat_id=message.chat.id, message_id=message.message_id)
             except (ChatNotFound, BotBlocked):
-                await delete_visitor(visitor['telegram_id'])
+                await delete_visitor(visitor['id'])
             except Exception:
-                pass
+                logger.error(f"Error while sending post to visitor {visitor.get('id')}")
 
 
 #------------------------ END.Розсилка користувачам -----------------------#
@@ -570,12 +579,11 @@ async def show_templates(callback:types.CallbackQuery):
     )
     await bot.send_message(callback.message.chat.id, text="Тут, ви можете відправити шаблон, видалити шаблон, та додати новий шаблон", reply_markup=kb)
 
-
 @dp.callback_query_handler(lambda callback: callback.data.startswith(send_template_callback.prefix) and check_admin_permission(callback.message))
 async def send_template(callback:types.CallbackQuery):
     template_id = send_template_callback.parse(callback_data=callback.data).get('template_id')
     template = await get_template(template_id=template_id)
-    await bot.send_message(callback.message.chat.id, text=template['text'])
+    asyncio.create_task(send_template_to_visitors(template['text']))
 
 @dp.callback_query_handler(lambda callback: callback.data.startswith(create_template_callback.prefix) and check_admin_permission(callback.message))
 async def create_new_template(callback:types.CallbackQuery):
@@ -611,14 +619,24 @@ async def delete_template_handler(callback: types.CallbackQuery):
     await show_templates(callback)
 
 async def send_template_to_visitors(text: str):
+    """
+    Отправляет всем телеграм пользователям текст шаблона 
+    """
     visitors = await get_visitors()
+    
     for visitor in visitors:
+        
+        visitor_telegram_id = visitor.get('telegram_id')
+        
+        if not visitor_telegram_id:
+            continue
+        
         try:
-            await bot.send_message(chat_id=visitor['telegram_id'], text=text)
+            await bot.send_message(chat_id=visitor_telegram_id, text=text)
         except (ChatNotFound, BotBlocked):
-            await delete_visitor(visitor['telegram_id'])
+            await delete_visitor(visitor['id'])
         except Exception:
-            pass
+            logger.error(f"Error while sending template to visitor {visitor.get('id')}")
 
 #------------------------ END.Шаблони розсилки -----------------------#
 
