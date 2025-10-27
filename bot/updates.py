@@ -14,7 +14,6 @@ async def order_updates(bot, admin_list):
     while True:
         try:
             updates = await get_order_updates()
-            updates = updates.get("results", [])
             # logger.info(f"Polling for order updates. Found {len(updates) if updates else 0} updates.")
 
             if updates and updates != [] and updates is not None:
@@ -108,7 +107,6 @@ async def client_updates(bot, admin_list):
         await asyncio.sleep(10)
         try:
             updates = await get_clients_updates()
-            updates = updates.get("result", [])
             if not updates:
                 continue
 
