@@ -81,7 +81,7 @@ def nova_post_update_status(orders, db: DBConnection):
             filter(lambda x: int(x["StatusCode"]) in [nova_post_money_transfer_status_code, nova_post_finish_status_code], nova_post_tracking_data))
 
         for element in finished_ttn:
-            order = db.find_order_by_ttn(element['Number'])
+            order = db.find_active_order_by_ttn(element['Number'])
             if order:
                 db.deactivate_order(int(order['id']))
                 db.post_order_updates("deactivated", order['id'])
@@ -90,7 +90,7 @@ def nova_post_update_status(orders, db: DBConnection):
         finished_ttn = list(
             filter(lambda x: int(x["StatusCode"]) == 7, nova_post_tracking_data))  # Статус 7 прибыл в отделение
         for element in finished_ttn:
-            order = db.find_order_by_ttn(element['Number'])
+            order = db.find_active_order_by_ttn(element['Number'])
             if order:
                 if int(order['branch_remember_count']) == 0:
                     db.update_in_branch_order_datetime(order['id'])

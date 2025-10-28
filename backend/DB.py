@@ -289,6 +289,13 @@ class DBConnection:
                 """, (ttn,))
         return self.cursor.fetchone()
 
+    def find_active_order_by_ttn(self, ttn):
+        self.cursor.execute("""
+                    select * from orders
+                    where ttn = ? and is_completed = 0
+                """, (ttn,))
+        return self.cursor.fetchone()
+    
     def find_order_by_id(self, order_id):
         self.cursor.execute("""
                             select * from orders
