@@ -136,7 +136,8 @@ def update_order_task():
 
                 elif not filtered_remonline_order and order['remonline_order_id']:
                     pass
-
+                    
+            active_orders: list[dict] = list(filter(lambda order: order['is_completed'] == 0, db.get_active_orders()))
             nova_post_update_status(active_orders, db)
             logger.info("Status 200. Nova_post_update_status process")
 
@@ -147,4 +148,5 @@ def update_order_task():
         finally:
             db.connection.close()
             sleep(10)
+
 
