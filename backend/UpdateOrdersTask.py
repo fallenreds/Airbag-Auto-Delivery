@@ -136,7 +136,7 @@ def update_order_task():
 
                 elif not filtered_remonline_order and order['remonline_order_id']:
                     db.post_order_updates("deleted", order['id'])
-                    db.delete_order_by_id(order['id'])
+                    db.delete_order(order['id'])
                     print(f"Order {order['id']}  has been deleted")
                     
             nova_post_update_status(active_orders, db)
