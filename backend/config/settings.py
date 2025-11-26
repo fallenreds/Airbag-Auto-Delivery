@@ -206,8 +206,14 @@ CORS_ALLOWED_ORIGINS = [
     "https://api.airbagad.com"
 ]
 
-CORS_ALLOW_CREDENTIALS = True
+# Trusted origins for CSRF
+CSRF_TRUSTED_ORIGINS = [
+    "https://api.airbagad.com",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
 
+CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_ALL_ORIGINS = DEBUG  # Only allow all origins in debug mode
 
 # Allow specific headers that might be needed for your API
