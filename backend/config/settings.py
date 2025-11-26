@@ -200,7 +200,11 @@ LOGGING = {
 }
 
 # CORS settings
-CORS_ALLOWED_ORIGINS = os.getenv("DJANGO_ALLOWED_HOSTS").split(",")
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "https://api.airbagad.com/"
+]
 
 CORS_ALLOW_CREDENTIALS = True
 
