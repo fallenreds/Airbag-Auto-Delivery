@@ -11,10 +11,10 @@ from updates import order_updates, get_no_paid_orders, client_updates
 
 from api import (
     add_new_visitor, check_auth, get_orders_by_tg_id, get_all_goods, get_discounts_info, get_discount_percentage, get_client_by_tg_id,
-    get_money_spend_cur_month, get_discount, post_discount, get_order_by_id, delete_order, 
+    get_money_spend_cur_month, post_discount, get_order_by_id, delete_order, 
     get_active_orders, add_bonus_client_discount, get_visitors, delete_visitor,
     make_pay_order, merge_order, get_templates, create_template, 
-    get_template, update_ttn
+    get_template, update_ttn, unpaid_overdue
 )
 from aiogram import Bot, Dispatcher, executor, filters, types
 
@@ -121,7 +121,7 @@ async def pre_checkout_payment(pre_checkout_query):
         for order_good in order_goods_list:
 
             real_good = find_good(goods, order_good['good_id'])
-            if int(real_good['residue']) < int(order_good['count']):
+            if int(real_good['residue']) < int(order_good['quantity']):
                 error_message = f"\nШановний клієнт, ми вибачаємось за незручності, проте товару {real_good['title']} " \
                                 f"зараз недостатньо для виконання замовлення. " \
                                 f"\n\nЙого кількість зараз {int(real_good['residue'])}" \
@@ -288,7 +288,7 @@ async def show_orders_to_merge(inline_query: types.InlineQuery, state: FSMContex
         item = types.InlineQueryResultArticle(
             id=order['id'],
             title=order['id'],
-            description=show_order_goods(order, all_goods),
+            description=show_order_goods(order),
             input_message_content=types.InputTextMessageContent(message_text=order['id']),
         )
         results.append(item)
@@ -784,10 +784,10 @@ async def callback_admin_panel(callback: types.CallbackQuery):
                 await unknown_error_notifications(bot, admin_id)
 
         if callback.data == "no_paid":
-            orders = await no_paid_along_time()
-            if not orders['success']:
+            orders = await unpaid_overdue()
+            if not orders:
                 return await bot.send_message(admin_id, text="Наразі немає несплачених замовлень, з передплатою")
-            await order_list_builder(bot, orders['data'], admin_id, goods)
+            await order_list_builder(bot, orders, admin_id, goods)
 
         if callback.data == "Зв‘язок":
             await show_info(callback)

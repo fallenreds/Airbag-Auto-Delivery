@@ -200,7 +200,7 @@ async def check_auth(telegram_id):
 async def get_discount(client_id):
     #TODO: CHANGE METHOD
     async with aiohttp.ClientSession() as session:
-        async with session.get(f'{base_url}api/v2/monthdiscount/{client_id}', headers=headers) as resp:
+        async with session.get(f'{base_url}api/v2/clients/{client_id}/discount-info/', headers=headers) as resp:
             if resp.status == 200:
                 return await resp.json()
 
@@ -286,10 +286,11 @@ async def update_branch_remember_count(order_id):
                 return await resp.json()
 
 
-async def update_no_paid_remember_count(order_id):
+async def update_no_paid_remember_count(order_id:int, remember_count:int)->list[dict]:
     #TODO: CHANGE METHOD
     async with aiohttp.ClientSession() as session:
-        async with session.patch(f'{base_url}api/v2/no_paid_remember_count/{order_id}', headers=headers) as resp:
+        data = {"remember_count": remember_count}
+        async with session.patch(f'{base_url}api/v2/orders/{order_id}/', json=data, headers=headers) as resp:
             if resp.status == 200:
                 return await resp.json()
 
@@ -302,12 +303,9 @@ async def finish_order(order_id):
                 return await resp.json()
 
 
-async def no_paid_along_time():
-    #TODO: CHANGE METHOD
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f'{base_url}api/v2/no-paid-along-time/', headers=headers) as resp:
-            if resp.status == 200:
-                return await resp.json()
+async def unpaid_overdue(limit: Optional[int] = None):
+    """Get unpaid overdue orders"""
+    return await _fetch_paginated("api/v2/orders/unpaid-overdue/", limit=limit)
 
 
 async def get_order_by_ttn(ttn):

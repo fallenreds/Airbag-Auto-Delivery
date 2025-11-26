@@ -1,4 +1,4 @@
-from api import get_all_clients, get_discount, get_money_spend_cur_month
+from api import get_all_clients, get_money_spend_cur_month
 from aiogram import types
 from buttons import get_add_month_payment_button
 from utils.utils import to_major

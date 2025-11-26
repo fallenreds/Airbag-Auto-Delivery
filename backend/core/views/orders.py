@@ -2,8 +2,10 @@
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status, viewsets
+from rest_framework.decorators import action
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
+from django.utils import timezone
 
 from core.models import Order, OrderEvent, OrderItem
 from core.serializers import (
@@ -38,6 +40,38 @@ class OrderViewSet(viewsets.ModelViewSet):
         else:
             # For anonymous users, don't set the user field
             serializer.save()
+
+    @action(
+        detail=False,
+        methods=["get"],
+        permission_classes=[IsAdminUser],
+        url_path="unpaid-overdue",
+    )
+    def unpaid_overdue(self, request):
+        """
+        Get orders that are unpaid, not completed, have prepayment,
+        and were created more than 1 hour ago.
+        Only accessible by admin users.
+        
+        Query Parameters:
+            limit: Number of results to return per page (default: 100, max: 100)
+            offset: The initial index from which to return the results (default: 0)
+        """
+
+        one_hour_ago = timezone.now() - timezone.timedelta(hours=1)
+
+        queryset = Order.objects.filter(
+            is_completed=False, is_paid=False, prepayment=True, date__lt=one_hour_ago
+        ).order_by("date")
+
+        # Apply pagination
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
 
     @swagger_auto_schema(
         request_body=OrderCreateSerializer,
