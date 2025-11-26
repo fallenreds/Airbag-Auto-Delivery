@@ -1,36 +1,26 @@
 version: '3.7'
 
 services:
-  back:
+  
+  backend:
     build: backend/
     ports:
       - "8000:8000"
-    volumes: 
-      - type: bind
-        source: ./info.db
-        target: /backend/info.db
-        read_only: false
-    restart: unless-stopped
-  backend_v2:
-    build: backend_v2/
-    ports:
-      - "8000:8000"
     volumes:
-      - ./backend_v2:/app
+      - ./backend:/app
     restart: unless-stopped
+    env_file:
+      - backend/.env 
+    
   bot:
     build: bot/
     ports:
       - "88:88"
+      - "5678:5678"
     volumes:
       - type: bind
         source: ./props.json
         target: /bot/props.json
         read_only: false
-  front:
-    environment:
-      - NODE_OPTIONS=--openssl-legacy-provider
-      - SKIP_PREFLIGHT_CHECK=true
-    build: front/
-    ports:
-      - "3000:3000"
+    env_file:
+      - ./bot/.env

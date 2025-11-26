@@ -10,6 +10,11 @@ RUN pip install -r requirements.txt
 
 COPY . /bot
 
-EXPOSE 88
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
-CMD ["python", "main.py"]
+EXPOSE 88
+EXPOSE 5678
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["main.py"]

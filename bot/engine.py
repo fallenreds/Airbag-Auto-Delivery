@@ -2,17 +2,19 @@ import json
 from aiogram import types
 from aiogram.utils.exceptions import ChatNotFound, BotBlocked
 
-from api import get_orders_by_tg_id, get_client_by_tg_id, get_discount
+from api import get_client_by_id, get_orders_by_tg_id, get_client_by_tg_id, get_discount
 from buttons import get_delete_order_button, get_props_info_button, get_send_payment_photo_button, get_check_ttn_button
 from config import PRICE_ID_PROD
+from utils.utils import to_major
 
 
-def find_good(goods, good_id):
+def find_good(goods:list[dict], good_id:int):
     for good in goods:
         if good["id"] == good_id:
             return good
 
-async def make_order(bot, telegram_id, data, goods, order, client):
+async def make_order(bot, telegram_id, order_items, goods, order, client):
+    #TODO: Вероятно не будет работать или кривые числа будут после qantity
     markup_i = types.InlineKeyboardMarkup(row_width=2)
 
     text = f"<b>Номер замовлення</b> {order['id']}\n<b>Ім'я:</b> {order['name']}\n<b>Прізвище</b>: {order['last_name']}\n<b>Адреса доставки:</b> {order['nova_post_address']} \n"
@@ -22,27 +24,30 @@ async def make_order(bot, telegram_id, data, goods, order, client):
         markup_i.add(check_ttn_button)
 
     if order["prepayment"]:
-        text += f'<b>Тип платежу:</b> Передплата\n'
+        text += '<b>Тип платежу:</b> Передплата\n'
         if order['is_paid'] == 1:
-            text += f'<b>Статус оплати:</b> Оплачено\n\n'
+            text += '<b>Статус оплати:</b> Оплачено\n\n'
         else:
-            text += f'<b>Статус оплати:</b> Потребує оплати\n\n'
+            text += '<b>Статус оплати:</b> Потребує оплати\n\n'
     else:
-        text += f'<b>Тип платежу:</b> Накладений платіж\n\n'
+        text += '<b>Тип платежу:</b> Накладений платіж\n\n'
     to_pay = 0
 
 
-    for obj in data:
-        good = find_good(goods, obj['good_id'])
-        to_pay += good["price"][PRICE_ID_PROD] * obj['count']
-        text += f"<b>Товар:</b> {good['title']} - Кількість: {obj['count']}\n\n"
+    for good in order_items:
+        to_pay += good["original_price_minor"] * good['quantity']
+        text += f"<b>Товар:</b> {good['title']} - Кількість: {good['count']}\n\n"
+    
+    
+    discounts_info = await get_discount(client["id"])
+    percent = 0
 
-    discount = await get_discount(client['id'])
-    if discount['success']:
-        to_pay -= to_pay / 100 * discount['data']['procent']
+    if discounts_info:
+        percent = discounts_info.get('discount_percentage')
+        to_pay -= to_pay * percent / 100 
 
     if not order['is_paid']:
-        text += f"<b>До сплати {to_pay}💳</b>"
+        text += f"<b>До сплати {to_major(to_pay)}💳</b>"
 
     if order['prepayment'] == 1 and order['is_paid'] == 0:
         delete_button = get_delete_order_button(order['id'])
@@ -65,40 +70,38 @@ async def base_client_info_builder(client):
     return f"<b>Данные клиента remonline:</b>\nФИО:{base_client_name}\nТелефон:{base_client_phone}\n\n"
 
 
-async def build_order_suma(order: dict, goods: dict):
-    goods_list = json.loads(order["goods_list"].replace("'", '"'))
+async def build_order_suma(order: dict):
+    goods = order["items"]
     suma = 0
-    for selected_good in goods_list:
-        good = find_good(goods['data'], selected_good['good_id'])
-        suma += good['price'][PRICE_ID_PROD] * selected_good['count']
+    for good in goods:
+        print(good)
+        suma += good['original_price_minor'] * good['quantity']
     return suma
 
 async def manager_notes_builder(order, goods) -> dict:
-    base_client = await get_client_by_tg_id(order['telegram_id'])
+    base_client = await get_client_by_id(order['client'])
     base_client_info = await base_client_info_builder(base_client)
 
     name = f"{order['name']} {order['last_name']}"
     phone = f"{order['phone']}"
     address = f"{order['nova_post_address']}"
-    prepayment = "Передплата" if order["prepayment"] == True else "Накладений платіж"
+    prepayment = "Передплата" if order["prepayment"] else "Накладений платіж"
     description = order.get('description')
 
-    order_suma = await build_order_suma(order, goods)
-    user_discount = await get_discount(base_client["id"])
+    order_suma = await build_order_suma(order)
+    discounts_info = await get_discount(base_client["id"])
+    percent = 0
 
-    print(order_suma)
-    print(user_discount)
-    procent = 0
-
-    if user_discount['success']:
-        procent = user_discount['data']['procent']
-    to_pay = order_suma - order_suma / 100 * procent
+    if discounts_info:
+        percent = discounts_info.get('discount_percentage')
+    
+    to_pay = order_suma - order_suma * percent / 100
 
     is_paid = "Нема даних"
     if order['is_paid'] == 1:
-        is_paid = f'Оплачено'
+        is_paid = 'Оплачено'
     else:
-        is_paid = f'Потребує оплати'
+        is_paid = 'Потребує оплати'
 
     goods_info = f"{base_client_info}<b>Дані замовлення:</b>\n" \
                  f"Номер замовлення: {order['id']} \n" \
@@ -107,26 +110,24 @@ async def manager_notes_builder(order, goods) -> dict:
                  f"Коментар: {description if description else 'Відсутній'}\n" \
                  f"Тип платежу: {prepayment}\n" \
                  f"Статус оплаты:{is_paid}\n\n" \
-                 f"Знижка: {procent}%\n" \
-                 f"Оригінальна сума: {order_suma} грн\n"\
-                 f"<b>Сума до сплати зі знижкою: {to_pay} грн</b>"
+                 f"Знижка: {percent}%\n" \
+                 f"Оригінальна сума: {to_major(order_suma)} грн\n"\
+                 f"<b>Сума до сплати зі знижкою: {to_major(to_pay)} грн</b>"
 
 
     if ttn := order['ttn']:
         goods_info += f"\nНомер ТТН: {ttn}"
 
-    goods_info += show_order_goods(order, goods)
+    goods_info += show_order_goods(order)
 
     return {"text": goods_info, "client": base_client}
 
 
-def show_order_goods(order:dict, goods:dict):
+def show_order_goods(order:dict):
     goods_info = ""
-    goods_list = json.loads(order["goods_list"].replace("'", '"'))
-
-    for obj in goods_list:
-        good = find_good(goods["data"], obj['good_id'])
-        goods_info += f"\n\nТовар: {good['title']} - Кількість: {obj['count']}"
+    goods = order.get('items') if order.get('items') else []  
+    for good in goods:
+        goods_info += f"\n\nТовар: {good['title']} - Кількість: {good['quantity']}"
     return goods_info
 
 

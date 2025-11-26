@@ -1,7 +1,0 @@
-.env
-venv
-.idea
-__pycache__/
-legacy.py
-info.db
-logs/

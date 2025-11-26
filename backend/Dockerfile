@@ -1,15 +1,15 @@
-FROM python:3.10.6
+# Dockerfile for backend_v2 Django app
+FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNVUFFERED 1
+ENV PYTHONUNBUFFERED 1
 
-WORKDIR /backend
+WORKDIR /app
 
-COPY requirements.txt /backend/requirements.txt
-RUN pip install -r /backend/requirements.txt
+COPY requirements.txt /app/
+RUN pip install --upgrade pip \
+    && pip install -r requirements.txt
 
-COPY . /backend
+COPY . /app/
 
-
-EXPOSE 8000
-CMD ["uvicorn", "main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000"]
