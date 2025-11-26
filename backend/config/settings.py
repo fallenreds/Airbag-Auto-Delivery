@@ -33,9 +33,7 @@ SECRET_KEY = os.getenv(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DJANGO_DEBUG", "True") == "True"
 
-ALLOWED_HOSTS = os.getenv(
-    "DJANGO_ALLOWED_HOSTS", "0.0.0.0, localhost, 127.0.0.1,localhost:3000"
-).split(",")
+ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS").split(",")
 
 # Remonline  settings
 REMONLINE_API_KEY = os.getenv("REMONLINE_API_KEY")
@@ -202,10 +200,7 @@ LOGGING = {
 }
 
 # CORS settings
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-]
+CORS_ALLOWED_ORIGINS = os.getenv("DJANGO_ALLOWED_HOSTS").split(",")
 
 CORS_ALLOW_CREDENTIALS = True
 
