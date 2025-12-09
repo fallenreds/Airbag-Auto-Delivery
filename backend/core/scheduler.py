@@ -17,7 +17,7 @@ def start_scheduler() -> BackgroundScheduler:
         logger.info("Scheduler already running; skipping startup")
         return _scheduler
 
-    from core.goods_sync import sync_goods
+    from core.goods_sync import sync_goods_and_categories
     from core.order_event_handler import order_event_handler
 
     logger.info("Starting APScheduler background scheduler")
@@ -29,7 +29,7 @@ def start_scheduler() -> BackgroundScheduler:
 
     # Run sync_goods every minute
     _scheduler.add_job(
-        sync_goods, "cron", minute="*", name="sync_goods", max_instances=1
+        sync_goods_and_categories, "cron", minute="*", name="sync_goods", max_instances=1
     )
 
     # Run order_event_handler every minute with sequential execution

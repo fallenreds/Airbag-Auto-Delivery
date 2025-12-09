@@ -22,51 +22,123 @@ def to_minor(v):
         )
     )
 
+def get_ignored_category_ids(remonline_categories_data:list[dict], ignore_root_ids:set[int]):
+    """
+    remonline_categories_data: список dict-ов с полями "id", "parent_id"
+    ignore_root_ids: set/id категорий, от которых игнорируем всё поддерево
+    """
+    # parent_id -> [child_id, ...]
+    children_map = {}
+    for cat in remonline_categories_data:
+        pid = cat.get("parent_id") #Ремонлайн отправляет без ключа если нет перента
+        cid = cat["id"]
+        children_map.setdefault(pid, []).append(cid)
 
-def sync_goods():
+    ignored_ids = set(ignore_root_ids)
+    stack = list(ignore_root_ids)
+
+    # DFS/BFS по дереву от корневых игнорируемых категорий
+    while stack:
+        current_id = stack.pop()
+
+        for child_id in children_map.get(current_id, []):
+            if child_id not in ignored_ids:
+                ignored_ids.add(child_id)
+                stack.append(child_id)
+
+    return ignored_ids
+
+
+def sync_categories()->list[GoodCategory]:
+    """
+    Синхронизирует категории с Remonline
+    Возвращает текущий список категорий
+    Игорирует ненужные категории (включая дочерние)
+    Удаляет категории которые уже не существуют в ремонлайн
+    Удаляет категории которые игнорируются
+    Обновляет категории которые изменились
+    Добавляет категории которые есть в ремонлайн и нет в БД
+    """
+    remonline = RemonlineInterface(REMONLINE_API_KEY)
+    remonline_categories_data = remonline.get_categories()
+    # Корневые игнорируемые категории (указываешь ты)
+    ignore_root_ids = set(CATEGORIES_IGNORE_IDS)
+
+    # Полный список ID, которые нужно игнорировать (включая потомков)
+    ignored_ids = get_ignored_category_ids(remonline_categories_data, ignore_root_ids)
+
+    # Категории из БД
+    db_categories = GoodCategory.objects.all()
+    current_map = {c.id_remonline: c for c in db_categories}
+
+    categories_to_create = []   # новые категории
+    categories_to_update = []   # категории для обновления
+
+    # Обрабатываем категории из Remonline
+    for category in remonline_categories_data:
+        cat_id = category["id"]
+
+        # Пропускаем игнорируемые
+        if cat_id in ignored_ids:
+            continue
+
+        existing = current_map.get(cat_id)
+
+        if existing is None:
+            # Новая категория
+            categories_to_create.append(
+                GoodCategory(
+                    id_remonline=cat_id,
+                    title=category["title"],
+                    parent_id=category.get("parent_id"),
+                )
+            )
+        else:
+            # Изменились название или parent
+            if existing.title != category["title"] or existing.parent_id != category.get("parent_id"):
+                existing.title = category["title"]
+                existing.parent_id = category.get("parent_id")
+                categories_to_update.append(existing)
+
+    # ID категорий, которые реально должны быть в БД по данным Remonline (без игнорируемых)
+    remonline_ids = {
+        c["id"]
+        for c in remonline_categories_data
+        if c["id"] not in ignored_ids
+    }
+
+    db_ids = {c.id_remonline for c in db_categories}
+
+    # Удаляем:
+    # 1) всё, что попало в игнор
+    # 2) всё, чего больше нет в Remonline среди неигнорируемых
+    ids_to_delete = (db_ids & ignored_ids) | (db_ids - remonline_ids)
+
+    with transaction.atomic():
+        if ids_to_delete:
+            GoodCategory.objects.filter(id_remonline__in=ids_to_delete).delete()
+
+        if categories_to_create:
+            GoodCategory.objects.bulk_create(categories_to_create)
+
+        if categories_to_update:
+            GoodCategory.objects.bulk_update(categories_to_update, ["title", "parent_id"])
+
+        # Текущий список категорий после синка
+        current_categories = list(GoodCategory.objects.all())
+
+    logger.info(f"Synced categories: {len(current_categories)}")
+    return current_categories
+
+
+
+def sync_goods_and_categories():
     remonline = RemonlineInterface(REMONLINE_API_KEY)
     goods_data = remonline.get_goods(remonline.get_main_warehouse_id())
     # --- Категории ---
-    categories_data = {}
-    for item in goods_data:
-        cat = item.get("category")
-        if cat and "id" in cat:
-            categories_data[cat["id"]] = cat
-    category_ids = list(categories_data.keys())
-
-    existing_categories = {
-        c.id_remonline: c
-        for c in GoodCategory.objects.filter(id_remonline__in=category_ids)
-    }
-    categories_to_update = []
-    categories_to_create = []
-    for cat_id, cat in categories_data.items():
-        obj = existing_categories.get(cat_id)
-        defaults = {
-            "title": cat.get("title", ""),
-            "parent_id": cat.get("parent_id"),
-        }
-        if obj:
-            changed = False
-            for k, v in defaults.items():
-                if getattr(obj, k) != v:
-                    setattr(obj, k, v)
-                    changed = True
-            if changed:
-                categories_to_update.append(obj)
-        else:
-            new_cat = GoodCategory(id_remonline=cat_id, **defaults)
-            existing_categories[cat_id] = new_cat
-            categories_to_create.append(new_cat)
-
-    with transaction.atomic():
-        if categories_to_create:
-            GoodCategory.objects.bulk_create(categories_to_create)
-        if categories_to_update:
-            GoodCategory.objects.bulk_update(
-                categories_to_update, ["title", "parent_id"]
-            )
-
+    categories = sync_categories()
+    
+    
     # --- Товары ---
     remonline_ids = [item["id"] for item in goods_data]
     logger.info(f"Remonline goods count: {len(goods_data)}")
@@ -83,7 +155,7 @@ def sync_goods():
         cat_obj = None
         cat = item.get("category")
         if cat and "id" in cat:
-            cat_obj = existing_categories.get(cat["id"])
+            cat_obj = categories.get(cat["id"])
 
         if cat.get("id") in CATEGORIES_IGNORE_IDS:
             continue
