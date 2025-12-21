@@ -58,7 +58,7 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 20,
     "DEFAULT_FILTER_BACKENDS": (
         "django_filters.rest_framework.DjangoFilterBackend",
-        "core.filters.UniversalFieldFilterBackend",
+        "core.filters.backend.UniversalFieldFilterBackend",
     ),
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "core.authentication.ApiKeyAuthentication",
