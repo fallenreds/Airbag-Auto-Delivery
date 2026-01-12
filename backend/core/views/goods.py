@@ -90,9 +90,9 @@ class GoodCategoryViewSet(viewsets.ModelViewSet):
                 }
                 nodes[rem_id] = node
             else:
-                node.setdefault("id", category.id)
-                node.setdefault("id_remonline", rem_id)
-                node.setdefault("title", category.title)
+                node["id"] = category.id
+                node["id_remonline"] = rem_id
+                node["title"] = category.title
                 node.setdefault("children", [])
 
             if parent_rem_id is None:
