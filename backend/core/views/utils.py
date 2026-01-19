@@ -1,15 +1,18 @@
 from django_filters import rest_framework as filters
 from rest_framework.permissions import IsAdminUser
+from django.db import models
 from core.filters.goods import GoodFilterSet
 
 
 def get_filterable_field_names(model):
+    excluded_types = (models.FileField, models.ImageField, models.JSONField)
+
     return [
         f.name
         for f in model._meta.get_fields()
-        if hasattr(f, "get_internal_type")
-        and f.get_internal_type() != "JSONField"
-        and f.name != "images"  # глобальное правило по имени
+        if hasattr(f, "attname")
+        and not isinstance(f, excluded_types)
+        and f.name != "images"
     ]
 
 

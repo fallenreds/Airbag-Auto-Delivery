@@ -17,7 +17,8 @@ from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
 load_dotenv(dotenv_path=BASE_DIR / ".env")
 
 
@@ -32,6 +33,10 @@ SECRET_KEY = os.getenv(
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DJANGO_DEBUG", "True") == "True"
+
+# Use for local development. Used for static files
+LOCAL = os.getenv("LOCAL", "True") == "True"
+
 
 ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS").split(",")
 

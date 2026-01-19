@@ -144,6 +144,12 @@ class GoodCategory(models.Model):
     id_remonline = models.BigIntegerField()
     title = models.CharField(max_length=255)
     parent_id = models.BigIntegerField(null=True, blank=True)
+    
+    image = models.ImageField(
+        upload_to="categories/",
+        null=True,
+        blank=True
+    )
 
 
 class Good(models.Model):

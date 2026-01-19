@@ -64,6 +64,7 @@ def sync_categories()->list[GoodCategory]:
             # Новая категория
             categories_to_create.append(
                 GoodCategory(
+                    id=cat_id,
                     id_remonline=cat_id,
                     title=category["title"],
                     parent_id=category.get("parent_id"),
