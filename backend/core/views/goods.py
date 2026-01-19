@@ -52,6 +52,7 @@ class GoodCategoryViewSet(viewsets.ModelViewSet):
                         "id": openapi.Schema(type=openapi.TYPE_INTEGER),
                         "id_remonline": openapi.Schema(type=openapi.TYPE_INTEGER),
                         "title": openapi.Schema(type=openapi.TYPE_STRING),
+                        "image": openapi.Schema(type=openapi.TYPE_STRING),
                         "children": openapi.Schema(
                             type=openapi.TYPE_ARRAY,
                             items=openapi.Schema(
@@ -79,6 +80,10 @@ class GoodCategoryViewSet(viewsets.ModelViewSet):
         for category in raw_categories:
             rem_id = category.id_remonline  # текущий remonline id
             parent_rem_id = category.parent_id  # remonline id родителя
+            image_url = None
+            if category.image:
+                image_url = request.build_absolute_uri(category.image.url)
+
 
             node = nodes.get(rem_id)
             if node is None:
@@ -86,6 +91,7 @@ class GoodCategoryViewSet(viewsets.ModelViewSet):
                     "id": category.id,  # локальный id, если нужен
                     "id_remonline": rem_id,
                     "title": category.title,
+                    "image": image_url,
                     "children": [],
                 }
                 nodes[rem_id] = node
@@ -93,6 +99,7 @@ class GoodCategoryViewSet(viewsets.ModelViewSet):
                 node["id"] = category.id
                 node["id_remonline"] = rem_id
                 node["title"] = category.title
+                node["image"] = image_url
                 node.setdefault("children", [])
 
             if parent_rem_id is None:
@@ -104,6 +111,7 @@ class GoodCategoryViewSet(viewsets.ModelViewSet):
                         "id": None,
                         "id_remonline": parent_rem_id,
                         "title": "",
+                        "image": None,
                         "children": [],
                     }
                     nodes[parent_rem_id] = parent
