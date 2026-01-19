@@ -1,21 +1,23 @@
+from django.conf import settings
+from django.conf.urls.static import static
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenVerifyView
 
-from .jwt_views import MyTokenObtainPairView, CustomTokenRefreshView
+from .jwt_views import CustomTokenRefreshView, MyTokenObtainPairView
 from .views import (
     BotVisitorViewSet,
     CartItemViewSet,
     CartViewSet,
-    ClientRegistrationView,
     ClientEventViewSet,
+    ClientRegistrationView,
     ClientViewSet,
     DiscountViewSet,
     GoodCategoryViewSet,
     GoodViewSet,
     MeView,
-    OrderItemViewSet,
     OrderEventViewSet,
+    OrderItemViewSet,
     OrderViewSet,
     TemplateViewSet,
 )
@@ -35,6 +37,7 @@ router.register(r"bot-visitors", BotVisitorViewSet)
 router.register(r"goods", GoodViewSet)
 router.register(r"good-categories", GoodCategoryViewSet)
 
+
 urlpatterns = router.urls + [
     path("auth/login/", MyTokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("auth/token/refresh/", CustomTokenRefreshView.as_view(), name="token_refresh"),
@@ -43,3 +46,5 @@ urlpatterns = router.urls + [
     path("auth/register/", ClientRegistrationView.as_view(), name="register"),
     path("auth/guest/", GuestClientCreationView.as_view(), name="create_guest"),
 ]
+
+urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
