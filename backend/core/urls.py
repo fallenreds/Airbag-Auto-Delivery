@@ -46,5 +46,3 @@ urlpatterns = router.urls + [
     path("auth/register/", ClientRegistrationView.as_view(), name="register"),
     path("auth/guest/", GuestClientCreationView.as_view(), name="create_guest"),
 ]
-
-urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
