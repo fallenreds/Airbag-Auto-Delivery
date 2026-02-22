@@ -37,6 +37,8 @@ DEBUG = os.getenv("DJANGO_DEBUG", "True") == "True"
 # Use for local development. Used for static files
 LOCAL = os.getenv("LOCAL", "True") == "True"
 
+# Used for Webhook URL - current backend project IP or domain
+DOMAIN = os.getenv("DOMAIN")
 
 ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS").split(",")
 
@@ -56,6 +58,11 @@ CATEGORIES_IGNORE_IDS = [
     for t in [x.strip() for x in _CATEGORIES_IGNORE_IDS_RAW.split(",")]
     if t.strip().isdigit()
 ]
+
+# Monobank settings
+MONOBANK_TOKEN = os.getenv("MONOBANK_TOKEN") #https://web.monobank.ua/ or getting your test token from https://api.monobank.ua/
+MONOBANK_WEBHOOK_URL_PATH = "monobank/webhook/payment-events/" # Webhook URL path for monobank payment events
+
 
 # DRF pagination and filter settings
 REST_FRAMEWORK = {
