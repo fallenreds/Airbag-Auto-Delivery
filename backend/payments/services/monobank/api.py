@@ -156,3 +156,26 @@ class MonobankAPI:
             return False
         
         return True
+    
+    def deactivate_invoice(self, invoice_id: str) -> Dict[str, Any]:
+        """
+        Обёртка над POST /api/merchant/invoice/remove
+        
+        invoice_id: идентификатор инвойса из ответа create_invoice (invoiceId)
+        """
+        url = f"{self.BASE_URL}/invoice/remove"
+        
+        data = {
+            "invoiceId": invoice_id
+        }
+        
+        resp = requests.post(
+            url, json=data, headers=self._headers())
+        
+        try:
+            resp.raise_for_status()
+        except requests.HTTPError:
+            # тут можно добавить логирование тела ответа
+            raise
+        
+        return resp.json()

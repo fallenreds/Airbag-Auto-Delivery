@@ -11,6 +11,9 @@ class MonobankPaymentService:
 
     def create_invoice(self, order: Order, redirect_url=None) -> Payment:
         """
+        Создает платежный инвойс в Monobank.
+        Перед созданием нового диактивирует все ожидающие платежи заказа.
+       
         redirect_url — куда вернуть пользователя после оплаты
         """
 
@@ -31,15 +34,30 @@ class MonobankPaymentService:
             mono_url=response["pageUrl"],
             status=Payment.STATUS_PENDING,
         )
-        logging.info(payment)
         return payment
 
     def deactivate_order_payments(self, order: Order):
-        # TODO отозвать инвойсы в моно
-        Payment.objects.filter(order=order, status=Payment.STATUS_PENDING).update(
-            status=Payment.STATUS_CANCELED
+        """
+        Деактивирует все ожидающие платежи заказа.
+        """
+        payments = Payment.objects.filter(
+            order=order,
+            status=Payment.STATUS_PENDING
         )
-        pass
+
+        for payment in payments:
+            self.client.deactivate_invoice(payment.mono_invoice_id)
+
+            payment.status = Payment.STATUS_CANCELED
+            payment.save(update_fields=["status"])
+
+            logging.info(
+                f"Deactivated invoice {payment.mono_invoice_id} for order {order.id}"
+            )
 
     def validate_webhook(self, x_sign: str, raw_body: bytes) -> bool:
+        """
+        Проверяет валидность вебхука от Monobank.
+        Возвращает True если вебхук валиден и пришел от монобанка, False в противном случае.
+        """
         return self.client.validate(x_sign, raw_body)
