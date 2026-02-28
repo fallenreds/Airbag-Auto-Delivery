@@ -1,35 +1,45 @@
-# payments/services.py
-from django.conf import settings
+import logging
 
-from payments.services.monobank.api import MonobankAPI
 from core.models import Order
+from payments.models import Payment
+from payments.services.monobank.api import MonobankAPI
 
 
 class MonobankPaymentService:
-    def __init__(self, token=None):
-        self.token = token or settings.MONOBANK_TOKEN
-        self.client = MonobankAPI(self.token)
+    def __init__(self, token: str, webhook_key: str | None = None):
+        self.client = MonobankAPI(token, webhook_key)
 
-    def create_invoice(self, *, order: Order, redirect_url=None):
+    def create_invoice(self, order: Order, redirect_url=None) -> Payment:
         """
-        amount — Decimal в гривнах
-        order_id — ID заказа из core
         redirect_url — куда вернуть пользователя после оплаты
         """
+
         amount = order.grand_total_minor
-        order_id = order.id
-        
+
         data = {
-            "amount": amount,  #
-            "reference": str(order_id),
-            "redirectUrl": redirect_url,
+            "amount": amount,
+            "redirect_url": redirect_url,
         }
 
-        response = self.client.create(**data)
-        
-        #TODO: Add cellery task to check invoice status
+        self.deactivate_order_payments(order)
 
-        return {
-            "invoice_id": response["invoiceId"],
-            "page_url": response["pageUrl"],     
-        }
+        response = self.client.create_invoice(**data)
+        payment = Payment.objects.create(
+            order=order,
+            amount=amount,
+            mono_invoice_id=response["invoiceId"],
+            mono_url=response["pageUrl"],
+            status=Payment.STATUS_PENDING,
+        )
+        logging.info(payment)
+        return payment
+
+    def deactivate_order_payments(self, order: Order):
+        # TODO отозвать инвойсы в моно
+        Payment.objects.filter(order=order, status=Payment.STATUS_PENDING).update(
+            status=Payment.STATUS_CANCELED
+        )
+        pass
+
+    def validate_webhook(self, x_sign: str, raw_body: bytes) -> bool:
+        return self.client.validate(x_sign, raw_body)

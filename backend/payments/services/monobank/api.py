@@ -1,7 +1,9 @@
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
-
+import hashlib
+import hmac
 import requests
+
 
 @dataclass
 class MonobankInvoiceWebhookResponse:
@@ -16,8 +18,9 @@ class MonobankInvoiceWebhookResponse:
 class MonobankAPI:
     BASE_URL = "https://api.monobank.ua/api/merchant"
 
-    def __init__(self, token: str):
+    def __init__(self, token: str, webhook_key:str|None = None):
         self.token = token
+        self.webhook_key = webhook_key
 
     def _headers(self) -> Dict[str, str]:
         return {
@@ -136,3 +139,20 @@ class MonobankAPI:
             raise
 
         return resp.json()
+
+    def validate(self, x_sign:str, raw_body:bytes)->bool:
+        
+        if not self.webhook_key:
+            raise ValueError("Parametr webhook_key must be provided")
+        
+        secret = self.webhook_key.encode()
+        computed_sign = hmac.new(
+            secret,
+            raw_body,
+            hashlib.sha256
+        ).hexdigest()
+
+        if not hmac.compare_digest(computed_sign, x_sign):
+            return False
+        
+        return True

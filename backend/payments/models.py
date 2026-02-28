@@ -5,6 +5,8 @@ class Payment(models.Model):
     STATUS_PENDING = "pending"
     STATUS_PAID = "paid"
     STATUS_FAILED = "failed"
+    STATUS_CANCELED = "canceled"
+    STATUS_EXPIRED = "expired"
 
     order = models.ForeignKey("core.Order", on_delete=models.CASCADE, related_name="payments")
     amount = models.IntegerField() #Minor
