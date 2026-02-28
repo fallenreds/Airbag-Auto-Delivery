@@ -1,8 +1,70 @@
 from dataclasses import dataclass
+import logging
 from typing import Any, Dict, Optional
 import hashlib
 import hmac
 import requests
+
+
+class MonobankError(Exception):
+    def __init__(
+        self,
+        message: str,
+        *,
+        err_code: str | None = None,
+        status_code: int | None = None,
+        payload: dict | None = None,
+    ):
+        super().__init__(message)
+        self.err_code = err_code
+        self.status_code = status_code
+        self.payload = payload
+
+
+class MonobankClientError(MonobankError):
+    pass
+
+
+class MonobankServerError(MonobankError):
+    pass
+
+
+class MonobankBadRequest(MonobankClientError):
+    pass
+
+
+class MonobankInvalidMerchantInfo(MonobankClientError):
+    pass
+
+
+class MonobankOrderInProgress(MonobankClientError):
+    pass
+
+
+class MonobankHoldNotFinalized(MonobankClientError):
+    pass
+
+
+class MonobankWrongCancelAmount(MonobankClientError):
+    pass
+
+
+class MonobankTokenNotFound(MonobankClientError):
+    pass
+
+class MonobankInvoiceAlreadyUsed(MonobankClientError):
+    pass
+
+ERROR_MAP = {
+    "BAD_REQUEST": MonobankBadRequest,
+    "1001": MonobankBadRequest,
+    "INVALID_MERCHANT_PAYM_INFO": MonobankInvalidMerchantInfo,
+    "ORDER_IN_PROGRESS": MonobankOrderInProgress,
+    "HOLD_INVOICE_NOT_FINALIZED": MonobankHoldNotFinalized,
+    "WRONG_CANCEL_AMOUNT": MonobankWrongCancelAmount,
+    "TOKEN_NOT_FOUND": MonobankTokenNotFound,
+    "INVOICE_ALREADY_USED": MonobankInvoiceAlreadyUsed,
+}
 
 
 @dataclass
@@ -15,10 +77,11 @@ class MonobankInvoiceWebhookResponse:
     created_date: str
     modified_date: str
 
+
 class MonobankAPI:
     BASE_URL = "https://api.monobank.ua/api/merchant"
 
-    def __init__(self, token: str, webhook_key:str|None = None):
+    def __init__(self, token: str, webhook_key: str | None = None):
         self.token = token
         self.webhook_key = webhook_key
 
@@ -27,6 +90,45 @@ class MonobankAPI:
             "X-Token": self.token,
             "Content-Type": "application/json",
         }
+
+    def _handle_response(self, resp: requests.Response) -> dict:
+        if resp.status_code < 400:
+            return resp.json()
+
+        try:
+            data = resp.json()
+        except Exception:
+            raise MonobankError(
+                "Invalid JSON response from Monobank",
+                status_code=resp.status_code,
+            )
+
+        err_code = data.get("errCode")
+        err_text = data.get("errText")
+
+        logging.error(
+            "Monobank API error | status=%s | errCode=%s | body=%s",
+            resp.status_code,
+            err_code,
+            data,
+        )
+
+        if resp.status_code >= 500:
+            raise MonobankServerError(
+                err_text or "Monobank server error",
+                err_code=err_code,
+                status_code=resp.status_code,
+                payload=data,
+            )
+
+        exc_class = ERROR_MAP.get(err_code, MonobankClientError)
+
+        raise exc_class(
+            err_text or "Monobank client error",
+            err_code=err_code,
+            status_code=resp.status_code,
+            payload=data,
+        )
 
     def create_invoice(
         self,
@@ -92,14 +194,7 @@ class MonobankAPI:
             url, json=payload, headers=self._headers(), timeout=timeout
         )
 
-        # подними нормальное исключение, если Mono вернул ошибку
-        try:
-            resp.raise_for_status()
-        except requests.HTTPError:
-            # тут можно добавить логирование тела ответа
-            raise
-
-        return resp.json()
+        return self._handle_response(resp)
 
     def get_invoice_status(
         self,
@@ -132,31 +227,8 @@ class MonobankAPI:
             url, params=params, headers=self._headers(), timeout=timeout
         )
 
-        try:
-            resp.raise_for_status()
-        except requests.HTTPError:
-            # тут можно добавить логирование тела ответа
-            raise
+        return self._handle_response(resp)
 
-        return resp.json()
-
-    def validate(self, x_sign:str, raw_body:bytes)->bool:
-        
-        if not self.webhook_key:
-            raise ValueError("Parametr webhook_key must be provided")
-        
-        secret = self.webhook_key.encode()
-        computed_sign = hmac.new(
-            secret,
-            raw_body,
-            hashlib.sha256
-        ).hexdigest()
-
-        if not hmac.compare_digest(computed_sign, x_sign):
-            return False
-        
-        return True
-    
     def deactivate_invoice(self, invoice_id: str) -> Dict[str, Any]:
         """
         Обёртка над POST /api/merchant/invoice/remove
@@ -164,18 +236,27 @@ class MonobankAPI:
         invoice_id: идентификатор инвойса из ответа create_invoice (invoiceId)
         """
         url = f"{self.BASE_URL}/invoice/remove"
-        
+
         data = {
             "invoiceId": invoice_id
         }
-        
+
         resp = requests.post(
-            url, json=data, headers=self._headers())
-        
-        try:
-            resp.raise_for_status()
-        except requests.HTTPError:
-            # тут можно добавить логирование тела ответа
-            raise
-        
-        return resp.json()
+            url, json=data, headers=self._headers(), timeout=10
+        )
+
+        return self._handle_response(resp)
+
+    def validate(self, x_sign: str, raw_body: bytes) -> bool:
+        if not self.webhook_key:
+            raise ValueError("Parametr webhook_key must be provided")
+
+        secret = self.webhook_key.encode()
+
+        computed_sign = hmac.new(
+            secret,
+            raw_body,
+            hashlib.sha256
+        ).hexdigest()
+
+        return hmac.compare_digest(computed_sign, x_sign)
