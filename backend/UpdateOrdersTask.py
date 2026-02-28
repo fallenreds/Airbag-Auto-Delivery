@@ -120,7 +120,7 @@ def update_order_task():
                     filter(lambda rm_order: rm_order['id'] == order['remonline_order_id'], remonline_orders))
                 if filtered_remonline_order:
 
-                    if "закрит" in filtered_remonline_order[0]['status']['name'].lower():
+                    if "закрито" in filtered_remonline_order[0]['status']['name'].lower():
                         db.deactivate_order(order['id'])
                         db.post_order_updates("deactivated", order['id'])
                         print(f"Order {order['id']} has been deactivated")
