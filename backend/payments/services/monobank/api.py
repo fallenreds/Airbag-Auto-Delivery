@@ -1,7 +1,9 @@
 from dataclasses import dataclass
 import logging
 from typing import Any, Dict, Optional
+import base64
 import hashlib
+import ecdsa
 import hmac
 import requests
 
@@ -250,13 +252,10 @@ class MonobankAPI:
     def validate(self, x_sign: str, raw_body: bytes) -> bool:
         if not self.webhook_key:
             raise ValueError("Parametr webhook_key must be provided")
+        logging.info(self.webhook_key)
+        pub_key_bytes = base64.b64decode(self.webhook_key)
+        signature_bytes = base64.b64decode(x_sign)
+        pub_key = ecdsa.VerifyingKey.from_pem(pub_key_bytes.decode())
 
-        secret = self.webhook_key.encode()
-
-        computed_sign = hmac.new(
-            secret,
-            raw_body,
-            hashlib.sha256
-        ).hexdigest()
-
-        return hmac.compare_digest(computed_sign, x_sign)
+        is_verified = pub_key.verify(signature_bytes, raw_body, sigdecode=ecdsa.util.sigdecode_der, hashfunc=hashlib.sha256)
+        return is_verified 

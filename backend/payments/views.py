@@ -38,14 +38,14 @@ class MonobankWebhookView(APIView):
         """
        
         payment_service = MonobankPaymentService(
-            MONOBANK_WEBHOOK_KEY, MONOBANK_TOKEN
+            token= MONOBANK_TOKEN, webhook_key=MONOBANK_WEBHOOK_KEY,
         ) 
         
         
         if not payment_service.validate_webhook(request.headers.get("X-Sign"), request.body):
             return Response({"ok": False}, status=status.HTTP_400_BAD_REQUEST)
 
-        payment_service.process_invoce_event(event=request.data)
+        payment_service.proccess_invoice_event(event=request.data)
         
         return Response({"ok": True}, status=status.HTTP_200_OK)
 

@@ -43,7 +43,7 @@ class PaymentCreateSerializer(serializers.Serializer):
         """
         order = self.context["order"]
         webhook_url = f"{DOMAIN}api/v2/payments/{MONOBANK_WEBHOOK_URL_PATH}"
-        payment = MonobankPaymentService(MONOBANK_TOKEN).create_invoice(
+        payment = MonobankPaymentService(token=MONOBANK_TOKEN).create_invoice(
             order, web_hook_url=webhook_url
         )
         return payment

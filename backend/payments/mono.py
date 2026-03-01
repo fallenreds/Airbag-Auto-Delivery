@@ -1,6 +1,4 @@
 import logging
-from celery import shared_task
-
 from core.models import Order
 from payments.models import MonobankInvoiceEvent, Payment
 from payments.services.monobank.api import MonobankAPI, MonobankError, MonobankOrderInProgress, MonobankInvoiceAlreadyUsed
@@ -74,18 +72,11 @@ class MonobankPaymentService:
                 f"Deactivated invoice {payment.mono_invoice_id} for order {order.id}"
             )
 
-    def validate_webhook(self, x_sign: str, raw_body: bytes) -> bool:
-        """
-        Проверяет валидность вебхука от Monobank.
-        Возвращает True если вебхук валиден и пришел от монобанка, False в противном случае.
-        """
-        return self.client.validate(x_sign, raw_body)
-
-    def process_invoce_event(self, event: dict):
+    def proccess_invoice_event(self, event: dict):
         """
         Обрабатывает событие от монобанка.
         """
-        
+        logging.info("Registering invoice event: %s", event)
         event = MonobankInvoiceEvent.objects.create(
             invoice_id=event.get("invoiceId"),
             status=event.get("status"),
@@ -95,22 +86,37 @@ class MonobankPaymentService:
             modified_date=event.get("modifiedDate"),
             raw_payload=event,
         )
-
-        self._process_invoce_event_task.delay(event.id)
+    
+        payment = Payment.objects.get(mono_invoice_id=event.invoice_id)
+        match event.status:
+            case Payment.STATUS_PENDING:
+                pass
+            case Payment.STATUS_FAILED:
+                pass
+            case Payment.STATUS_CANCELED:
+                self.client.deactivate_invoice(payment.mono_invoice_id)
+            case Payment.STATUS_EXPIRED:
+                self.client.deactivate_invoice(payment.mono_invoice_id)
+            case Payment.STATUS_SUCCESS:
+                self.mark_order_as_paid(event.order)
+            
+        payment.status = event.status
+        payment.save(update_fields=["status"])
+        return event
 
     
-    @shared_task
-    def _process_invoce_event_task(self, event_id: int):
+    def validate_webhook(self, x_sign: str, raw_body: bytes) -> bool:
         """
-        Обрабатывает разные события по платежу (оплата, отмена, просрочка и т.д.)
-        
-        # {'invoiceId': '260222DZ429DSPJN7QDX', 'status': 'processing', 'amount': 100, 'ccy': 980, 'finalAmount': 0, 'createdDate': '2026-02-22T21:43:34Z', 'modifiedDate': '2026-02-22T21:45:39Z'}
-        # {'invoiceId': '2602249KW8GiyQYf94Hu', 'status': 'success', 'payMethod': 'pan', 'amount': 100, 'ccy': 980, 'finalAmount': 100, 'createdDate': '2026-02-24T20:39:10Z', 'modifiedDate': '2026-02-24T20:47:33Z', 'paymentInfo': {'rrn': '075418254055', 'approvalCode': '518876', 'tranId': '427712614729', 'terminal': 'MI000000', 'bank': 'Test bank', 'paymentSystem': 'visa', 'country': '804', 'fee': 1, 'paymentMethod': 'pan', 'maskedPan': '44414145******98'}}
-        
-        
+        Проверяет валидность вебхука от Monobank.
+        Возвращает True если вебхук валиден и пришел от монобанка, False в противном случае.
         """
-        event = MonobankInvoiceEvent.objects.filter(id=event_id).first()
-        if event is None:
-            logging.error("Monobank event not found: %s", event_id)
-            return
-        pass
+        return self.client.validate(x_sign, raw_body)
+
+    
+    def mark_order_as_paid(self, order: Order):
+        order.is_paid = True
+        order.save(update_fields=["is_paid"])
+        #TODO Добавить вызов Order интерфейса жля запуска процесов после оплаты
+        
+    
+  

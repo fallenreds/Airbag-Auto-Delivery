@@ -3,8 +3,8 @@ from django.db import models
 
 class Payment(models.Model):
     STATUS_PENDING = "pending"
-    STATUS_PAID = "paid"
-    STATUS_FAILED = "failed"
+    STATUS_SUCCESS = "success"
+    STATUS_FAILED = "failure"
     STATUS_CANCELED = "canceled"
     STATUS_EXPIRED = "expired"
 
