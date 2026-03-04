@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import json
 import logging
 from typing import Any, Dict, Optional
 import base64
@@ -196,6 +197,53 @@ class MonobankAPI:
             url, json=payload, headers=self._headers(), timeout=timeout
         )
 
+        return self._handle_response(resp)
+
+    def wallet_payment(
+        self,
+        *,
+        g_token: str,
+        amount: int,
+        ccy: int = 980,
+        initiation_kind: str | None = None,
+        redirect_url: str | None = None,
+        timeout: int = 10,
+        extra_params: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Оплата по токену Google Pay.
+
+        POST /api/merchant/wallet/payment
+
+        По документации Monobank поле gToken передаётся как СТРОКА,
+        содержащая JSON (например, ECv2 объект Google Pay).
+        """
+        url = f"{self.BASE_URL}/wallet/payment"
+
+        # Monobank требует redirectUrl для initiationKind=client.
+        # Если redirect_url не передан, используем merchant-initiation.
+        resolved_initiation_kind = initiation_kind or (
+            "client" if redirect_url is not None else "merchant"
+        )
+
+        payload: Dict[str, Any] = {
+            "gToken": g_token,
+            "amount": amount,
+            "ccy": ccy,
+            "initiationKind": resolved_initiation_kind,
+        }
+
+        if redirect_url is not None:
+            payload["redirectUrl"] = redirect_url
+
+        if extra_params:
+            payload.update(extra_params)
+
+        # sanity: гарантируем, что gToken сериализуемый str
+        if not isinstance(payload["gToken"], str):
+            payload["gToken"] = json.dumps(payload["gToken"], separators=(",", ":"))
+
+        resp = requests.post(url, json=payload, headers=self._headers(), timeout=timeout)
         return self._handle_response(resp)
 
     def get_invoice_status(

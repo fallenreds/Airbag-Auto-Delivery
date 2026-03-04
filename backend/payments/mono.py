@@ -7,9 +7,16 @@ from rest_framework.exceptions import ValidationError
 
 class MonobankPaymentService:
     def __init__(self, token: str, webhook_key: str | None = None):
+        if not token:
+            raise ValueError("MONOBANK_TOKEN is not configured")
         self.client = MonobankAPI(token, webhook_key)
 
-    def create_invoice(self, order: Order, redirect_url: str = None, web_hook_url: str = None) -> Payment:
+    def create_invoice(
+        self,
+        order: Order,
+        redirect_url: str | None = None,
+        web_hook_url: str | None = None,
+    ) -> Payment:
         """
         Создает платежный инвойс в Monobank.
         Перед созданием нового диактивирует все ожидающие платежи заказа.
@@ -77,7 +84,7 @@ class MonobankPaymentService:
         Обрабатывает событие от монобанка.
         """
         logging.info("Registering invoice event: %s", event)
-        event = MonobankInvoiceEvent.objects.create(
+        invoice_event = MonobankInvoiceEvent.objects.create(
             invoice_id=event.get("invoiceId"),
             status=event.get("status"),
             amount=event.get("amount"),
@@ -87,8 +94,8 @@ class MonobankPaymentService:
             raw_payload=event,
         )
     
-        payment = Payment.objects.get(mono_invoice_id=event.invoice_id)
-        match event.status:
+        payment = Payment.objects.get(mono_invoice_id=invoice_event.invoice_id)
+        match invoice_event.status:
             case Payment.STATUS_PENDING:
                 pass
             case Payment.STATUS_FAILED:
@@ -98,11 +105,11 @@ class MonobankPaymentService:
             case Payment.STATUS_EXPIRED:
                 self.client.deactivate_invoice(payment.mono_invoice_id)
             case Payment.STATUS_SUCCESS:
-                self.mark_order_as_paid(event.order)
+                self.mark_order_as_paid(payment.order)
             
-        payment.status = event.status
+        payment.status = invoice_event.status
         payment.save(update_fields=["status"])
-        return event
+        return invoice_event
 
     
     def validate_webhook(self, x_sign: str, raw_body: bytes) -> bool:
@@ -111,6 +118,74 @@ class MonobankPaymentService:
         Возвращает True если вебхук валиден и пришел от монобанка, False в противном случае.
         """
         return self.client.validate(x_sign, raw_body)
+
+    def pay_by_google_token(
+        self,
+        *,
+        g_token: str,
+        amount: int,
+        ccy: int = 980,
+        redirect_url: str | None = None,
+    ):
+        """Проводит оплату по токену (Google Pay) через Monobank wallet/payment."""
+        return self.client.wallet_payment(
+            g_token=g_token,
+            amount=amount,
+            ccy=ccy,
+            redirect_url=redirect_url,
+        )
+
+    def pay_order_by_google_token(
+        self,
+        *,
+        order: Order,
+        g_token: str,
+        ccy: int = 980,
+        redirect_url: str | None = None,
+    ) -> tuple[Payment, dict]:
+        """
+        Проводит Google Pay оплату для конкретного заказа.
+        Создает Payment с привязкой к order аналогично flow с invoice/create.
+        """
+        amount = order.grand_total_minor
+
+        try:
+            self.deactivate_order_payments(order)
+        except MonobankOrderInProgress:
+            raise ValidationError(
+                "Your previous payment is still in progress. Please try again later."
+            )
+        except MonobankInvoiceAlreadyUsed:
+            raise ValidationError(
+                "Your previous payment is alredy finished. Please contact administator."
+            )
+        except MonobankError:
+            raise ValidationError("Problem with deactivation of previous invoice.")
+
+        mono_response = self.client.wallet_payment(
+            g_token=g_token,
+            amount=amount,
+            ccy=ccy,
+            redirect_url=redirect_url,
+        )
+
+        invoice_id = mono_response.get("invoiceId")
+        if not invoice_id:
+            raise ValidationError("Monobank did not return invoiceId for wallet payment")
+
+        payment_status = mono_response.get("status", Payment.STATUS_PENDING)
+        payment = Payment.objects.create(
+            order=order,
+            amount=amount,
+            mono_invoice_id=invoice_id,
+            mono_url=mono_response.get("pageUrl") or mono_response.get("redirectUrl"),
+            status=payment_status,
+        )
+
+        if payment_status == Payment.STATUS_SUCCESS:
+            self.mark_order_as_paid(order)
+
+        return payment, mono_response
 
     
     def mark_order_as_paid(self, order: Order):
