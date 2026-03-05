@@ -14,6 +14,27 @@ class MonobankPaymentService:
             raise ValueError("MONOBANK_TOKEN is not configured")
         self.client = MonobankAPI(token, webhook_key)
 
+    @staticmethod
+    def _extract_failure_reason(payload: dict) -> str | None:
+        return (
+            payload.get("failureReason")
+            or payload.get("errText")
+            or payload.get("cancelReason")
+            or payload.get("statusDescription")
+        )
+
+    @staticmethod
+    def _extract_failure_code(payload: dict) -> str | None:
+        code = (
+            payload.get("failureCode")
+            or payload.get("errCode")
+            or payload.get("declineCode")
+            or payload.get("status")
+        )
+        if code is None:
+            return None
+        return str(code)
+
     def create_invoice(
         self,
         order: Order,
@@ -102,6 +123,16 @@ class MonobankPaymentService:
             payment = Payment.objects.select_for_update().get(
                 mono_invoice_id=invoice_event.invoice_id
             )
+
+            failure_reason = None
+            failure_code = None
+            if invoice_event.status in {
+                Payment.STATUS_FAILED,
+                Payment.STATUS_CANCELED,
+                Payment.STATUS_EXPIRED,
+            }:
+                failure_reason = self._extract_failure_reason(event)
+                failure_code = self._extract_failure_code(event)
             match invoice_event.status:
                 case Payment.STATUS_PENDING:
                     pass
@@ -115,7 +146,9 @@ class MonobankPaymentService:
                     self.mark_order_as_paid(payment.order)
 
             payment.status = invoice_event.status
-            payment.save(update_fields=["status"])
+            payment.failure_code = failure_code
+            payment.failure_reason = failure_reason
+            payment.save(update_fields=["status", "failure_code", "failure_reason"])
             return invoice_event
 
     
@@ -187,6 +220,18 @@ class MonobankPaymentService:
             mono_invoice_id=invoice_id,
             mono_url=mono_response.get("pageUrl") or mono_response.get("redirectUrl"),
             status=payment_status,
+            failure_code=(
+                self._extract_failure_code(mono_response)
+                if payment_status
+                in {Payment.STATUS_FAILED, Payment.STATUS_CANCELED, Payment.STATUS_EXPIRED}
+                else None
+            ),
+            failure_reason=(
+                self._extract_failure_reason(mono_response)
+                if payment_status
+                in {Payment.STATUS_FAILED, Payment.STATUS_CANCELED, Payment.STATUS_EXPIRED}
+                else None
+            ),
         )
 
         if payment_status == Payment.STATUS_SUCCESS:

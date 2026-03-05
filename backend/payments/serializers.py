@@ -17,7 +17,16 @@ from .googlepay import (
 class PaymentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Payment
-        fields = ["id", "order", "amount", "currency", "mono_url", "status"]
+        fields = [
+            "id",
+            "order",
+            "amount",
+            "currency",
+            "mono_url",
+            "status",
+            "failure_code",
+            "failure_reason",
+        ]
 
 
 class PaymentCreateSerializer(serializers.Serializer):
