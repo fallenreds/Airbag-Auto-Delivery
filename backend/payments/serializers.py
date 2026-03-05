@@ -39,6 +39,12 @@ class PaymentCreateSerializer(serializers.Serializer):
         if order.is_paid:
             raise serializers.ValidationError("Order already paid")
 
+        # Предоплата only: postpayment orders should not go through online prepayment flow
+        if not order.prepayment:
+            raise serializers.ValidationError(
+                "This order uses postpayment and cannot be paid via prepayment flow"
+            )
+
         self.context["order"] = order
         return value
 
@@ -88,6 +94,11 @@ class GooglePayWalletPaymentSerializer(serializers.Serializer):
 
         if order.is_paid:
             raise serializers.ValidationError("Order already paid")
+
+        if not order.prepayment:
+            raise serializers.ValidationError(
+                "This order uses postpayment and cannot be paid via prepayment flow"
+            )
 
         self.context["order"] = order
         return value

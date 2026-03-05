@@ -1,5 +1,8 @@
 import logging
+from django.db import transaction
 from core.models import Order
+from core.models import OrderEvent, OrderEventType
+from core.services.order_sync import sync_order_to_remonline
 from payments.models import MonobankInvoiceEvent, Payment
 from payments.services.monobank.api import MonobankAPI, MonobankError, MonobankOrderInProgress, MonobankInvoiceAlreadyUsed
 from rest_framework.exceptions import ValidationError
@@ -84,32 +87,35 @@ class MonobankPaymentService:
         Обрабатывает событие от монобанка.
         """
         logging.info("Registering invoice event: %s", event)
-        invoice_event = MonobankInvoiceEvent.objects.create(
-            invoice_id=event.get("invoiceId"),
-            status=event.get("status"),
-            amount=event.get("amount"),
-            ccy=event.get("ccy"),
-            created_date=event.get("createdDate"),
-            modified_date=event.get("modifiedDate"),
-            raw_payload=event,
-        )
-    
-        payment = Payment.objects.get(mono_invoice_id=invoice_event.invoice_id)
-        match invoice_event.status:
-            case Payment.STATUS_PENDING:
-                pass
-            case Payment.STATUS_FAILED:
-                pass
-            case Payment.STATUS_CANCELED:
-                self.client.deactivate_invoice(payment.mono_invoice_id)
-            case Payment.STATUS_EXPIRED:
-                self.client.deactivate_invoice(payment.mono_invoice_id)
-            case Payment.STATUS_SUCCESS:
-                self.mark_order_as_paid(payment.order)
-            
-        payment.status = invoice_event.status
-        payment.save(update_fields=["status"])
-        return invoice_event
+        with transaction.atomic():
+            invoice_event = MonobankInvoiceEvent.objects.create(
+                invoice_id=event.get("invoiceId"),
+                status=event.get("status"),
+                amount=event.get("amount"),
+                ccy=event.get("ccy"),
+                created_date=event.get("createdDate"),
+                modified_date=event.get("modifiedDate"),
+                raw_payload=event,
+            )
+
+            payment = Payment.objects.select_for_update().get(
+                mono_invoice_id=invoice_event.invoice_id
+            )
+            match invoice_event.status:
+                case Payment.STATUS_PENDING:
+                    pass
+                case Payment.STATUS_FAILED:
+                    pass
+                case Payment.STATUS_CANCELED:
+                    self.client.deactivate_invoice(payment.mono_invoice_id)
+                case Payment.STATUS_EXPIRED:
+                    self.client.deactivate_invoice(payment.mono_invoice_id)
+                case Payment.STATUS_SUCCESS:
+                    self.mark_order_as_paid(payment.order)
+
+            payment.status = invoice_event.status
+            payment.save(update_fields=["status"])
+            return invoice_event
 
     
     def validate_webhook(self, x_sign: str, raw_body: bytes) -> bool:
@@ -189,9 +195,19 @@ class MonobankPaymentService:
 
     
     def mark_order_as_paid(self, order: Order):
-        order.is_paid = True
-        order.save(update_fields=["is_paid"])
-        #TODO Добавить вызов Order интерфейса жля запуска процесов после оплаты
+        was_paid = order.is_paid
+        if not was_paid:
+            order.is_paid = True
+            order.save(update_fields=["is_paid"])
+
+            OrderEvent.objects.create(
+                type=OrderEventType.PAYMENT_CONFIRMED,
+                order=order,
+                details="Order payment confirmed",
+            )
+
+        if order.prepayment:
+            sync_order_to_remonline(order)
         
     
   

@@ -63,6 +63,7 @@ CATEGORIES_IGNORE_IDS = [
 MONOBANK_TOKEN = os.getenv("MONOBANK_TOKEN") #https://web.monobank.ua/ or getting your test token from https://api.monobank.ua/
 MONOBANK_WEBHOOK_URL_PATH = "monobank/webhook/payment-events/" # Webhook URL path for monobank payment events
 MONOBANK_WEBHOOK_KEY = os.getenv("MONOBANK_WEBHOOK_KEY")
+
 # Celery settings
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/1")

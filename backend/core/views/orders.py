@@ -3,17 +3,19 @@ from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from django.utils import timezone
 
-from core.models import Order, OrderEvent, OrderItem
+from core.models import Order, OrderEvent, OrderEventType, OrderItem
 from core.serializers import (
     OrderCreateSerializer,
     OrderEventSerializer,
     OrderItemSerializer,
     OrderSerializer,
 )
+from core.services.order_sync import sync_order_to_remonline
 from core.views.utils import get_own_queryset
 
 from .utils import generate_filterset_for_model
@@ -94,7 +96,11 @@ class OrderViewSet(viewsets.ModelViewSet):
             ),
             400: openapi.Response(description="Bad request (validation error)"),
         },
-        operation_description="Create an order with only OrderItems data, other fields are filled with placeholders",
+        operation_description=(
+            "Create order and items. "
+            "When legacy prepayment flow is enabled: postpayment orders are synced "
+            "to RemOnline immediately, prepayment orders are synced after successful payment."
+        ),
     )
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(
@@ -103,6 +109,33 @@ class OrderViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         order = serializer.save()
         return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
+
+    def perform_update(self, serializer):
+        order = serializer.instance
+        validated_data = serializer.validated_data
+        prepayment_in_payload = "prepayment" in validated_data
+        current_prepayment = order.prepayment
+        target_prepayment = validated_data.get("prepayment", current_prepayment)
+
+        if prepayment_in_payload and target_prepayment != current_prepayment:
+            if not IsAdminUser().has_permission(self.request, self):
+                raise PermissionDenied("Only admin can change payment type")
+
+            if order.is_paid:
+                raise ValidationError("Paid order payment type cannot be changed")
+
+            if (not current_prepayment) and target_prepayment:
+                raise ValidationError("Payment type can only be changed to postpayment")
+
+        serializer.save()
+
+        if prepayment_in_payload and current_prepayment and (not target_prepayment):
+            OrderEvent.objects.create(
+                type=OrderEventType.PAYMENT_TYPE_CHANGED,
+                order=order,
+                details="Payment type changed to postpayment",
+            )
+            sync_order_to_remonline(order)
 
 
 class OrderItemViewSet(viewsets.ModelViewSet):
