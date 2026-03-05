@@ -103,9 +103,6 @@ class RemonlineInterface:
 
         # передаём список пар — requests сформирует ids=1&ids=2&ids=3
         response = self.post(url, data=data_items)
-        print("HERE")
-        print(url)
-        print(response.request)
         return response.json()
 
     # def post_objects(

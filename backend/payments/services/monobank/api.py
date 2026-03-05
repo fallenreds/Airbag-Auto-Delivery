@@ -150,6 +150,7 @@ class MonobankAPI:
         save_card_data: Optional[Dict[str, Any]] = None,
         extra_params: Optional[Dict[str, Any]] = None,
         timeout: int = 10,
+        displayType: str|None = None   
     ) -> Dict[str, Any]:
         """
         amount: сумма в минорных единицах (копейки для UAH)

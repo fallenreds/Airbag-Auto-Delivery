@@ -33,6 +33,7 @@ class MonobankPaymentService:
             "amount": amount,
             "redirect_url": redirect_url,
             "web_hook_url": web_hook_url,
+            "displayType": "iframe"
         }
 
         try:
