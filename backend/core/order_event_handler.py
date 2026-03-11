@@ -13,16 +13,13 @@ def order_event_handler():
     active_local_orders = Order.objects.filter(
         is_completed=False, remonline_order_id__isnull=False
     )
-    print(f"active_local_orders: {active_local_orders}")
     if not active_local_orders.exists():
         return  # No orders to process
 
     # Get remonline orders data for valid orders
-    print(len(active_local_orders))
     active_remonline_orders = RemonlineInterface(REMONLINE_API_KEY).get_orders_by_ids(
         ids=[order.remonline_order_id for order in active_local_orders]
     )
-    print(len(active_remonline_orders))
 
     # Process each order with its corresponding remonline data
     for remonline_order, local_order in zip(
@@ -33,7 +30,7 @@ def order_event_handler():
 
 def process_order(remonline_order: dict, local_order: Order):
     TTN = None
-    if "закрит" in remonline_order["status"]["name"].lower():
+    if "закрито" in remonline_order["status"]["name"].lower():
         local_order.is_completed = True
         OrderEvent.objects.create(
             type=OrderEventType.FINISHED,

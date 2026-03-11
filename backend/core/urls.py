@@ -1,6 +1,6 @@
 from django.conf import settings
 from django.conf.urls.static import static
-from django.urls import path
+from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenVerifyView
 
@@ -45,4 +45,5 @@ urlpatterns = router.urls + [
     path("auth/me/", MeView.as_view(), name="me"),
     path("auth/register/", ClientRegistrationView.as_view(), name="register"),
     path("auth/guest/", GuestClientCreationView.as_view(), name="create_guest"),
+    path("payments/", include("payments.urls")),
 ]

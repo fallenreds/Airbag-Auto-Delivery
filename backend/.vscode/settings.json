@@ -52,5 +52,27 @@
     // Прочее удобство
     "editor.linkedEditing": true,
     "editor.hover.delay": 150,
-    "editor.parameterHints.enabled": true
+    "editor.parameterHints.enabled": true,
+    "folder-color.pathColors": [
+        {
+            "folderPath": "backend/core/",
+            "color": "foldercolorizer.color_3366ff"
+        },
+        {
+            "folderPath": "backend/config/",
+            "color": "foldercolorizer.color_009966"
+        },
+        {
+            "folderPath": "backend/payments/",
+            "color": "foldercolorizer.color_9966cc"
+        },
+        {
+            "folderPath": "backend/core/serializers/",
+            "color": "foldercolorizer.color_cccc66"
+        },
+        {
+            "folderPath": "backend/core/views/",
+            "color": "foldercolorizer.color_9966ff"
+        }
+    ]
 }

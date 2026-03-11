@@ -222,8 +222,22 @@ class Discount(models.Model):
 
 
 class Order(models.Model):
+    class RemonlineSyncStatus:
+        PENDING = "PENDING"
+        SYNCED = "SYNCED"
+
+        CHOICES = [
+            (PENDING, "Pending"),
+            (SYNCED, "Synced"),
+        ]
+
     id = models.BigAutoField(primary_key=True)
     remonline_order_id = models.BigIntegerField(blank=True, null=True, db_index=True)
+    remonline_sync_status = models.CharField(
+        max_length=16,
+        choices=RemonlineSyncStatus.CHOICES,
+        default=RemonlineSyncStatus.PENDING,
+    )
 
     client = models.ForeignKey(
         "Client", on_delete=models.SET_NULL, null=True, related_name="orders"
@@ -300,6 +314,9 @@ class OrderEventType:
     FINISHED = "FINISHED"
     TTN_UPDATED = "TTN_UPDATED"
     IN_BRANCH = "IN_BRANCH"
+    PAYMENT_CONFIRMED = "PAYMENT_CONFIRMED"
+    REMONLINE_CREATED = "REMONLINE_CREATED"
+    PAYMENT_TYPE_CHANGED = "PAYMENT_TYPE_CHANGED"
 
     CHOICES = [
         (MERGED, "Merged"),
@@ -308,6 +325,9 @@ class OrderEventType:
         (FINISHED, "Finished"),
         (TTN_UPDATED, "TTN Updated"),
         (IN_BRANCH, "In Branch"),
+        (PAYMENT_CONFIRMED, "Payment Confirmed"),
+        (REMONLINE_CREATED, "Remonline Created"),
+        (PAYMENT_TYPE_CHANGED, "Payment Type Changed"),
     ]
 
 

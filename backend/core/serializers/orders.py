@@ -2,14 +2,9 @@ from typing import TypedDict
 
 from rest_framework import serializers
 
-from config.settings import (
-    REMONLINE_API_KEY,
-    REMONLINE_BRANCH_PROD_ID,
-    REMONLINE_ORDER_TYPE_ID,
-)
 from core.models import Client, Good, Order, OrderEvent, OrderItem
 from core.services.discount_service import DiscountService
-from core.services.remonline import RemonlineInterface
+from core.services.order_sync import sync_order_to_remonline
 
 from .common import validate_currency, validate_nonneg_int
 
@@ -107,8 +102,8 @@ class OrderCreateSerializer(serializers.ModelSerializer):
     class BasePriceCalculationResult(TypedDict):
         line_total_minor: int
         good_price_minor: int
-        discount_total_minor: float
-        grand_total_minor: float
+        discount_total_minor: int
+        grand_total_minor: int
 
     class PriceCalculationResult(BasePriceCalculationResult):
         quantity: int
@@ -142,8 +137,8 @@ class OrderCreateSerializer(serializers.ModelSerializer):
         """
         good_price_minor: int = good.price_minor  # Оригинальная цена одного товара
         line_total_minor: int = good_price_minor * quantity  # Сумма за все товары
-        discount_total_minor: float = line_total_minor * discount / 100  # Сумма скидки
-        grand_total_minor: float = (
+        discount_total_minor: int = line_total_minor * discount // 100  # Сумма скидки
+        grand_total_minor: int = (
             line_total_minor - discount_total_minor
         )  # Итоговая сумма с вычетом скидки
         return {
@@ -158,7 +153,7 @@ class OrderCreateSerializer(serializers.ModelSerializer):
     def manager_notes_builder(order: Order, user: Client):
         discount_info = DiscountService.get_client_discount_info(user)
         goods_info = (
-            f"ID Клієнта: {order.client.id}\n"
+            f"ID Клієнта: {user.id}\n"
             f"ФІО: {order.name} {order.last_name}\n"
             f"Телефон: {order.phone}\n"
             f"Адреса: {order.nova_post_address}\n"
@@ -169,7 +164,7 @@ class OrderCreateSerializer(serializers.ModelSerializer):
             f"До сплати зі знижкою: {Good.convert_minore_to_major(order.grand_total_minor)} UAH"
         )
 
-        order_items: list[OrderItem] = order.items.all()
+        order_items: list[OrderItem] = list(OrderItem.objects.filter(order=order))
         for order_item in order_items:
             goods_info += (
                 f"\n\nТовар: {order_item.title} - Кількість: {order_item.quantity}"
@@ -182,19 +177,6 @@ class OrderCreateSerializer(serializers.ModelSerializer):
         for discount in discounts[::-1]:
             if money_spent >= discount["month_payment"]:
                 return discount
-
-    def create_remonline_order(self, order: Order):
-        remonline = RemonlineInterface(REMONLINE_API_KEY)
-
-        client = Client.objects.get(pk=order.client.id)
-        manager_notes = self.manager_notes_builder(order=order, user=client)
-        response = remonline.create_order(
-            branch_id=REMONLINE_BRANCH_PROD_ID,
-            order_type=REMONLINE_ORDER_TYPE_ID,
-            client_id=client.id_remonline,
-            manager_notes=manager_notes,
-        )
-        return response
 
     def create(self, validated_data: dict):
         user: Client = self.context["request"].user
@@ -210,6 +192,7 @@ class OrderCreateSerializer(serializers.ModelSerializer):
             client=user,
             telegram_id=user.telegram_id,
             discount_percent=discount_info["discount_percentage"],
+            remonline_sync_status=Order.RemonlineSyncStatus.PENDING,
         )
         order_prices: list[OrderCreateSerializer.PriceCalculationResult] = []
         for item_data in items_data:
@@ -236,9 +219,21 @@ class OrderCreateSerializer(serializers.ModelSerializer):
         order.subtotal_minor = order_total_price["line_total_minor"]
         order.discount_total_minor = order_total_price["discount_total_minor"]
         order.grand_total_minor = order_total_price["grand_total_minor"]
-        response = self.create_remonline_order(order)
-        order.remonline_order_id = response.get("data").get("id")
-        order.save()
+
+        # Legacy behavior: postpayment syncs immediately, prepayment waits for payment success.
+        should_sync_now = not order.prepayment
+        if should_sync_now:
+            sync_order_to_remonline(order)
+        else:
+            order.save(
+                update_fields=[
+                    "subtotal_minor",
+                    "discount_total_minor",
+                    "grand_total_minor",
+                    "remonline_sync_status",
+                ]
+            )
+
         return order
 
     def to_representation(self, instance):
@@ -273,6 +268,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "is_paid",
             "ttn",
             "is_completed",
+            "remonline_sync_status",
             "discount_percent",
             "subtotal_minor",
             "discount_total_minor",
@@ -283,7 +279,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "in_branch_datetime",
             "items",
         ]
-        read_only_fields = ["id", "date"]
+        read_only_fields = ["id", "date", "remonline_sync_status", "remonline_order_id"]
 
 
 class OrderEventSerializer(serializers.ModelSerializer):

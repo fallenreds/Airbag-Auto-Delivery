@@ -6,3 +6,5 @@ backend/db.sqlite3
 .env
 backend/media
 backend/db.sqlite3-journal
+.roo/
+backend/googlepay_monobank_test.html

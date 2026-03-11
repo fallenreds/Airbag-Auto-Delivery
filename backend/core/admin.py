@@ -141,6 +141,7 @@ class ClientEventAdmin(admin.ModelAdmin):
 class OrderAdmin(admin.ModelAdmin):
     list_display = (
         "id",
+        "remonline_sync_status",
         "remonline_order_id",
         "client",
         "telegram_id",
@@ -158,7 +159,7 @@ class OrderAdmin(admin.ModelAdmin):
         "name",
         "last_name",
     )
-    list_filter = ("is_paid", "is_completed")
+    list_filter = ("is_paid", "is_completed", "prepayment", "remonline_sync_status")
 
 
 @admin.register(OrderEvent)

@@ -37,6 +37,8 @@ DEBUG = os.getenv("DJANGO_DEBUG", "True") == "True"
 # Use for local development. Used for static files
 LOCAL = os.getenv("LOCAL", "True") == "True"
 
+# Used for Webhook URL - current backend project IP or domain
+DOMAIN = os.getenv("DOMAIN")
 
 ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS").split(",")
 
@@ -56,6 +58,15 @@ CATEGORIES_IGNORE_IDS = [
     for t in [x.strip() for x in _CATEGORIES_IGNORE_IDS_RAW.split(",")]
     if t.strip().isdigit()
 ]
+
+# Monobank settings
+MONOBANK_TOKEN = os.getenv("MONOBANK_TOKEN") #https://web.monobank.ua/ or getting your test token from https://api.monobank.ua/
+MONOBANK_WEBHOOK_URL_PATH = "monobank/webhook/payment-events/" # Webhook URL path for monobank payment events
+MONOBANK_WEBHOOK_KEY = os.getenv("MONOBANK_WEBHOOK_KEY")
+
+# Celery settings
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
+CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/1")
 
 # DRF pagination and filter settings
 REST_FRAMEWORK = {
@@ -98,6 +109,7 @@ INSTALLED_APPS = [
     "django_filters",
     "drf_yasg",
     "core.apps.CoreConfig",
+    "payments.apps.PaymentsConfig",
 ]
 
 MIDDLEWARE = [
