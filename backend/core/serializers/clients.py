@@ -4,7 +4,7 @@ from config.settings import REMONLINE_API_KEY
 from core.models import Client, ClientEvent
 from core.services.remonline import RemonlineInterface
 from core.validators import validate_email
-
+import logging
 
 class ClientRegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, help_text="User password")
@@ -101,7 +101,7 @@ class ClientRegisterSerializer(serializers.ModelSerializer):
                 remonline_client = remonline.find_or_create_client(
                     phone=phone, name=name
                 )
-
+                logging.info(remonline_client)
                 # Update client with Remonline ID if available
                 if remonline_client and "id" in remonline_client:
                     client.id_remonline = remonline_client["id"]

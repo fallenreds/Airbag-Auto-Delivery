@@ -3,6 +3,7 @@ import os
 from typing import List, Optional
 
 import requests
+from requests import HTTPError
 
 
 class RemonlineInterface:
@@ -42,7 +43,7 @@ class RemonlineInterface:
     def post(self, url: str, data: Optional[dict] = None) -> requests.Response:
         """POST-запрос с возможностью обновления токена"""
         response = requests.post(url, data=data)
-        if response.status_code != 200:
+        if not 200 <= response.status_code < 300:
             return self._refresh_token_and_retry(requests.post, url, data=data)
         return response
 
@@ -81,11 +82,12 @@ class RemonlineInterface:
         data_items = [("token", self.token)]
 
         def push(key, value, is_array: bool):
+            key_name = f"{key}[]" if is_array else key
             if is_array and isinstance(value, (list, tuple)):
                 for v in value:
-                    data_items.append((key, v))
+                    data_items.append((key_name, v))
             else:
-                data_items.append((key, value))
+                data_items.append((key_name, value))
 
         if accepted_params_path:
             params_path = os.path.join(
@@ -163,7 +165,10 @@ class RemonlineInterface:
     def create_client(self, name: str, phone: str) -> dict:
         """Создает нового клиента по имени и телефону"""
         return self.post_objects(
-            "clients/", accepted_params_path="new_client.json", name=name, phone=phone
+            "clients/",
+            accepted_params_path="new_client.json",
+            name=name,
+            phone=[phone],
         )
 
     def find_or_create_client(self, phone: str, name: str) -> dict:
