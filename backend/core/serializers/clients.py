@@ -5,6 +5,7 @@ from core.models import Client, ClientEvent
 from core.services.remonline import RemonlineInterface
 from core.validators import validate_email
 import logging
+from requests import HTTPError
 
 class ClientRegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, help_text="User password")
@@ -108,7 +109,15 @@ class ClientRegisterSerializer(serializers.ModelSerializer):
                     client.save(update_fields=["id_remonline"])
             except Exception as e:
                 # Log the error but don't fail the request
-                print(f"Error creating Remonline client: {e}")
+                if isinstance(e, HTTPError) and getattr(e, "response", None) is not None:
+                    logging.error(
+                        "Error creating Remonline client: %s | status=%s | body=%s",
+                        e,
+                        e.response.status_code,
+                        e.response.text,
+                    )
+                else:
+                    logging.exception("Error creating Remonline client")
 
         return client
 

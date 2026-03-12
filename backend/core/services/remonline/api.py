@@ -36,15 +36,25 @@ class RemonlineInterface:
     def get(self, url: str, params: Optional[dict] = None) -> requests.Response:
         """GET-запрос с возможностью обновления токена"""
         response = requests.get(url, params=params)
-        if response.status_code != 200:
+        if 200 <= response.status_code < 300:
+            return response
+
+        if response.status_code in (401, 403):
             return self._refresh_token_and_retry(requests.get, url, params=params)
+
+        response.raise_for_status()
         return response
 
     def post(self, url: str, data: Optional[dict] = None) -> requests.Response:
         """POST-запрос с возможностью обновления токена"""
         response = requests.post(url, data=data)
-        if not 200 <= response.status_code < 300:
+        if 200 <= response.status_code < 300:
+            return response
+
+        if response.status_code in (401, 403):
             return self._refresh_token_and_retry(requests.post, url, data=data)
+
+        response.raise_for_status()
         return response
 
     def get_objects(

@@ -3,6 +3,8 @@ from rest_framework import serializers
 from config.settings import REMONLINE_API_KEY
 from core.models import Client
 from core.services.remonline import RemonlineInterface
+import logging
+from requests import HTTPError
 
 
 class GuestClientSerializer(serializers.ModelSerializer):
@@ -67,6 +69,14 @@ class GuestClientSerializer(serializers.ModelSerializer):
                     guest_client.save(update_fields=["id_remonline"])
             except Exception as e:
                 # Log the error but don't fail the request
-                print(f"Error creating Remonline client: {e}")
+                if isinstance(e, HTTPError) and getattr(e, "response", None) is not None:
+                    logging.error(
+                        "Error creating Remonline client: %s | status=%s | body=%s",
+                        e,
+                        e.response.status_code,
+                        e.response.text,
+                    )
+                else:
+                    logging.exception("Error creating Remonline client")
 
         return guest_client
