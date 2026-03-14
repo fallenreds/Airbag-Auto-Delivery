@@ -1,4 +1,5 @@
 from .clients import (
+    ChangePasswordSerializer,
     ClientRegisterSerializer,
     ClientSerializer,
     ClientEventSerializer,
@@ -19,6 +20,7 @@ from .misc import TemplateSerializer, BotVisitorSerializer
 
 __all__ = [
     'ClientRegisterSerializer',
+    'ChangePasswordSerializer',
     'ClientSerializer',
     'ClientEventSerializer',
     'ClientProfileSerializer',

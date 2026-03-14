@@ -8,6 +8,7 @@ from rest_framework.views import APIView
 
 from core.models import Client, ClientEvent
 from core.serializers import (
+    ChangePasswordSerializer,
     ClientEventSerializer,
     ClientProfileSerializer,
     ClientRegisterSerializer,
@@ -99,3 +100,34 @@ class ClientRegistrationView(APIView):
             serializer.save()
             return Response({"message": "User registered successfully"}, status=201)
         return Response(serializer.errors, status=400)
+
+
+class ChangePasswordView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        request_body=ChangePasswordSerializer,
+        responses={
+            200: openapi.Response(
+                description="Password changed successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        "message": openapi.Schema(
+                            type=openapi.TYPE_STRING, description="Success message"
+                        )
+                    },
+                ),
+            ),
+            400: openapi.Response(description="Bad request (validation error)"),
+        },
+        operation_description="Change password for authenticated user",
+    )
+    def post(self, request):
+        serializer = ChangePasswordSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+
+        request.user.set_password(serializer.validated_data["new_password"])
+        request.user.save(update_fields=["password"])
+
+        return Response({"message": "Password changed successfully"}, status=200)

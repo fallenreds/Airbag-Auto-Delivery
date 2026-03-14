@@ -176,3 +176,14 @@ class ClientProfileSerializer(serializers.ModelSerializer):
             "user_permissions",
         ]
         read_only_fields = fields
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    current_password = serializers.CharField(write_only=True, required=True)
+    new_password = serializers.CharField(write_only=True, required=True, min_length=6)
+
+    def validate_current_password(self, value):
+        user = self.context["request"].user
+        if not user.check_password(value):
+            raise serializers.ValidationError("Current password is incorrect.")
+        return value
