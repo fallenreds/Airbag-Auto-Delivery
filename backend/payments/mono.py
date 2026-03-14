@@ -39,13 +39,15 @@ class MonobankPaymentService:
         self,
         order: Order,
         redirect_url: str | None = None,
+        success_url: str | None = None,
+        fail_url: str | None = None,
         web_hook_url: str | None = None,
     ) -> Payment:
         """
         Создает платежный инвойс в Monobank.
         Перед созданием нового диактивирует все ожидающие платежи заказа.
 
-        redirect_url — куда вернуть пользователя после оплаты
+        success_url / fail_url — куда вернуть пользователя после успешной/неуспешной оплаты
         """
 
         amount = order.grand_total_minor
@@ -53,6 +55,8 @@ class MonobankPaymentService:
         data = {
             "amount": amount,
             "redirect_url": redirect_url,
+            "success_url": success_url,
+            "fail_url": fail_url,
             "web_hook_url": web_hook_url,
             "displayType": "iframe"
         }
