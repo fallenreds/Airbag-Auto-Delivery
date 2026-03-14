@@ -2,6 +2,7 @@ from rest_framework import serializers
 
 from config.settings import REMONLINE_API_KEY
 from core.models import Client, ClientEvent
+from core.services.discount_service import DiscountService
 from core.services.remonline import RemonlineInterface
 from core.validators import validate_email
 import logging
@@ -157,6 +158,15 @@ class ClientEventSerializer(serializers.ModelSerializer):
 
 
 class ClientProfileSerializer(serializers.ModelSerializer):
+    discount_percentage = serializers.SerializerMethodField(read_only=True)
+
+    def get_discount_percentage(self, obj):
+        try:
+            discount_info = DiscountService.get_client_discount_info(obj)
+            return discount_info.get("discount_percentage", 0)
+        except Exception:
+            return 0
+
     class Meta:
         model = Client
         fields = [
@@ -168,7 +178,7 @@ class ClientProfileSerializer(serializers.ModelSerializer):
             "email",
             "phone",
             "nova_post_address",
-            "discount_percent",
+            "discount_percentage",
             "is_staff",
             "is_superuser",
             "is_guest",
