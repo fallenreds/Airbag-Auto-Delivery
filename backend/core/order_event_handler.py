@@ -59,7 +59,7 @@ def process_order(remonline_order: dict, local_order: Order):
                 details="Order marked as completed due to TTN status",
             )
 
-        if ttn_details["StatusCode"] in (7):
+        if ttn_details["StatusCode"] in (7,):
             if local_order.branch_remember_count == 0 or (
                 local_order.branch_remember_count == 1
                 and one_day_difference(local_order)
