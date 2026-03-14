@@ -242,6 +242,9 @@ class OrderCreateSerializer(serializers.ModelSerializer):
 
 class OrderSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)
+    last_payment_status = serializers.SerializerMethodField()
+    last_payment_failure_code = serializers.SerializerMethodField()
+    last_payment_failure_reason = serializers.SerializerMethodField()
     subtotal_minor = serializers.IntegerField(
         validators=[validate_nonneg_int], required=False
     )
@@ -273,6 +276,9 @@ class OrderSerializer(serializers.ModelSerializer):
             "subtotal_minor",
             "discount_total_minor",
             "grand_total_minor",
+            "last_payment_status",
+            "last_payment_failure_code",
+            "last_payment_failure_reason",
             "date",
             "remember_count",
             "branch_remember_count",
@@ -280,6 +286,18 @@ class OrderSerializer(serializers.ModelSerializer):
             "items",
         ]
         read_only_fields = ["id", "date", "remonline_sync_status", "remonline_order_id"]
+
+    def get_last_payment_failure_code(self, obj: Order):
+        latest_payment = obj.payments.order_by("-created_at", "-id").first()
+        return latest_payment.failure_code if latest_payment else None
+
+    def get_last_payment_failure_reason(self, obj: Order):
+        latest_payment = obj.payments.order_by("-created_at", "-id").first()
+        return latest_payment.failure_reason if latest_payment else None
+
+    def get_last_payment_status(self, obj: Order):
+        latest_payment = obj.payments.order_by("-created_at", "-id").first()
+        return latest_payment.status if latest_payment else None
 
 
 class OrderEventSerializer(serializers.ModelSerializer):

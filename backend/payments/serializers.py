@@ -31,7 +31,9 @@ class PaymentSerializer(serializers.ModelSerializer):
 
 class PaymentCreateSerializer(serializers.Serializer):
     order_id = serializers.IntegerField()
-    redirect_url = serializers.URLField()
+    redirect_url = serializers.URLField(required=False, allow_null=True)
+    success_url = serializers.URLField()
+    fail_url = serializers.URLField()
     
 
 
@@ -67,12 +69,16 @@ class PaymentCreateSerializer(serializers.Serializer):
         order = self.context["order"]
         webhook_url = f"{DOMAIN}api/v2/payments/{MONOBANK_WEBHOOK_URL_PATH}"
         redirect_url = validated_data.get("redirect_url")
+        success_url = validated_data.get("success_url")
+        fail_url = validated_data.get("fail_url")
         if not MONOBANK_TOKEN:
             raise serializers.ValidationError("MONOBANK_TOKEN is not configured")
 
         payment = MonobankPaymentService(token=MONOBANK_TOKEN).create_invoice(
             order,
             redirect_url=redirect_url,
+            success_url=success_url,
+            fail_url=fail_url,
             web_hook_url=webhook_url,
         )
         return payment
