@@ -4,6 +4,9 @@ import requests
 import json
 
 
+logger = logging.getLogger(__name__)
+
+
 class BaseRemonline:
 
     def __init__(self, api_key):
@@ -18,7 +21,7 @@ class BaseRemonline:
         response = requests.get(url=url, params=params, **kwargs)
 
         if response.status_code != 200:
-            print(f"Remonline status code {response.status_code}")
+            logger.warning("remonline_get_retry status_code=%s", response.status_code)
             self.token = self.get_user_token()
             response = requests.get(url=url, params=params, **kwargs)
         return response
@@ -37,7 +40,7 @@ class BaseRemonline:
         response = requests.post(url=url, data=data, **kwargs)
 
         if response.status_code != 200:
-            print(f"Remonline status code {response.status_code}")
+            logger.warning("remonline_post_retry status_code=%s", response.status_code)
             self.token = self.get_user_token()
             response = requests.post(url=url, data=data, **kwargs)
         return response
@@ -45,7 +48,7 @@ class BaseRemonline:
     def delete(self, url, **kwargs):
         response = requests.delete(url=url, **kwargs)
         if response.status_code != 200:
-            print(f"Remonline status code {response.status_code}")
+            logger.warning("remonline_delete_retry status_code=%s", response.status_code)
             self.token = self.get_user_token()
             response = requests.delete(url=url, **kwargs)
         return response
@@ -109,7 +112,7 @@ class BaseRemonline:
         data = self.set_params(required, optional, **kwargs)
         response = self.post(url=request_url, data=data)
         if str(response.status_code) != "200":
-            logging.error(response.json())
+            logger.error("remonline_post_objects_failed status_code=%s", response.status_code)
             raise response.raise_for_status()
 
         if response:
@@ -180,7 +183,7 @@ class RemonlineAPI(BaseRemonline):
                 if len(goods_list) == goods['count']:
                     break
             except HTTPError as error:
-                logging.error("HTTPError while fetching goods", error)
+                logger.exception("remonline_get_all_goods_failed")
                 break
         return goods_list
 
@@ -221,7 +224,7 @@ class RemonlineAPI(BaseRemonline):
                 if len(all_orders) == orders['count']:
                     break
             except HTTPError as error:
-                logging.error("HTTPError while fetching orders", error)
+                logger.exception("remonline_get_all_orders_failed")
                 break
         return all_orders
 

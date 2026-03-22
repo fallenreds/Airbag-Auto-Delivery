@@ -1,22 +1,6 @@
 import logging
 import sys
-from typing import TextIO
-from logging.handlers import RotatingFileHandler
-from pathlib import Path
-from datetime import datetime
-from time import perf_counter
-
-import structlog
-from structlog.contextvars import clear_contextvars, bind_contextvars
-from structlog.types import EventDict, Processor
-from rich.console import Console
-from rich.traceback import Traceback
-from typing import Literal
-
-import config
-import logging
-import sys
-from typing import TextIO
+from typing import Literal, TextIO
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from datetime import datetime
@@ -24,12 +8,11 @@ from time import perf_counter
 
 import structlog
 from fastapi import Request, Response
-from fastapi.middleware import Middleware
-from structlog.types import EventDict, Processor
+from asgi_correlation_id.context import correlation_id
+import config
 from rich.console import Console
 from rich.traceback import Traceback
-from asgi_correlation_id.context import correlation_id
-from asgi_correlation_id import CorrelationIdMiddleware
+from structlog.types import EventDict, Processor
 from uvicorn.protocols.utils import get_path_with_query_string
 
 def rich_custom_traceback(sio: TextIO, exc_info) -> None:
@@ -88,6 +71,7 @@ def setup_logging(log_level: Literal['INFO','DEBUG'] = "INFO"):
     )
 
     console_handler = logging.StreamHandler()
+    console_handler.set_name("console")
     console_handler.setFormatter(console_formatter)
 
 
@@ -111,9 +95,11 @@ def setup_logging(log_level: Literal['INFO','DEBUG'] = "INFO"):
         maxBytes=5242880,
         backupCount=5,
     )
+    file_handler.set_name("file")
     file_handler.setFormatter(file_formatter)
 
     root_logger = logging.getLogger()
+    root_logger.handlers.clear()
     root_logger.addHandler(console_handler)
     root_logger.addHandler(file_handler)
     root_logger.setLevel(log_level.upper())
@@ -162,10 +148,7 @@ async def logging_middleware(request: Request, call_next) -> Response:
     response = Response(status_code=500)
     try:
         response = await call_next(request)
-        if response.status_code == 200:
-            return response
     except Exception:
-        # TODO: Validate that we don't swallow exceptions (unit test?)
         structlog.stdlib.get_logger("api.error").exception("Uncaught exception")
         raise
     finally:
@@ -173,17 +156,28 @@ async def logging_middleware(request: Request, call_next) -> Response:
         process_time = perf_counter() - start_time
         status_code = response.status_code
         url = get_path_with_query_string(request.scope)
-        client_host = request.client.host
-        client_port = request.client.port
+        client_host = request.client.host if request.client else None
+        client_port = request.client.port if request.client else None
         http_method = request.method
         http_version = request.scope["http_version"]
-        # Recreate the Uvicorn access log format, but add all parameters as structured information
 
-        access_logger.info(
-            f"""{client_host}:{client_port} - "{http_method} {url} HTTP/{http_version}" {status_code}""",
-            network={"client": {"ip": client_host, "port": client_port}},
-            duration=process_time,
-        )
+        event = "http_request"
+        log_payload = {
+            "path": url,
+            "method": http_method,
+            "status_code": status_code,
+            "duration": round(process_time, 4),
+            "http_version": http_version,
+            "network": {"client": {"ip": client_host, "port": client_port}},
+        }
+
+        if status_code >= 500:
+            access_logger.error(event, **log_payload)
+        elif status_code >= 400:
+            access_logger.warning(event, **log_payload)
+        else:
+            access_logger.debug(event, **log_payload)
+
         response.headers["X-Process-Time"] = str(process_time)
         return response
 

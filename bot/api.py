@@ -1,7 +1,9 @@
 import aiohttp
+import logging
 import config
 
 base_url = config.BASE_URL
+logger = logging.getLogger(__name__)
 
 
 #------------------------ User updates  -----------------------#
@@ -156,7 +158,7 @@ async def make_pay_order(order_id):
 async def add_new_visitor(telegram_id) -> dict:
     async with aiohttp.ClientSession() as session:
         async with session.post(f'{base_url}api/v1/visitors/{telegram_id}', json={"telegram_id": telegram_id, }) as resp:
-            print(telegram_id)
+            logger.debug("add_new_visitor_request telegram_id=%s status=%s", telegram_id, resp.status)
             if resp.status == 200:
                 return await resp.json()
 

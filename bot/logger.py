@@ -1,16 +1,14 @@
 import logging
 import sys
-from typing import TextIO
+from typing import Literal, TextIO
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from datetime import datetime
-from time import perf_counter
 
 import structlog
 from structlog.types import EventDict, Processor
 from rich.console import Console
 from rich.traceback import Traceback
-from typing import Literal
 
 import config
 
@@ -71,6 +69,7 @@ def setup_logging(log_level: Literal['INFO','DEBUG'] = "INFO"):
     )
 
     console_handler = logging.StreamHandler()
+    console_handler.set_name("console")
     console_handler.setFormatter(console_formatter)
 
 
@@ -94,9 +93,11 @@ def setup_logging(log_level: Literal['INFO','DEBUG'] = "INFO"):
         maxBytes=5242880,
         backupCount=5,
     )
+    file_handler.set_name("file")
     file_handler.setFormatter(file_formatter)
 
     root_logger = logging.getLogger()
+    root_logger.handlers.clear()
     root_logger.addHandler(console_handler)
     root_logger.addHandler(file_handler)
     root_logger.setLevel(log_level.upper())
@@ -132,6 +133,6 @@ def setup_logging(log_level: Literal['INFO','DEBUG'] = "INFO"):
     sys.excepthook = handle_exception
 
 
-setup_logging(log_level='DEBUG')
+setup_logging(log_level=config.LOG_LEVEL)
 
 logger = structlog.stdlib.get_logger()

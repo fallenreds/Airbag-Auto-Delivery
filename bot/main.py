@@ -2,6 +2,7 @@ import asyncio
 import json
 import functools
 import logging
+import logger  # noqa: F401
 
 from aiogram.utils.exceptions import *
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
@@ -28,6 +29,7 @@ from utils.inline import inline_paginator
 
 admin_list = [516842877, 5783466675]
 storage = MemoryStorage()
+app_logger = logging.getLogger(__name__)
 
 bot = Bot(token=BOT_TOKEN, parse_mode="HTML", )
 dp = Dispatcher(bot, storage=storage)
@@ -158,7 +160,7 @@ def find_good(goods, good_id):
 
 async def pre_checkout_payment(pre_checkout_query):
     order = await get_order_by_id(int(pre_checkout_query.invoice_payload))
-    print(order)
+    app_logger.debug("pre_checkout_order_fetched order_id=%s found=%s", pre_checkout_query.invoice_payload, bool(order))
     order_goods_list = json.loads(order["goods_list"].replace("'", '"'))
     goods = await get_all_goods()
     goods = goods['data']
@@ -189,7 +191,14 @@ async def pre_checkout_payment(pre_checkout_query):
 async def checkout(pre_checkout_query):
     try:
         await pre_checkout_payment(pre_checkout_query)
-    except Exception as error:
+    except Exception:
+        app_logger.exception(
+            "checkout_failed",
+            extra={
+                "invoice_payload": pre_checkout_query.invoice_payload,
+                "from_user_id": pre_checkout_query.from_user.id,
+            }
+        )
         return await bot.answer_pre_checkout_query(pre_checkout_query.id, ok=False,
                                                    error_message="Невідома помилка, спробуйте пізніше")
 
@@ -197,6 +206,13 @@ async def checkout(pre_checkout_query):
 @dp.message_handler(content_types=['successful_payment'])
 async def got_payment(message: types.message.Message):
     await make_pay_order(int(message.successful_payment.invoice_payload))
+    app_logger.info(
+        "payment_confirmed",
+        extra={
+            "order_id": message.successful_payment.invoice_payload,
+            "telegram_id": message.chat.id,
+        },
+    )
     await bot.send_message(message.chat.id,
                            f"Дякую, ви успішно оплатили замовлення №{message.successful_payment.invoice_payload}!")
 
@@ -211,6 +227,8 @@ async def check_status(message):
             #chat_id = int(message["message"]['chat']['id'])
             telegram_id = int(message['from']['id'])
 
+        app_logger.debug("check_status_requested telegram_id=%s", telegram_id)
+
         client = await check_auth(telegram_id)
 
         if not client['success']:
@@ -218,7 +236,7 @@ async def check_status(message):
 
         orders = await get_orders_by_tg_id(telegram_id)
         active_orders = list(filter(lambda x: x["is_completed"] == False, orders))
-        print(active_orders)
+        app_logger.debug("status_request_active_orders telegram_id=%s count=%s", telegram_id, len(active_orders))
 
         if len(active_orders) == 0:
             return await bot.send_message(telegram_id, f"У вас немає замовлень")
@@ -230,6 +248,7 @@ async def check_status(message):
             data = json.loads(order["goods_list"].replace("'", '"'))
             await make_order(bot, telegram_id, data, goods["data"], order, client)
     except TypeError as error:
+        app_logger.exception("check_status_failed telegram_id=%s", telegram_id)
         await send_error_log(bot, 516842877, error)
         await no_connection_with_server_notification(bot, message)
 
@@ -251,15 +270,16 @@ async def show_info(message):
 async def check_discount(message: types.Message):
     try:
         telegram_id = message.chat.id
+        app_logger.debug("check_discount_requested telegram_id=%s", telegram_id)
         reply_text = "В магазині <b>Airbag “AutoDelivery”</b> діють накопичувальні знижки для гуртових покупців.\n\n"
         discounts_info = await get_discounts_info()
 
         client = await get_client_by_tg_id(telegram_id)
-        print(client)
+        app_logger.debug("discount_request_client_loaded telegram_id=%s success=%s", telegram_id, client.get('success'))
         if client['success']:
             client_money_spend = await get_money_spend_cur_month(client['id'])
             client_discount = await get_discount(client['id'])
-            print(client_discount)
+            app_logger.debug("discount_request_client_discount client_id=%s success=%s", client['id'], client_discount.get('success'))
             client_procent = 0
             if client_discount["success"]:
                 client_procent = client_discount['data']["procent"]
@@ -283,6 +303,7 @@ async def check_discount(message: types.Message):
         reply_text += "\n\n<b>Сподіваємось, що накопичувальна знижка дозволить зробити нашу співпрацю ще більш успішною.</b>"
         await bot.send_message(telegram_id, reply_text)
     except TypeError as error:
+        app_logger.exception("check_discount_failed telegram_id=%s", telegram_id)
         await send_error_log(bot, 516842877, error)
         await no_connection_with_server_notification(bot, message)
 
@@ -525,6 +546,7 @@ async def new_client_discount_state(message: types.Message, state: FSMContext):
         else:
             await bot.send_message(message.chat.id, response['error'])
     except Exception as error:
+        app_logger.exception("new_client_discount_state_failed")
         await send_error_log(bot, 516842877, error)
     finally:
         await state.finish()
@@ -690,11 +712,13 @@ async def ttn_state(message: types.Message, state: FSMContext):
         else:
             return await unknown_error_notifications(bot, message.chat.id)
     except Exception as error:
+        app_logger.exception("ttn_update_failed")
         await send_error_log(bot, 516842877, error)
 
 @dp.callback_query_handler()
 async def callback_admin_panel(callback: types.CallbackQuery):
     # try:
+        app_logger.debug("admin_callback_received callback=%s admin_id=%s", callback.data, callback.from_user.id)
 
 
         goods = await get_all_goods()
@@ -712,7 +736,7 @@ async def callback_admin_panel(callback: types.CallbackQuery):
         if "check_order/" in callback.data:
             order_id = await id_spliter(callback.data)
             order = [await get_order_by_id(order_id)]
-            print(order)
+            app_logger.debug("admin_check_order_loaded order_id=%s found=%s", order_id, bool(order and order[0]))
             await order_list_builder(bot, order, callback.message.chat.id, goods)
 
         if callback.data == "discount_info":
@@ -724,6 +748,7 @@ async def callback_admin_panel(callback: types.CallbackQuery):
             admin_text = f"Чудово, тепер перевірте замовлення в remonline №{order_id}!"
             client_text = f"Дякую, ви успішно оплатили замовлення №{order_id}!"
             await make_pay_order(int(order_id))
+            app_logger.info("admin_marked_order_paid order_id=%s admin_id=%s", order_id, admin_id)
             await bot.send_message(order['telegram_id'], client_text)
             await bot.send_message(callback.message.chat.id, admin_text)
 
@@ -736,6 +761,7 @@ async def callback_admin_panel(callback: types.CallbackQuery):
             if not response:
                 return None
             if response['success']:
+                app_logger.info("admin_deactivated_order order_id=%s admin_id=%s", order_id, admin_id)
                 client_text = f"Дякуємо за замовлення <b>№{order['id']}</b>!\nДо нових зустрічей у AirBag “AutoDelivery” 💛💙"
                 await bot.send_message(admin_id,
                                        text="Замовлення успішно закрито. Не забудьте змінити статус замовлення на remonline!")
@@ -790,6 +816,7 @@ async def callback_admin_panel(callback: types.CallbackQuery):
             if not response:
                 return None
             if response['success']:
+                app_logger.info("admin_deleted_order order_id=%s admin_id=%s", order_id, admin_id)
                 client_text = f"<b>На жаль, ми не дочекалися підтвердження Вашого замовлення №{order_id} 😟</b>" \
                               f"\nЗамовлення видалено, чекаємо на Ваше повернення! 😀"
                 if callback.message.chat.id in admin_list:
@@ -862,6 +889,7 @@ async def callback_admin_panel(callback: types.CallbackQuery):
 
 
 async def update(_):
+    app_logger.info("bot_background_updates_started")
     asyncio.create_task(get_no_paid_orders(bot, admin_list))
     asyncio.create_task(order_updates(bot, admin_list))
     asyncio.create_task(client_updates(bot, admin_list))

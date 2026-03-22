@@ -1,9 +1,12 @@
 import json
+import logging
 
-import loguru
 from requests.exceptions import ConnectTimeout
 from config import PRICE_ID_PROD, DEFAULT_BRANCH_PROD
 from DB import DBConnection
+
+
+logger = logging.getLogger(__name__)
 
 
 def find_good(goods, good_id):
@@ -26,8 +29,8 @@ def get_user_discount(client_id: int, goods, db: DBConnection):
 
         return client_discount
 
-    except Exception as error:
-        loguru.logger.error(error)
+    except Exception:
+        logger.exception("get_user_discount_failed client_id=%s", client_id)
         return {'procent': 0}  # zero discount_percent
 
 def build_order_suma(order: dict, goods: dict):

@@ -20,17 +20,23 @@ from api.visitors import router as visitors_router
 
 
 app = FastAPI()
-app.middleware("http")(logger.logging_middleware)
-app.add_middleware(CorrelationIdMiddleware)
 
-origins = ["*"]
+origins = [
+    "http://localhost:3000",
+    "https://stoshop.co.ua",
+]
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
+    allow_origin_regex=r"https://.*\.ngrok-free\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.add_middleware(CorrelationIdMiddleware)
+app.middleware("http")(logger.logging_middleware)
 
 api_router = APIRouter(prefix='/api/v1')
 api_router.include_router(auth_router)
@@ -45,9 +51,13 @@ api_router.include_router(visitors_router)
 
 
 app.include_router(api_router)
-upd_order_task = threading.Thread(target=update_order_task).start()
+logger.logger.info("backend_app_initialized")
+upd_order_task = threading.Thread(target=update_order_task, daemon=True)
+upd_order_task.start()
+logger.logger.info("orders_background_thread_started", thread_name=upd_order_task.name)
 
 
 
 if __name__ == "__main__":
+    logger.logger.info("backend_uvicorn_starting", host="0.0.0.0", port=8000)
     uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -6,6 +6,9 @@ import sqlite3
 from models import BaseTemplate, Template, BaseClientUpdate, ClientUpdate
 
 
+logger = logging.getLogger(__name__)
+
+
 class DBConnection:
     def __init__(self, dbpath):
         self.connection = sqlite3.connect(dbpath)
@@ -86,9 +89,10 @@ class DBConnection:
 
     def post_new_visitor(self, telegram_id):
         response = {"success": True, "data": None}
-        print(self.get_visitor_by_tg(telegram_id))
+        existing_visitor = self.get_visitor_by_tg(telegram_id)
+        logger.debug("post_new_visitor_started telegram_id=%s exists=%s", telegram_id, bool(existing_visitor))
         try:
-            if not self.get_visitor_by_tg(telegram_id):
+            if not existing_visitor:
                 self.cursor.execute(f""" 
                             insert into visitors ('telegram_id')
                             values(?)""", (telegram_id,))
@@ -97,7 +101,7 @@ class DBConnection:
             else:
                 response = {"success": True, "data": "New visitor has NOT successfully created"}
         except Exception as error:
-            print(error)
+            logger.exception("post_new_visitor_failed telegram_id=%s", telegram_id)
             response = {"success": False, "data": error}
         finally:
             return response
@@ -233,7 +237,7 @@ class DBConnection:
             self.connection.commit()
         except Exception as error:
             success = False
-            print(error)
+            logger.exception("create_discount_failed procent=%s month_payment=%s", procent, month_payment)
         finally:
             return {"success": success}
 
@@ -249,7 +253,7 @@ class DBConnection:
             self.connection.commit()
         except Exception as error:
             success = False
-            print(error)
+            logger.exception("delete_discount_failed discount_id=%s", discount_id)
         finally:
             return {"success": success}
 
@@ -265,7 +269,7 @@ class DBConnection:
                                        """, (int(remonline_id), order_id))
             self.connection.commit()
         except Exception as error:
-            print(error)
+            logger.exception("add_remonline_order_id_failed remonline_id=%s order_id=%s", remonline_id, order_id)
             response = {"success": False}
         finally:
             return response
@@ -388,7 +392,7 @@ class DBConnection:
             success = True
             self.connection.commit()
         except Exception as error:
-            print(error)
+            logger.exception("deactivate_order_failed order_id=%s", order_id)
             success = False
         finally:
             return {"success": success}
@@ -403,7 +407,7 @@ class DBConnection:
                                """, (ttn, order_id))
             self.connection.commit()
         except Exception as error:
-            print(error)
+            logger.exception("update_ttn_failed order_id=%s ttn=%s", order_id, ttn)
             response = {"success": False}
         finally:
             return response
@@ -546,7 +550,7 @@ class DBConnection:
                                  where id=(?); """, (order_updates_id,))
             self.connection.commit()
         except Exception as error:
-            print(error)
+            logger.exception("delete_order_updates_failed order_updates_id=%s", order_updates_id)
             response = {"success": False, 'data': error}
         finally:
             return response

@@ -85,7 +85,12 @@ def nova_post_update_status(orders, db: DBConnection):
             if order:
                 db.deactivate_order(int(order['id']))
                 db.post_order_updates("deactivated", order['id'])
-                print(f"Order {order['id']} has been deactivated by TNN status")
+                logger.info(
+                    "order_deactivated_by_ttn_status",
+                    order_id=order['id'],
+                    ttn=element['Number'],
+                    status_code=element.get("StatusCode"),
+                )
 
         finished_ttn = list(
             filter(lambda x: int(x["StatusCode"]) == 7, nova_post_tracking_data))  # Статус 7 прибыл в отделение
@@ -95,23 +100,36 @@ def nova_post_update_status(orders, db: DBConnection):
                 if int(order['branch_remember_count']) == 0:
                     db.update_in_branch_order_datetime(order['id'])
                     db.post_order_updates("order in branch", order['id'])
-                    print(f"Order {order['id']} in_branch")
+                    logger.info("order_in_branch_first_notification", order_id=order['id'], ttn=element['Number'])
 
                 if int(order['branch_remember_count']) == 1 and one_day_difference(order):
                     db.post_order_updates("order in branch", order['id'])
-                    print(f"Order {order['id']} in_branch second_remember")
+                    logger.info("order_in_branch_second_notification", order_id=order['id'], ttn=element['Number'])
 
 
 def update_order_task():
+    cycle_number = 0
     while True:
+        cycle_number += 1
         db = DBConnection('info.db')
+        active_orders: list[dict] = []
+        remonline_orders: list[dict] = []
         try:
+            logger.debug("orders_sync_cycle_started", cycle=cycle_number)
 
             CRM = RemonlineAPI(REMONLINE_API_KEY_PROD)
 
             active_orders: list[dict] = list(filter(lambda order: int(order['is_completed']) == 0, db.get_active_orders()))
             ids_remonline: list = [order['remonline_order_id'] for order in active_orders]
-            remonline_orders: list[dict] = CRM.get_all_orders(ids=ids_remonline)
+            remonline_orders: list[dict] = CRM.get_all_orders(ids=ids_remonline) if ids_remonline else []
+
+            logger.debug(
+                "orders_sync_source_loaded",
+                cycle=cycle_number,
+                active_orders_count=len(active_orders),
+                remonline_ids_count=len(ids_remonline),
+                remonline_orders_count=len(remonline_orders),
+            )
 
             for order in active_orders:
 
@@ -123,7 +141,7 @@ def update_order_task():
                     if "закрито" in filtered_remonline_order[0]['status']['name'].lower():
                         db.deactivate_order(order['id'])
                         db.post_order_updates("deactivated", order['id'])
-                        print(f"Order {order['id']} has been deactivated")
+                        logger.info("order_deactivated_by_remonline_status", order_id=order['id'])
 
                     if filtered_remonline_order[0]['engineer_notes']:
                         ttn = parse_engineer_notes(filtered_remonline_order[0]['engineer_notes'])
@@ -131,20 +149,30 @@ def update_order_task():
                     if ttn is not None and ttn != order['ttn']:
                         db.update_ttn(order['id'], ttn)
                         db.post_order_updates("ttn updated", order['id'])
-                        print(f"Order {order['id']} ttn has been updated")
+                        logger.info("order_ttn_updated", order_id=order['id'], ttn=ttn)
 
 
                 elif not filtered_remonline_order and order['remonline_order_id']:
                     db.post_order_updates("deleted", order['id'])
                     db.delete_order(order['id'])
-                    print(f"Order {order['id']}  has been deleted")
+                    logger.info("order_deleted_not_found_in_remonline", order_id=order['id'])
                     
             nova_post_update_status(active_orders, db)
-            logger.info("Status 200. Nova_post_update_status process")
+            logger.debug(
+                "orders_sync_cycle_completed",
+                cycle=cycle_number,
+                active_orders_count=len(active_orders),
+                remonline_orders_count=len(remonline_orders),
+            )
 
 
-        except Exception as error:
-            logger.error(error)
+        except Exception:
+            logger.exception(
+                "orders_sync_cycle_failed",
+                cycle=cycle_number,
+                active_orders_count=len(active_orders),
+                remonline_orders_count=len(remonline_orders),
+            )
 
         finally:
             db.connection.close()

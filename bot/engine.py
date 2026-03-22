@@ -1,10 +1,13 @@
 import json
+import logging
 from aiogram import types
 from aiogram.utils.exceptions import ChatNotFound, BotBlocked
 
 from api import get_orders_by_tg_id, get_client_by_tg_id, get_discount
 from buttons import get_delete_order_button, get_props_info_button, get_send_payment_photo_button, get_check_ttn_button
 from config import PRICE_ID_PROD
+
+app_logger = logging.getLogger(__name__)
 
 
 def find_good(goods, good_id):
@@ -59,7 +62,7 @@ async def make_order(bot, telegram_id, data, goods, order, client):
     await bot.send_message(telegram_id, text=text, reply_markup=markup_i)
 
 async def base_client_info_builder(client):
-    print(client)
+    app_logger.debug("base_client_info_builder client_id=%s", client.get("id"))
     base_client_name = f"{client['name']} {client['last_name']}"
     base_client_phone = f"{client['phone']}"
     return f"<b>Данные клиента remonline:</b>\nФИО:{base_client_name}\nТелефон:{base_client_phone}\n\n"
@@ -86,8 +89,12 @@ async def manager_notes_builder(order, goods) -> dict:
     order_suma = await build_order_suma(order, goods)
     user_discount = await get_discount(base_client["id"])
 
-    print(order_suma)
-    print(user_discount)
+    app_logger.debug(
+        "manager_notes_discount_calculated order_id=%s order_sum=%s discount_success=%s",
+        order.get("id"),
+        order_suma,
+        user_discount.get("success"),
+    )
     procent = 0
 
     if user_discount['success']:
@@ -143,7 +150,7 @@ async def ttn_info_builder(response: dict, order):
     if response["success"]:
         data = response['data'][0]
         text = f"<b>📮Інформація про посилку за номером: {data['Number']}</b>\n\n"
-        print(response)
+        app_logger.debug("ttn_info_builder_success order_id=%s ttn=%s", order.get("id"), data.get("Number"))
         text += f"<b>Cтатус: </b> {data['Status']}\n"
         text += f"<b>Фактична вага: </b> {data['FactualWeight']}\n"
 

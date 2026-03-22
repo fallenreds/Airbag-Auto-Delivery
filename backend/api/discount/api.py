@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends
+import logging
 
 from DB import DBConnection
 from config import DB_PATH, BONUS_ID
@@ -8,6 +9,8 @@ from models import DiscountModel, CustomDiscount
 from services.good.service import GoodsCacheService
 
 router = APIRouter(tags=['Discounts'])
+logger = logging.getLogger(__name__)
+
 @router.get("/alldiscounts/")
 def get_discounts():
     """
@@ -33,10 +36,9 @@ def get_month_discount(client_id: int, cache_service: GoodsCacheService = Depend
         return {"success": False, "data": "No orders", "money_spent": money_spent}
 
     money_spent = get_month_money_spent(orders, cache_service.get_goods())
-    print(money_spent)
+    logger.debug("month_discount_calculated_spent client_id=%s money_spent=%s", client_id, money_spent)
     discounts = db.get_all_discounts()
     client_discount = find_discount(money_spent, discounts)
-    print("Потрачено:", money_spent)
     if not client_discount:
         return {"success": False, "data": "No discount", "money_spent": money_spent}
 

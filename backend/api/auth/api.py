@@ -1,4 +1,5 @@
 from fastapi import APIRouter
+import logging
 
 from DB import DBConnection
 from config import DB_PATH
@@ -6,6 +7,7 @@ from loader import CRM
 from models import ClientModel, ClientFullModel, SignInModel, BaseClientUpdate
 
 router = APIRouter(tags=['Auth'])
+logger = logging.getLogger(__name__)
 
 @router.get("/isauthendicated/{telegram_id}")
 def isauthenticated(telegram_id: int):
@@ -36,7 +38,11 @@ def create_client(client_data: ClientFullModel):
     В след версии API будет расширено другими значениями
     """
     remoline_client = CRM.find_or_create_client(client_data.phone, f"{client_data.name} {client_data.last_name}")
-    print(client_data)
+    logger.debug(
+        "signup_request_received telegram_id=%s login=%s",
+        client_data.telegram_id,
+        client_data.login,
+    )
 
     if remoline_client is not None:
         db = DBConnection(DB_PATH)
