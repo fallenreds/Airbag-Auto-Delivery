@@ -1,4 +1,5 @@
 from datetime import datetime
+import time
 
 from RestAPI.EngineApi import ttn_tracking
 from RestAPI.RemonlineAPI import RemonlineAPI
@@ -103,6 +104,9 @@ def nova_post_update_status(orders, db: DBConnection):
 
 
 def update_order_task():
+    heartbeat_threshold_seconds = 60
+    last_successful_cycle_ts: float | None = None
+
     while True:
         db = DBConnection('info.db')
         try:
@@ -111,40 +115,78 @@ def update_order_task():
 
             active_orders: list[dict] = list(filter(lambda order: int(order['is_completed']) == 0, db.get_active_orders()))
             ids_remonline: list = [order['remonline_order_id'] for order in active_orders]
-            remonline_orders: list[dict] = CRM.get_all_orders(ids=ids_remonline)
+            remonline_orders: list[dict] = []
+            try:
+                remonline_orders = CRM.get_all_orders(ids=ids_remonline)
+            except Exception as error:
+                logger.exception("ttn_loop_remonline_fetch_failed: %s", error)
 
             for order in active_orders:
+                try:
+                    ttn = None
+                    filtered_remonline_order = list(
+                        filter(lambda rm_order: rm_order['id'] == order['remonline_order_id'], remonline_orders))
+                    if filtered_remonline_order:
 
-                ttn = None
-                filtered_remonline_order = list(
-                    filter(lambda rm_order: rm_order['id'] == order['remonline_order_id'], remonline_orders))
-                if filtered_remonline_order:
+                        if "закрито" in filtered_remonline_order[0]['status']['name'].lower():
+                            db.deactivate_order(order['id'])
+                            db.post_order_updates("deactivated", order['id'])
+                            print(f"Order {order['id']} has been deactivated")
 
-                    if "закрито" in filtered_remonline_order[0]['status']['name'].lower():
-                        db.deactivate_order(order['id'])
-                        db.post_order_updates("deactivated", order['id'])
-                        print(f"Order {order['id']} has been deactivated")
+                        if filtered_remonline_order[0]['engineer_notes']:
+                            ttn = parse_engineer_notes(filtered_remonline_order[0]['engineer_notes'])
 
-                    if filtered_remonline_order[0]['engineer_notes']:
-                        ttn = parse_engineer_notes(filtered_remonline_order[0]['engineer_notes'])
-
-                    if ttn is not None and ttn != order['ttn']:
-                        db.update_ttn(order['id'], ttn)
-                        db.post_order_updates("ttn updated", order['id'])
-                        print(f"Order {order['id']} ttn has been updated")
+                        if ttn is not None and ttn != order['ttn']:
+                            db.update_ttn(order['id'], ttn)
+                            db.post_order_updates("ttn updated", order['id'])
+                            print(f"Order {order['id']} ttn has been updated")
 
 
-                elif not filtered_remonline_order and order['remonline_order_id']:
-                    db.post_order_updates("deleted", order['id'])
-                    db.delete_order(order['id'])
-                    print(f"Order {order['id']}  has been deleted")
-                    
-            nova_post_update_status(active_orders, db)
+                    elif not filtered_remonline_order and order['remonline_order_id']:
+                        db.post_order_updates("deleted", order['id'])
+                        db.delete_order(order['id'])
+                        print(f"Order {order['id']}  has been deleted")
+                except Exception as error:
+                    logger.exception("ttn_loop_order_iteration_failed order_id=%s error=%s", order.get('id'), error)
+
+            try:
+                nova_post_update_status(active_orders, db)
+            except Exception as error:
+                logger.exception("ttn_loop_nova_post_update_failed: %s", error)
+
+            cycle_finished_ts = time.time()
+            last_successful_cycle_ts = cycle_finished_ts
+            logger.info(
+                "ttn_heartbeat status=ok last_success_ts=%s",
+                int(cycle_finished_ts),
+            )
             logger.info("Status 200. Nova_post_update_status process")
 
 
         except Exception as error:
-            logger.error(error)
+            now_ts = time.time()
+            if last_successful_cycle_ts is None:
+                logger.error(
+                    "ttn_heartbeat status=stale last_success_ts=none lag_sec=unknown threshold_sec=%s",
+                    heartbeat_threshold_seconds,
+                )
+            else:
+                lag_seconds = int(now_ts - last_successful_cycle_ts)
+                if lag_seconds > heartbeat_threshold_seconds:
+                    logger.error(
+                        "ttn_heartbeat status=stale last_success_ts=%s lag_sec=%s threshold_sec=%s",
+                        int(last_successful_cycle_ts),
+                        lag_seconds,
+                        heartbeat_threshold_seconds,
+                    )
+                else:
+                    logger.warning(
+                        "ttn_heartbeat status=degraded last_success_ts=%s lag_sec=%s threshold_sec=%s",
+                        int(last_successful_cycle_ts),
+                        lag_seconds,
+                        heartbeat_threshold_seconds,
+                    )
+            logger.exception("ttn_loop_unhandled_exception: %s", error)
 
         finally:
             db.connection.close()

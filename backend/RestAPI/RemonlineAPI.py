@@ -1,7 +1,17 @@
 import logging
+import random
+import time
 from requests import HTTPError
 import requests
 import json
+from requests.exceptions import ConnectionError, RequestException, SSLError, Timeout
+from config import HTTP_CONNECT_TIMEOUT, HTTP_READ_TIMEOUT
+
+
+DEFAULT_HTTP_TIMEOUT = (HTTP_CONNECT_TIMEOUT, HTTP_READ_TIMEOUT)
+HTTP_RETRY_ATTEMPTS = 3
+HTTP_RETRY_BACKOFF_BASE_SECONDS = 0.5
+HTTP_RETRY_BACKOFF_JITTER_RATIO = 0.2
 
 
 class BaseRemonline:
@@ -14,13 +24,65 @@ class BaseRemonline:
     def _url_builder(self, api_path: str) -> str:
         return f"{self.domain}{api_path}"
 
-    def get(self, url, params, **kwargs):
-        response = requests.get(url=url, params=params, **kwargs)
+    @staticmethod
+    def _is_transient_status(status_code: int) -> bool:
+        return 500 <= status_code < 600
 
-        if response.status_code != 200:
-            print(f"Remonline status code {response.status_code}")
+    @staticmethod
+    def _is_transient_exception(error: Exception) -> bool:
+        return isinstance(error, (Timeout, ConnectionError, SSLError))
+
+    @staticmethod
+    def _retry_delay(attempt: int) -> float:
+        base_delay = HTTP_RETRY_BACKOFF_BASE_SECONDS * (2 ** (attempt - 1))
+        jitter = random.uniform(0, base_delay * HTTP_RETRY_BACKOFF_JITTER_RATIO)
+        return base_delay + jitter
+
+    def _request_with_retry(self, method: str, url: str, **kwargs):
+        kwargs.setdefault("timeout", DEFAULT_HTTP_TIMEOUT)
+
+        for attempt in range(1, HTTP_RETRY_ATTEMPTS + 1):
+            try:
+                response = requests.request(method=method, url=url, **kwargs)
+            except RequestException as error:
+                if self._is_transient_exception(error) and attempt < HTTP_RETRY_ATTEMPTS:
+                    delay = self._retry_delay(attempt)
+                    logging.warning(
+                        "http_retry_attempt service=remonline method=%s url=%s attempt=%s max_attempts=%s reason=exception error_type=%s sleep_sec=%.3f",
+                        method.upper(),
+                        url,
+                        attempt,
+                        HTTP_RETRY_ATTEMPTS,
+                        type(error).__name__,
+                        delay,
+                    )
+                    time.sleep(delay)
+                    continue
+                raise
+
+            if self._is_transient_status(response.status_code) and attempt < HTTP_RETRY_ATTEMPTS:
+                delay = self._retry_delay(attempt)
+                logging.warning(
+                    "http_retry_attempt service=remonline method=%s url=%s attempt=%s max_attempts=%s reason=status_code status_code=%s sleep_sec=%.3f",
+                    method.upper(),
+                    url,
+                    attempt,
+                    HTTP_RETRY_ATTEMPTS,
+                    response.status_code,
+                    delay,
+                )
+                time.sleep(delay)
+                continue
+
+            return response
+
+    def get(self, url, params, **kwargs):
+        response = self._request_with_retry(method="get", url=url, params=params, **kwargs)
+
+        if response.status_code == 401:
+            logging.warning("remonline_unauthorized_refresh_token method=GET url=%s", url)
             self.token = self.get_user_token()
-            response = requests.get(url=url, params=params, **kwargs)
+            response = self._request_with_retry(method="get", url=url, params=params, **kwargs)
         return response
 
         # if response.status_code == 101:
@@ -34,20 +96,20 @@ class BaseRemonline:
         #     return {"data": {}, 'success': False}
 
     def post(self, url, data, **kwargs):
-        response = requests.post(url=url, data=data, **kwargs)
+        response = self._request_with_retry(method="post", url=url, data=data, **kwargs)
 
-        if response.status_code != 200:
-            print(f"Remonline status code {response.status_code}")
+        if response.status_code == 401:
+            logging.warning("remonline_unauthorized_refresh_token method=POST url=%s", url)
             self.token = self.get_user_token()
-            response = requests.post(url=url, data=data, **kwargs)
+            response = self._request_with_retry(method="post", url=url, data=data, **kwargs)
         return response
 
     def delete(self, url, **kwargs):
-        response = requests.delete(url=url, **kwargs)
-        if response.status_code != 200:
-            print(f"Remonline status code {response.status_code}")
+        response = self._request_with_retry(method="delete", url=url, **kwargs)
+        if response.status_code == 401:
+            logging.warning("remonline_unauthorized_refresh_token method=DELETE url=%s", url)
             self.token = self.get_user_token()
-            response = requests.delete(url=url, **kwargs)
+            response = self._request_with_retry(method="delete", url=url, **kwargs)
         return response
 
         # if response.status_code == 101:
@@ -64,7 +126,7 @@ class BaseRemonline:
         data = {"api_key": self.api_key}
         api_path = "token/new"
         request_url = self._url_builder(api_path)
-        response = requests.post(url=request_url, data=data)
+        response = self._request_with_retry(method="post", url=request_url, data=data)
         return response.json()["token"]
 
     def set_params(self, required: dict, optional: dict, **kwargs):
@@ -180,7 +242,7 @@ class RemonlineAPI(BaseRemonline):
                 if len(goods_list) == goods['count']:
                     break
             except HTTPError as error:
-                logging.error("HTTPError while fetching goods", error)
+                logging.error("HTTPError while fetching goods: %s", error)
                 break
         return goods_list
 
@@ -221,7 +283,7 @@ class RemonlineAPI(BaseRemonline):
                 if len(all_orders) == orders['count']:
                     break
             except HTTPError as error:
-                logging.error("HTTPError while fetching orders", error)
+                logging.error("HTTPError while fetching orders: %s", error)
                 break
         return all_orders
 
