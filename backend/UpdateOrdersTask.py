@@ -1,4 +1,5 @@
 from datetime import datetime
+import time
 
 from RestAPI.EngineApi import ttn_tracking
 from RestAPI.RemonlineAPI import RemonlineAPI
@@ -109,6 +110,8 @@ def nova_post_update_status(orders, db: DBConnection):
 
 def update_order_task():
     cycle_number = 0
+    heartbeat_threshold_seconds = 60
+    last_successful_cycle_ts: float | None = None
     while True:
         cycle_number += 1
         db = DBConnection('info.db')
@@ -132,41 +135,70 @@ def update_order_task():
             )
 
             for order in active_orders:
+                try:
+                    ttn = None
+                    filtered_remonline_order = list(
+                        filter(lambda rm_order: rm_order['id'] == order['remonline_order_id'], remonline_orders))
+                    if filtered_remonline_order:
+                        if filtered_remonline_order[0]['engineer_notes']:
+                            ttn = parse_engineer_notes(filtered_remonline_order[0]['engineer_notes'])
 
-                ttn = None
-                filtered_remonline_order = list(
-                    filter(lambda rm_order: rm_order['id'] == order['remonline_order_id'], remonline_orders))
-                if filtered_remonline_order:
+                        if "закрито" in filtered_remonline_order[0]['status']['name'].lower():
+                            db.deactivate_order(order['id'])
+                            db.post_order_updates("deactivated", order['id'])
+                            logger.info("order_deactivated_by_remonline_status", order_id=order['id'])
 
-                    if "закрито" in filtered_remonline_order[0]['status']['name'].lower():
-                        db.deactivate_order(order['id'])
-                        db.post_order_updates("deactivated", order['id'])
-                        logger.info("order_deactivated_by_remonline_status", order_id=order['id'])
+                        if ttn is not None and ttn != order['ttn']:
+                            db.update_ttn(order['id'], ttn)
+                            db.post_order_updates("ttn updated", order['id'])
+                            logger.info("order_ttn_updated", order_id=order['id'], ttn=ttn)
 
-                    if filtered_remonline_order[0]['engineer_notes']:
-                        ttn = parse_engineer_notes(filtered_remonline_order[0]['engineer_notes'])
+                    elif not filtered_remonline_order and order['remonline_order_id']:
+                        db.post_order_updates("deleted", order['id'])
+                        db.delete_order(order['id'])
+                        logger.info("order_deleted_not_found_in_remonline", order_id=order['id'])
+                except Exception as error:
+                    logger.exception("ttn_loop_order_iteration_failed order_id=%s", order.get('id'))
 
-                    if ttn is not None and ttn != order['ttn']:
-                        db.update_ttn(order['id'], ttn)
-                        db.post_order_updates("ttn updated", order['id'])
-                        logger.info("order_ttn_updated", order_id=order['id'], ttn=ttn)
+            try:
+                nova_post_update_status(active_orders, db)
+            except Exception as error:
+                logger.exception("ttn_loop_nova_post_update_failed")
 
-
-                elif not filtered_remonline_order and order['remonline_order_id']:
-                    db.post_order_updates("deleted", order['id'])
-                    db.delete_order(order['id'])
-                    logger.info("order_deleted_not_found_in_remonline", order_id=order['id'])
-                    
-            nova_post_update_status(active_orders, db)
+            cycle_finished_ts = time.time()
+            last_successful_cycle_ts = cycle_finished_ts
             logger.debug(
                 "orders_sync_cycle_completed",
                 cycle=cycle_number,
                 active_orders_count=len(active_orders),
                 remonline_orders_count=len(remonline_orders),
+                last_success_ts=int(cycle_finished_ts),
             )
 
 
-        except Exception:
+        except Exception as error:
+            now_ts = time.time()
+            if last_successful_cycle_ts is None:
+                logger.error(
+                    "ttn_heartbeat status=stale last_success_ts=none lag_sec=unknown threshold_sec=%s",
+                    heartbeat_threshold_seconds,
+                )
+            else:
+                lag_seconds = int(now_ts - last_successful_cycle_ts)
+                if lag_seconds > heartbeat_threshold_seconds:
+                    logger.error(
+                        "ttn_heartbeat status=stale last_success_ts=%s lag_sec=%s threshold_sec=%s",
+                        int(last_successful_cycle_ts),
+                        lag_seconds,
+                        heartbeat_threshold_seconds,
+                    )
+                else:
+                    logger.warning(
+                        "ttn_heartbeat status=degraded last_success_ts=%s lag_sec=%s threshold_sec=%s",
+                        int(last_successful_cycle_ts),
+                        lag_seconds,
+                        heartbeat_threshold_seconds,
+                    )
             logger.exception(
                 "orders_sync_cycle_failed",
                 cycle=cycle_number,
