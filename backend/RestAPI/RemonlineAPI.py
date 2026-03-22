@@ -2,6 +2,10 @@ import logging
 from requests import HTTPError
 import requests
 import json
+from config import HTTP_CONNECT_TIMEOUT, HTTP_READ_TIMEOUT
+
+
+DEFAULT_HTTP_TIMEOUT = (HTTP_CONNECT_TIMEOUT, HTTP_READ_TIMEOUT)
 
 
 class BaseRemonline:
@@ -15,12 +19,12 @@ class BaseRemonline:
         return f"{self.domain}{api_path}"
 
     def get(self, url, params, **kwargs):
-        response = requests.get(url=url, params=params, **kwargs)
+        response = requests.get(url=url, params=params, timeout=DEFAULT_HTTP_TIMEOUT, **kwargs)
 
         if response.status_code != 200:
             print(f"Remonline status code {response.status_code}")
             self.token = self.get_user_token()
-            response = requests.get(url=url, params=params, **kwargs)
+            response = requests.get(url=url, params=params, timeout=DEFAULT_HTTP_TIMEOUT, **kwargs)
         return response
 
         # if response.status_code == 101:
@@ -34,20 +38,20 @@ class BaseRemonline:
         #     return {"data": {}, 'success': False}
 
     def post(self, url, data, **kwargs):
-        response = requests.post(url=url, data=data, **kwargs)
+        response = requests.post(url=url, data=data, timeout=DEFAULT_HTTP_TIMEOUT, **kwargs)
 
         if response.status_code != 200:
             print(f"Remonline status code {response.status_code}")
             self.token = self.get_user_token()
-            response = requests.post(url=url, data=data, **kwargs)
+            response = requests.post(url=url, data=data, timeout=DEFAULT_HTTP_TIMEOUT, **kwargs)
         return response
 
     def delete(self, url, **kwargs):
-        response = requests.delete(url=url, **kwargs)
+        response = requests.delete(url=url, timeout=DEFAULT_HTTP_TIMEOUT, **kwargs)
         if response.status_code != 200:
             print(f"Remonline status code {response.status_code}")
             self.token = self.get_user_token()
-            response = requests.delete(url=url, **kwargs)
+            response = requests.delete(url=url, timeout=DEFAULT_HTTP_TIMEOUT, **kwargs)
         return response
 
         # if response.status_code == 101:
@@ -64,7 +68,7 @@ class BaseRemonline:
         data = {"api_key": self.api_key}
         api_path = "token/new"
         request_url = self._url_builder(api_path)
-        response = requests.post(url=request_url, data=data)
+        response = requests.post(url=request_url, data=data, timeout=DEFAULT_HTTP_TIMEOUT)
         return response.json()["token"]
 
     def set_params(self, required: dict, optional: dict, **kwargs):

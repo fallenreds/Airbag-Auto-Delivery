@@ -1,4 +1,8 @@
 import requests
+from config import HTTP_CONNECT_TIMEOUT, HTTP_READ_TIMEOUT
+
+
+DEFAULT_HTTP_TIMEOUT = (HTTP_CONNECT_TIMEOUT, HTTP_READ_TIMEOUT)
 
 
 def ttn_tracking(documents: list):
@@ -11,6 +15,6 @@ def ttn_tracking(documents: list):
         }
     }
     url = 'https://api.novaposhta.ua/v2.0/json/'
-    return requests.post(url, json=request).json(
+    return requests.post(url, json=request, timeout=DEFAULT_HTTP_TIMEOUT).json(
 
     )
