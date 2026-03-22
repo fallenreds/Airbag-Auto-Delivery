@@ -111,35 +111,44 @@ def update_order_task():
 
             active_orders: list[dict] = list(filter(lambda order: int(order['is_completed']) == 0, db.get_active_orders()))
             ids_remonline: list = [order['remonline_order_id'] for order in active_orders]
-            remonline_orders: list[dict] = CRM.get_all_orders(ids=ids_remonline)
+            remonline_orders: list[dict] = []
+            try:
+                remonline_orders = CRM.get_all_orders(ids=ids_remonline)
+            except Exception as error:
+                logger.exception("ttn_loop_remonline_fetch_failed: %s", error)
 
             for order in active_orders:
+                try:
+                    ttn = None
+                    filtered_remonline_order = list(
+                        filter(lambda rm_order: rm_order['id'] == order['remonline_order_id'], remonline_orders))
+                    if filtered_remonline_order:
 
-                ttn = None
-                filtered_remonline_order = list(
-                    filter(lambda rm_order: rm_order['id'] == order['remonline_order_id'], remonline_orders))
-                if filtered_remonline_order:
+                        if "закрито" in filtered_remonline_order[0]['status']['name'].lower():
+                            db.deactivate_order(order['id'])
+                            db.post_order_updates("deactivated", order['id'])
+                            print(f"Order {order['id']} has been deactivated")
 
-                    if "закрито" in filtered_remonline_order[0]['status']['name'].lower():
-                        db.deactivate_order(order['id'])
-                        db.post_order_updates("deactivated", order['id'])
-                        print(f"Order {order['id']} has been deactivated")
+                        if filtered_remonline_order[0]['engineer_notes']:
+                            ttn = parse_engineer_notes(filtered_remonline_order[0]['engineer_notes'])
 
-                    if filtered_remonline_order[0]['engineer_notes']:
-                        ttn = parse_engineer_notes(filtered_remonline_order[0]['engineer_notes'])
-
-                    if ttn is not None and ttn != order['ttn']:
-                        db.update_ttn(order['id'], ttn)
-                        db.post_order_updates("ttn updated", order['id'])
-                        print(f"Order {order['id']} ttn has been updated")
+                        if ttn is not None and ttn != order['ttn']:
+                            db.update_ttn(order['id'], ttn)
+                            db.post_order_updates("ttn updated", order['id'])
+                            print(f"Order {order['id']} ttn has been updated")
 
 
-                elif not filtered_remonline_order and order['remonline_order_id']:
-                    db.post_order_updates("deleted", order['id'])
-                    db.delete_order(order['id'])
-                    print(f"Order {order['id']}  has been deleted")
-                    
-            nova_post_update_status(active_orders, db)
+                    elif not filtered_remonline_order and order['remonline_order_id']:
+                        db.post_order_updates("deleted", order['id'])
+                        db.delete_order(order['id'])
+                        print(f"Order {order['id']}  has been deleted")
+                except Exception as error:
+                    logger.exception("ttn_loop_order_iteration_failed order_id=%s error=%s", order.get('id'), error)
+
+            try:
+                nova_post_update_status(active_orders, db)
+            except Exception as error:
+                logger.exception("ttn_loop_nova_post_update_failed: %s", error)
             logger.info("Status 200. Nova_post_update_status process")
 
 
