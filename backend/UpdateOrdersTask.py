@@ -1,4 +1,5 @@
 from datetime import datetime
+import time
 
 from RestAPI.EngineApi import ttn_tracking
 from RestAPI.RemonlineAPI import RemonlineAPI
@@ -103,6 +104,9 @@ def nova_post_update_status(orders, db: DBConnection):
 
 
 def update_order_task():
+    heartbeat_threshold_seconds = 60
+    last_successful_cycle_ts: float | None = None
+
     while True:
         db = DBConnection('info.db')
         try:
@@ -149,11 +153,40 @@ def update_order_task():
                 nova_post_update_status(active_orders, db)
             except Exception as error:
                 logger.exception("ttn_loop_nova_post_update_failed: %s", error)
+
+            cycle_finished_ts = time.time()
+            last_successful_cycle_ts = cycle_finished_ts
+            logger.info(
+                "ttn_heartbeat status=ok last_success_ts=%s",
+                int(cycle_finished_ts),
+            )
             logger.info("Status 200. Nova_post_update_status process")
 
 
         except Exception as error:
-            logger.error(error)
+            now_ts = time.time()
+            if last_successful_cycle_ts is None:
+                logger.error(
+                    "ttn_heartbeat status=stale last_success_ts=none lag_sec=unknown threshold_sec=%s",
+                    heartbeat_threshold_seconds,
+                )
+            else:
+                lag_seconds = int(now_ts - last_successful_cycle_ts)
+                if lag_seconds > heartbeat_threshold_seconds:
+                    logger.error(
+                        "ttn_heartbeat status=stale last_success_ts=%s lag_sec=%s threshold_sec=%s",
+                        int(last_successful_cycle_ts),
+                        lag_seconds,
+                        heartbeat_threshold_seconds,
+                    )
+                else:
+                    logger.warning(
+                        "ttn_heartbeat status=degraded last_success_ts=%s lag_sec=%s threshold_sec=%s",
+                        int(last_successful_cycle_ts),
+                        lag_seconds,
+                        heartbeat_threshold_seconds,
+                    )
+            logger.exception("ttn_loop_unhandled_exception: %s", error)
 
         finally:
             db.connection.close()
