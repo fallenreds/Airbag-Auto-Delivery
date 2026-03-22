@@ -5,7 +5,7 @@ from services.good.service import GoodsCacheService
 CRM = RemonlineAPI(REMONLINE_API_KEY_PROD)
 warehouse = CRM.get_main_warehouse_id()
 branch = CRM.get_branches()["data"][0]["id"]
-goods_cache_service = GoodsCacheService(CRM, warehouse, CATEGORIES_IGNORE_IDS)
+goods_cache_service = GoodsCacheService(CRM, warehouse, CATEGORIES_IGNORE_IDS, update_interval=40)
 
 
 def get_goods_cache_service():

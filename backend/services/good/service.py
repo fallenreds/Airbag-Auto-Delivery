@@ -12,19 +12,45 @@ class GoodsCacheService:
         self.categories_ignore_ids = categories_ignore_ids
         self.update_interval = update_interval
         self.goods = {"data": []}
+        self._last_goods_count: int | None = None
+        self._update_cycle = 0
         self.run_thread = threading.Thread(target=self._update_goods_loop)
         self.run_thread.daemon = True
         self.run_thread.start()
 
     def _update_goods_loop(self):
         while True:
+            self._update_cycle += 1
             try:
                 goods = self.crm_client.get_all_goods(self.warehouse)
                 filtered_goods = filter(lambda x: x['category']["id"] not in self.categories_ignore_ids, goods)
-                self.goods = {"data": list(filtered_goods)}
-                logger.info('Goods updated')
-            except Exception as error:
-                logger.error('Error updating goods: %s', error)
+                filtered_goods_list = list(filtered_goods)
+                current_count = len(filtered_goods_list)
+                self.goods = {"data": filtered_goods_list}
+
+                if self._last_goods_count is None:
+                    logger.info(
+                        "goods_cache_initialized",
+                        goods_count=current_count,
+                        update_interval_sec=self.update_interval,
+                    )
+                elif self._last_goods_count != current_count:
+                    logger.info(
+                        "goods_cache_size_changed",
+                        previous_count=self._last_goods_count,
+                        current_count=current_count,
+                        cycle=self._update_cycle,
+                    )
+                else:
+                    logger.debug(
+                        "goods_cache_refreshed",
+                        goods_count=current_count,
+                        cycle=self._update_cycle,
+                    )
+
+                self._last_goods_count = current_count
+            except Exception:
+                logger.exception('goods_cache_update_failed')
 
             # Wait for the next update
             time.sleep(self.update_interval)
