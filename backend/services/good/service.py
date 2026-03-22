@@ -30,22 +30,22 @@ class GoodsCacheService:
 
                 if self._last_goods_count is None:
                     logger.info(
-                        "goods_cache_initialized",
-                        goods_count=current_count,
-                        update_interval_sec=self.update_interval,
+                        "goods_cache_initialized goods_count=%s update_interval_sec=%s",
+                        current_count,
+                        self.update_interval,
                     )
                 elif self._last_goods_count != current_count:
                     logger.info(
-                        "goods_cache_size_changed",
-                        previous_count=self._last_goods_count,
-                        current_count=current_count,
-                        cycle=self._update_cycle,
+                        "goods_cache_size_changed previous_count=%s current_count=%s cycle=%s",
+                        self._last_goods_count,
+                        current_count,
+                        self._update_cycle,
                     )
                 else:
                     logger.debug(
-                        "goods_cache_refreshed",
-                        goods_count=current_count,
-                        cycle=self._update_cycle,
+                        "goods_cache_refreshed goods_count=%s cycle=%s",
+                        current_count,
+                        self._update_cycle,
                     )
 
                 self._last_goods_count = current_count
