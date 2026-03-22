@@ -242,7 +242,7 @@ class RemonlineAPI(BaseRemonline):
                 if len(goods_list) == goods['count']:
                     break
             except HTTPError as error:
-                logging.error("HTTPError while fetching goods", error)
+                logging.error("HTTPError while fetching goods: %s", error)
                 break
         return goods_list
 
@@ -283,7 +283,7 @@ class RemonlineAPI(BaseRemonline):
                 if len(all_orders) == orders['count']:
                     break
             except HTTPError as error:
-                logging.error("HTTPError while fetching orders", error)
+                logging.error("HTTPError while fetching orders: %s", error)
                 break
         return all_orders
 
