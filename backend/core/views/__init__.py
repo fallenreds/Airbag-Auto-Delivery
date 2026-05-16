@@ -11,6 +11,7 @@ from .discounts import DiscountViewSet
 from .goods import GoodCategoryViewSet, GoodViewSet
 from .orders import OrderEventViewSet, OrderItemViewSet, OrderViewSet
 from .templates import TemplateViewSet
+from .telegram import TelegramAuthView, TelegramAutoLinkView, TelegramLinkConsumeView, TelegramLinkView
 
 __all__ = [
     "ClientViewSet",
@@ -28,4 +29,8 @@ __all__ = [
     "GoodCategoryViewSet",
     "TemplateViewSet",
     "BotVisitorViewSet",
+    "TelegramAuthView",
+    "TelegramLinkView",
+    "TelegramLinkConsumeView",
+    "TelegramAutoLinkView",
 ]

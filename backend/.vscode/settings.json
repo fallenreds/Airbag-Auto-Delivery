@@ -73,6 +73,14 @@
         {
             "folderPath": "backend/core/views/",
             "color": "foldercolorizer.color_9966ff"
+        },
+        {
+            "filePath": "backend/db.sqlite3",
+            "color": "foldercolorizer.color_5fd700"
+        },
+        {
+            "extension": "env",
+            "color": "foldercolorizer.color_d75faf"
         }
     ]
 }

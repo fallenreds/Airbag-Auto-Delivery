@@ -62,8 +62,19 @@ def check_admin_permission(message):
 
 
 @dp.message_handler(commands=['start'])
-async def start_message(message):
-    await add_new_visitor(int(message.chat.id))
+async def start_message(message: types.Message):
+    telegram_id = int(message.chat.id)
+
+    payload = message.get_args().strip() if hasattr(message, 'get_args') else ''
+
+    if payload:
+        success, response_message = await api.link_account_via_code(payload, telegram_id, message.from_user)
+        await bot.send_message(telegram_id, response_message)
+    else:
+        success = False
+
+    if not success:
+        await add_new_visitor(telegram_id)
 
     greetings_text = f"Вітаю, {message.chat.first_name}. \nВи можете переглянути та купити товари в магазині 🛒, або переглянути статус ваших замовлень 📦"
     markup_k = types.ReplyKeyboardMarkup(resize_keyboard=True)

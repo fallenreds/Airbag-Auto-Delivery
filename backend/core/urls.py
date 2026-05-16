@@ -20,6 +20,10 @@ from .views import (
     OrderEventViewSet,
     OrderItemViewSet,
     OrderViewSet,
+    TelegramAuthView,
+    TelegramAutoLinkView,
+    TelegramLinkConsumeView,
+    TelegramLinkView,
     TemplateViewSet,
 )
 from .views.guest_clients import GuestClientCreationView
@@ -47,5 +51,9 @@ urlpatterns = router.urls + [
     path("auth/change-password/", ChangePasswordView.as_view(), name="change_password"),
     path("auth/register/", ClientRegistrationView.as_view(), name="register"),
     path("auth/guest/", GuestClientCreationView.as_view(), name="create_guest"),
+    path("telegram/auth", TelegramAuthView.as_view(), name="telegram_auth"),
+    path("telegram/link", TelegramLinkView.as_view(), name="telegram_link"),
+    path("telegram/link/consume/", TelegramLinkConsumeView.as_view(), name="telegram_link_consume"),
+    path("telegram/auto-link", TelegramAutoLinkView.as_view(), name="telegram_auto_link"),
     path("payments/", include("payments.urls")),
 ]

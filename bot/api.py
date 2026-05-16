@@ -1,7 +1,7 @@
 import aiohttp
 import config
 from logger import logger
-from typing import Optional
+from typing import Any, Optional, Tuple
 
 base_url = config.BASE_URL
 headers = {"x-api-key": config.BACKEND_API_KEY}
@@ -169,6 +169,47 @@ async def add_new_visitor(telegram_id) -> dict:
         async with session.post(f'{base_url}api/v2/bot-visitors/', json={"telegram_id": telegram_id, }, headers=headers) as resp:
             if resp.status == 200:
                 return await resp.json()
+
+
+async def link_account_via_code(code: str, telegram_id: int, telegram_user: Optional[Any] = None) -> Tuple[bool, str]:
+    """Link a telegram account to an existing user via one-time code."""
+    payload = {"code": code.strip(), "telegram_id": telegram_id}
+
+    if telegram_user is not None:
+        for attr in ("username", "first_name", "last_name", "language_code"):
+            value = getattr(telegram_user, attr, None)
+            if value:
+                payload[attr] = value
+
+    url = f"{base_url}api/v2/telegram/link/consume/"
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=payload, headers=headers) as resp:
+                try:
+                    data = await resp.json(content_type=None)
+                except aiohttp.ContentTypeError:
+                    data = {}
+
+                if resp.status == 200:
+                    message = data.get('message') or "✅ Аккаунты успешно связаны!"
+                    return True, message
+
+                error_message = (
+                    data.get('message')
+                    or data.get('detail')
+                    or "⚠️ Не вдалося прив'язати акаунт. Код недійсний або строк дії минув."
+                )
+                logger.warning(
+                    "Failed to consume telegram link code. status=%s, payload=%s, response=%s",
+                    resp.status,
+                    payload,
+                    data,
+                )
+                return False, error_message
+    except Exception as exc:
+        logger.exception("Unexpected error during telegram link consumption", exc_info=exc)
+        return False, "⚠️ Невідома помилка. Спробуйте пізніше."
 
 async def get_visitors(limit: Optional[int] = None) -> list:
     return await _fetch_paginated('api/v2/bot-visitors/', limit=limit)
