@@ -227,7 +227,8 @@ LOGGING = {
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "https://api.airbagad.com"
+    "https://api.airbagad.com",
+    "https://minimally-consensual-aurore.ngrok-free.dev",
 ]
 
 # Trusted origins for CSRF
@@ -235,6 +236,7 @@ CSRF_TRUSTED_ORIGINS = [
     "https://api.airbagad.com",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "https://minimally-consensual-aurore.ngrok-free.dev",
 ]
 
 CORS_ALLOW_CREDENTIALS = True

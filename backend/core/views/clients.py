@@ -1,12 +1,15 @@
+from datetime import timedelta
+
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
-from rest_framework import viewsets
+from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from django.utils import timezone
 
-from core.models import Client, ClientEvent
+from core.models import Client, ClientEvent, Order
 from core.serializers import (
     ChangePasswordSerializer,
     ClientEventSerializer,
@@ -43,6 +46,56 @@ class ClientViewSet(viewsets.ModelViewSet):
         total_spending = DiscountService.get_previous_month_spending(client)
         return Response({"total_spending": total_spending})
         
+    @action(detail=True, methods=["post"], permission_classes=[IsAdminUser], url_path="add-bonus")
+    def add_bonus(self, request, pk=None):
+        """
+        Начислить бонус клиенту: создаёт завершённый заказ в предыдущем месяце.
+        Body: {"count": int}  — сумма бонуса в гривнах (UAH).
+        Этот заказ учитывается DiscountService при расчёте скидки за предыдущий месяц.
+        """
+        client = self.get_object()
+        count = request.data.get("count")
+
+        if count is None:
+            return Response({"detail": "count is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            count = int(count)
+            if count <= 0:
+                raise ValueError
+        except (ValueError, TypeError):
+            return Response({"detail": "count must be a positive integer."}, status=status.HTTP_400_BAD_REQUEST)
+
+        grand_total_minor = count * 100
+
+        today = timezone.now().date()
+        first_day_this_month = today.replace(day=1)
+        last_day_prev_month = first_day_this_month - timedelta(days=1)
+        first_day_prev_month = last_day_prev_month.replace(day=1)
+        bonus_date = timezone.make_aware(
+            timezone.datetime(first_day_prev_month.year, first_day_prev_month.month, first_day_prev_month.day)
+        )
+
+        Order.objects.create(
+            client=client,
+            telegram_id=client.telegram_id,
+            name=client.name or "BONUS",
+            last_name=client.last_name or "BONUS",
+            phone=client.phone or "BONUS",
+            nova_post_address="BONUS",
+            prepayment=True,
+            is_paid=True,
+            is_completed=True,
+            grand_total_minor=grand_total_minor,
+            subtotal_minor=grand_total_minor,
+            discount_total_minor=0,
+            description="BONUS",
+            remonline_sync_status=Order.RemonlineSyncStatus.SYNCED,
+            date=bonus_date,
+        )
+
+        return Response({"success": True, "client": ClientSerializer(client).data}, status=status.HTTP_200_OK)
+
     @action(detail=True, methods=["get"], url_path="discount-info")
     def discount_info(self, request, pk=None):
         """

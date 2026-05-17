@@ -20,6 +20,10 @@ from core.views.utils import get_own_queryset
 
 from .utils import generate_filterset_for_model
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class OrderViewSet(viewsets.ModelViewSet):
     serializer_class = OrderSerializer
@@ -109,6 +113,95 @@ class OrderViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         order = serializer.save()
         return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
+
+    @action(
+        detail=False,
+        methods=["post"],
+        permission_classes=[IsAdminUser],
+        url_path="merge",
+    )
+    def merge(self, request):
+        """
+        Объединить два заказа в один новый.
+        Body: {"source_order_id": int, "target_order_id": int}
+        """
+        source_id = request.data.get("source_order_id")
+        target_id = request.data.get("target_order_id")
+
+        if not source_id or not target_id:
+            return Response(
+                {"detail": "source_order_id and target_order_id are required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            source_order = Order.objects.get(pk=source_id)
+        except Order.DoesNotExist:
+            return Response({"detail": f"Order {source_id} not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            target_order = Order.objects.get(pk=target_id)
+        except Order.DoesNotExist:
+            return Response({"detail": f"Order {target_id} not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        source_items = list(OrderItem.objects.filter(order=source_order))
+        target_items = list(OrderItem.objects.filter(order=target_order))
+        all_items = source_items + target_items
+
+        new_order = Order.objects.create(
+            client=source_order.client,
+            telegram_id=source_order.telegram_id,
+            name=source_order.name,
+            last_name=source_order.last_name,
+            phone=source_order.phone,
+            nova_post_address=source_order.nova_post_address,
+            prepayment=source_order.prepayment,
+            is_paid=source_order.is_paid,
+            ttn=source_order.ttn,
+            description=source_order.description,
+            discount_percent=source_order.discount_percent,
+            subtotal_minor=0,
+            discount_total_minor=0,
+            grand_total_minor=0,
+            remonline_sync_status=Order.RemonlineSyncStatus.PENDING,
+        )
+
+        subtotal = 0
+        grand_total = 0
+        for item in all_items:
+            item_subtotal = item.original_price_minor * item.quantity
+            discount_pct = source_order.discount_percent or 0
+            item_grand = item_subtotal - (item_subtotal * discount_pct // 100)
+            subtotal += item_subtotal
+            grand_total += item_grand
+            OrderItem.objects.create(
+                order=new_order,
+                good=item.good,
+                good_external_id=item.good_external_id,
+                id_remonline=item.id_remonline,
+                title=item.title,
+                code=item.code,
+                category_id=item.category_id,
+                quantity=item.quantity,
+                currency=item.currency,
+                original_price_minor=item.original_price_minor,
+            )
+
+        new_order.subtotal_minor = subtotal
+        new_order.grand_total_minor = grand_total
+        new_order.discount_total_minor = subtotal - grand_total
+        new_order.save(update_fields=["subtotal_minor", "grand_total_minor", "discount_total_minor"])
+
+        source_order.delete()
+        target_order.delete()
+
+        OrderEvent.objects.create(
+            type=OrderEventType.MERGED,
+            order=new_order,
+            details=f"Merged from orders #{source_id} and #{target_id}",
+        )
+
+        return Response(OrderSerializer(new_order).data, status=status.HTTP_200_OK)
 
     def perform_update(self, serializer):
         order = serializer.instance
