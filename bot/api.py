@@ -56,17 +56,17 @@ async def get_clients_updates(limit: Optional[int] = None)->list[dict]:
     return await _fetch_paginated('api/v2/client-events/', limit=limit)
 
 async def get_client_update(client_update_id)->dict:
-    """Get template by id"""
+    """Get client event by id"""
     async with aiohttp.ClientSession() as session:
-        async with session.get(f'{base_url}api/v2/client-events/{client_update_id}', headers=headers) as resp:
+        async with session.get(f'{base_url}api/v2/client-events/{client_update_id}/', headers=headers) as resp:
             if resp.status == 200:
                 return await resp.json()
 async def delete_client_update(client_update_id)->None:
-    """Delete template by id"""
+    """Delete client event by id"""
     async with aiohttp.ClientSession() as session:
-        async with session.delete(f'{base_url}api/v2/client-events/{client_update_id}', headers=headers) as resp:
-            if resp.status == 200:
-                return await resp.json()
+        async with session.delete(f'{base_url}api/v2/client-events/{client_update_id}/', headers=headers) as resp:
+            if resp.status in (200, 204):
+                return True
 
 
 
@@ -92,17 +92,16 @@ async def delete_template(template_id)->None:
     """Delete template by id"""
     async with aiohttp.ClientSession() as session:
         async with session.delete(f'{base_url}api/v2/templates/{template_id}/', headers=headers) as resp:
-            if resp.status == 200:
-                return await resp.json()
+            if resp.status in (200, 204):
+                return True
 
 async def create_template(name:str, text:str)->dict:
     """Create new template"""
     data = {"name": name, "text": text}
-
     async with aiohttp.ClientSession() as session:
         async with session.post(f'{base_url}api/v2/templates/', json=data, headers=headers) as resp:
-
-            return await resp.json()
+            if resp.status in (200, 201):
+                return await resp.json()
 
 
 
@@ -115,24 +114,24 @@ async def get_all_goods(limit: Optional[int] = None) -> list[dict]:
 
 
 async def get_orders_by_tg_id(telegram_id) -> list:
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f'{base_url}api/v2/orders?telegram_id={telegram_id}', headers=headers) as resp:
-            if resp.status == 200:
-                return await resp.json()
+    return await _fetch_paginated(f'api/v2/orders?telegram_id={telegram_id}')
 
 
 async def add_bonus_client_discount(client_id, count) -> dict:
-    #TODO: CHANGE METHOD
     async with aiohttp.ClientSession() as session:
-        async with session.post(f'{base_url}api/v2/bonus_client_discount/',
-                                json={"client_id": client_id, "count": count}, headers=headers) as resp:
+        async with session.post(
+            f'{base_url}api/v2/clients/{client_id}/add-bonus/',
+            json={"count": count},
+            headers=headers,
+        ) as resp:
             if resp.status == 200:
                 return await resp.json()
+            return None
 
 
 async def get_order_by_id(order_id):
     async with aiohttp.ClientSession() as session:
-        async with session.get(f'{base_url}api/v2/orders/{order_id}', headers=headers) as resp:
+        async with session.get(f'{base_url}api/v2/orders/{order_id}/', headers=headers) as resp:
             if resp.status == 200:
                 return await resp.json()
 
@@ -148,10 +147,7 @@ async def get_active_orders(limit: Optional[int] = None) -> list:
     return data
 
 async def get_active_orders_by_telegram_id(telegram_id:int) -> list:
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f'{base_url}api/v2/orders?is_completed=0&telegram_id={telegram_id}', headers=headers) as resp:
-            if resp.status == 200:
-                return await resp.json()
+    return await _fetch_paginated(f'api/v2/orders?is_completed=0&telegram_id={telegram_id}')
 
 async def get_order_updates(limit: Optional[int] = None) -> list:
     """Get order updates, with an optional limit."""
@@ -161,13 +157,13 @@ async def get_order_updates(limit: Optional[int] = None) -> list:
 async def delete_order_updates(order_updates_id):
     async with aiohttp.ClientSession() as session:
         async with session.delete(f'{base_url}api/v2/order-events/{order_updates_id}/', headers=headers) as resp:
-            if resp.status == 200:
-                return await resp.json()
+            if resp.status in (200, 204):
+                return True
 
 async def add_new_visitor(telegram_id) -> dict:
     async with aiohttp.ClientSession() as session:
-        async with session.post(f'{base_url}api/v2/bot-visitors/', json={"telegram_id": telegram_id, }, headers=headers) as resp:
-            if resp.status == 200:
+        async with session.post(f'{base_url}api/v2/bot-visitors/', json={"telegram_id": telegram_id}, headers=headers) as resp:
+            if resp.status in (200, 201):
                 return await resp.json()
 
 
@@ -217,29 +213,25 @@ async def get_visitors(limit: Optional[int] = None) -> list:
 async def delete_visitor(id: int):
     async with aiohttp.ClientSession() as session:
         async with session.delete(f'{base_url}api/v2/bot-visitors/{id}/', headers=headers) as resp:
-            if resp.status == 200:
-                return await resp.json()
+            if resp.status in (200, 204):
+                return True
 
 async def make_pay_order(order_id):
-    #TODO: CHANGE METHOD
-
     async with aiohttp.ClientSession() as session:
-
-        async with session.post(f'{base_url}api/v2/payorder/{order_id}', headers=headers) as resp:
+        async with session.patch(f'{base_url}api/v2/orders/{order_id}/', json={"is_paid": True}, headers=headers) as resp:
             if resp.status == 200:
                 return await resp.json()
 
 
 async def check_auth(telegram_id):
-    #TODO: CHANGE METHOD
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f'{base_url}api/v2/isauthendicated/{telegram_id}', headers=headers) as resp:
-            if resp.status == 200:
-                return await resp.json()
+    """Check if telegram_id is linked to a client account. Returns {"success": True/False}."""
+    result = await get_client_by_tg_id(telegram_id)
+    if result and result.get("count", 0) > 0:
+        return {"success": True}
+    return {"success": False}
 
 
 async def get_discount(client_id):
-    #TODO: CHANGE METHOD
     async with aiohttp.ClientSession() as session:
         async with session.get(f'{base_url}api/v2/clients/{client_id}/discount-info/', headers=headers) as resp:
             if resp.status == 200:
@@ -272,40 +264,40 @@ async def get_discounts_info(limit: Optional[int] = None):
 
 
 async def post_discount(procent, month_payment):
-    #TODO: CHANGE METHOD
     async with aiohttp.ClientSession() as session:
-        async with session.post(f'{base_url}api/v2/discount/',
-                                json={"procent": procent, "month_payment": month_payment}, headers=headers) as resp:
-            if resp.status == 200:
+        async with session.post(f'{base_url}api/v2/discounts/',
+                                json={"percentage": procent, "month_payment": month_payment}, headers=headers) as resp:
+            if resp.status in (200, 201):
                 return await resp.json()
 
 
 async def delete_order(order_id):
     async with aiohttp.ClientSession() as session:
-        async with session.delete(f'{base_url}api/v2/order/{order_id}/', headers=headers) as resp:
-            if resp.status == 200:
-                return await resp.json()
+        async with session.delete(f'{base_url}api/v2/orders/{order_id}/', headers=headers) as resp:
+            if resp.status in (200, 204):
+                return True
 
 async def merge_order(source_order_id, target_order_id):
-    #TODO: CHANGE METHOD
     async with aiohttp.ClientSession() as session:
-        data = {"source_order_id": source_order_id, "target_order_id": target_order_id}
-        async with session.post(f'{base_url}api/v2/order/merge', json=data, headers=headers) as resp:
+        async with session.post(
+            f'{base_url}api/v2/orders/merge/',
+            json={"source_order_id": source_order_id, "target_order_id": target_order_id},
+            headers=headers,
+        ) as resp:
             if resp.status == 200:
                 return await resp.json()
+            return None
             
 async def delete_discount(discount_id):
     async with aiohttp.ClientSession() as session:
         async with session.delete(f'{base_url}api/v2/discounts/{discount_id}/', headers=headers) as resp:
-            if resp.status == 200:
-                return await resp.json()
+            if resp.status in (200, 204):
+                return True
 
 
 async def update_ttn(order_id, ttn):
-    #TODO: CHANGE METHOD
     async with aiohttp.ClientSession() as session:
-        async with session.patch(f'{base_url}api/v2/updatettn/',
-                                 json={"order_id": order_id, "ttn": ttn}, headers=headers) as resp:
+        async with session.patch(f'{base_url}api/v2/orders/{order_id}/', json={"ttn": ttn}, headers=headers) as resp:
             if resp.status == 200:
                 return await resp.json()
 
@@ -313,22 +305,25 @@ async def update_ttn(order_id, ttn):
 # client
 async def get_client_by_id(client_id):
     async with aiohttp.ClientSession() as session:
-        async with session.get(f'{base_url}api/v2/clients/{client_id}', headers=headers) as resp:
+        async with session.get(f'{base_url}api/v2/clients/{client_id}/', headers=headers) as resp:
             if resp.status == 200:
                 return await resp.json()
 
 
 # orders
 async def update_branch_remember_count(order_id):
-    #TODO: CHANGE METHOD
+    order = await get_order_by_id(order_id)
+    if order is None:
+        return None
+    current = order.get('branch_remember_count', 0)
     async with aiohttp.ClientSession() as session:
-        async with session.patch(f'{base_url}api/v2/branch_remember_count/{order_id}', headers=headers) as resp:
+        async with session.patch(f'{base_url}api/v2/orders/{order_id}/',
+                                 json={"branch_remember_count": current + 1}, headers=headers) as resp:
             if resp.status == 200:
                 return await resp.json()
 
 
 async def update_no_paid_remember_count(order_id:int, remember_count:int)->list[dict]:
-    #TODO: CHANGE METHOD
     async with aiohttp.ClientSession() as session:
         data = {"remember_count": remember_count}
         async with session.patch(f'{base_url}api/v2/orders/{order_id}/', json=data, headers=headers) as resp:
@@ -337,9 +332,8 @@ async def update_no_paid_remember_count(order_id:int, remember_count:int)->list[
 
 
 async def finish_order(order_id):
-    #TODO: CHANGE METHOD
     async with aiohttp.ClientSession() as session:
-        async with session.patch(f'{base_url}api/v2/disactiveorder/{order_id}', headers=headers) as resp:
+        async with session.patch(f'{base_url}api/v2/orders/{order_id}/', json={"is_completed": True}, headers=headers) as resp:
             if resp.status == 200:
                 return await resp.json()
 
@@ -350,17 +344,13 @@ async def unpaid_overdue(limit: Optional[int] = None):
 
 
 async def get_order_by_ttn(ttn):
-    #TODO: CHANGE METHOD
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f'{base_url}api/v2/order?ttn={ttn}', headers=headers) as resp:
-            if resp.status == 200:
-                return await resp.json()
+    results = await _fetch_paginated(f'api/v2/orders?ttn={ttn}')
+    return results[0] if results else None
 
 
 async def change_to_not_prepayment(order_id):
-    #TODO: CHANGE METHOD
     async with aiohttp.ClientSession() as session:
-        async with session.patch(f'{base_url}api/v2/orders/tonotprepayment/{order_id}', headers=headers) as resp:
+        async with session.patch(f'{base_url}api/v2/orders/{order_id}/', json={"prepayment": False}, headers=headers) as resp:
             if resp.status == 200:
                 return await resp.json()
 
