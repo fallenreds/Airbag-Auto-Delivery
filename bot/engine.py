@@ -36,7 +36,7 @@ async def make_order(bot, telegram_id, order_items, goods, order, client):
 
     for good in order_items:
         to_pay += good["original_price_minor"] * good['quantity']
-        text += f"<b>Товар:</b> {good['title']} - Кількість: {good['count']}\n\n"
+        text += f"<b>Товар:</b> {good['title']} - Кількість: {good['quantity']}\n\n"
     
     
     discounts_info = await get_discount(client["id"])
@@ -79,8 +79,8 @@ async def build_order_suma(order: dict):
     return suma
 
 async def manager_notes_builder(order, goods) -> dict:
-    base_client = await get_client_by_id(order['client'])
-    base_client_info = await base_client_info_builder(base_client)
+    base_client = await get_client_by_id(order['client']) if order.get('client') else None
+    base_client_info = await base_client_info_builder(base_client) if base_client else ""
 
     name = f"{order['name']} {order['last_name']}"
     phone = f"{order['phone']}"
@@ -89,7 +89,7 @@ async def manager_notes_builder(order, goods) -> dict:
     description = order.get('description')
 
     order_suma = await build_order_suma(order)
-    discounts_info = await get_discount(base_client["id"])
+    discounts_info = await get_discount(base_client["id"]) if base_client else None
     percent = 0
 
     if discounts_info:

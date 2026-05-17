@@ -1,23 +1,17 @@
 import asyncio
-import json
 
 from aiogram import types
 
 
-from api import delete_order, update_branch_remember_count, get_order_by_id, get_client_by_id, ttn_tracking, check_auth, \
-    get_orders_by_tg_id, get_all_goods
+from api import update_branch_remember_count, get_order_by_id, get_client_by_id, ttn_tracking
 from buttons import get_check_ttn_button, get_our_contact_button, get_show_discount_info_button, get_status_button
 from engine import send_messages_to_admins, send_error_log, make_order
 
 
 async def check_status_notification(bot, telegram_id, order):
     try:
-        goods = await get_all_goods()
-        goods = goods['data']
-        data = json.loads(order["goods_list"].replace("'", '"'))
         client = await get_client_by_id(order['client_id'])
-
-        await make_order(bot, telegram_id, data, goods, order, client)
+        await make_order(bot, telegram_id, order["items"], None, order, client)
     except TypeError as error:
         await send_error_log(bot, 516842877, error)
 
@@ -25,7 +19,7 @@ async def new_order_notification(bot, order, admin_list):
     await send_messages_to_admins(bot, admin_list, "Нове замовлення в remonline успішно створено!")
 
 async def merge_order_notification(bot, oder:dict):
-    await bot.send_message(f"Декілька ваших замовлень були об'єднані в замовлення {oder['id']}.")
+    await bot.send_message(oder['telegram_id'], f"Декілька ваших замовлень були об'єднані в замовлення {oder['id']}.")
 
 async def ttn_update_notification(bot, order):
     message_text = f"<b>Дякуємо! Ваше замовлення📦 №{order['id']} відправлено🚛.</b>" \
@@ -92,7 +86,6 @@ async def deleted_notifications(bot, order, reason:str|None, admin_list):
         markup_i = types.InlineKeyboardMarkup().add(get_our_contact_button())
         await bot.send_message(order['telegram_id'], client_text, reply_markup=markup_i)
         await send_messages_to_admins(bot, admin_list, admin_text)
-        await delete_order(order["id"])
     except Exception as error:
         await send_error_log(bot, 516842877, error)
 
