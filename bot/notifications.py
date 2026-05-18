@@ -22,6 +22,8 @@ async def merge_order_notification(bot, oder:dict):
     await bot.send_message(oder['telegram_id'], f"Декілька ваших замовлень були об'єднані в замовлення {oder['id']}.")
 
 async def ttn_update_notification(bot, order):
+    if not order or not order.get('telegram_id'):
+        return
     message_text = f"<b>Дякуємо! Ваше замовлення📦 №{order['id']} відправлено🚛.</b>" \
                    f"\n\nВаш ТТН {order['ttn']}. " \
                    f"Ви можете переглянути статус посилки натиснувши на кнопку нижче👇"
