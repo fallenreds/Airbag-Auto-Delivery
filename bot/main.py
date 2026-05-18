@@ -15,7 +15,7 @@ from api import (
     get_active_orders, get_active_orders_by_telegram_id, add_bonus_client_discount, get_visitors, delete_visitor,
     make_pay_order, merge_order, get_templates, create_template,
     get_template, update_ttn, unpaid_overdue, get_order_by_ttn,
-    finish_order, ttn_tracking, change_to_not_prepayment, get_discount, delete_discount,
+    finish_order, ttn_tracking, change_to_not_prepayment, get_discount, delete_discount, get_all_clients,
 )
 from aiogram import Bot, Dispatcher, executor, filters, types
 
@@ -23,13 +23,13 @@ from buttons import (
     get_active_orders_button, get_not_paid_along_time_button, get_edit_discount_button, get_all_clients_button,
     get_make_post, get_set_props, get_props_info_button, get_deactive_order_button, get_delete_order_button,
     get_merge_order_button, get_check_ttn_button, get_to_not_prepayment_button, get_make_paid_button,
-    get_order_info_button, get_send_payment_photo_button, get_our_contact_button
+    get_order_info_button, get_send_payment_photo_button, get_our_contact_button, get_add_month_payment_button,
 )
 from config import BOT_TOKEN, WEB_URL
 from engine import manager_notes_builder, id_spliter, ttn_info_builder, send_error_log, make_order, show_order_goods
 from States import NewTTN, NewPost, NewClientDiscount, NewPaymentData, NewProps, NewTemplate, \
     MergeOrderState
-from handlers.client_handler import show_clients
+from handlers.client_handler import make_client
 from labels import AdminLabels
 from notifications import (
     ttn_update_notification, unknown_error_notifications, no_connection_with_server_notification,
@@ -42,6 +42,15 @@ from utils.inline import inline_paginator
 from logger import logger
 from utils.utils import to_major
 admin_list = [516842877, 5783466675]
+
+# admin_id → list of orders for paginated card view
+_page_cache: dict[int, list] = {}
+# telegram_id → {orders, client} for client order pagination
+_client_page_cache: dict[int, dict] = {}
+# admin_id → list of clients for paginated client view
+_client_list_cache: dict[int, list] = {}
+# admin_id → list of discounts for paginated discount view
+_discount_cache: dict[int, list] = {}
 storage = MemoryStorage()
 
 bot = Bot(token=BOT_TOKEN, parse_mode="HTML", )
@@ -97,12 +106,8 @@ async def start_message(message: types.Message):
 
 
 
-@dp.message_handler(commands=['admin'])
-async def admin_panel(message):
-    if not check_admin_permission(message):
-        return await bot.send_message(message.chat.id, text=AdminLabels.notAdmin.value)
+def _build_admin_panel_markup() -> types.InlineKeyboardMarkup:
     markup_i = types.InlineKeyboardMarkup(row_width=1)
-
     markup_i.add(
         get_active_orders_button(),
         get_not_paid_along_time_button(),
@@ -111,9 +116,16 @@ async def admin_panel(message):
         get_make_post(),
         get_set_props(),
         get_props_info_button(),
-        types.InlineKeyboardButton("Шаблони", callback_data=templates_callback.new())
+        types.InlineKeyboardButton("Шаблони", callback_data=templates_callback.new()),
     )
-    return await bot.send_message(message.chat.id, text=AdminLabels.enter_notifications.value, reply_markup=markup_i)
+    return markup_i
+
+
+@dp.message_handler(commands=['admin'])
+async def admin_panel(message):
+    if not check_admin_permission(message):
+        return await bot.send_message(message.chat.id, text=AdminLabels.notAdmin.value)
+    return await bot.send_message(message.chat.id, text=AdminLabels.enter_notifications.value, reply_markup=_build_admin_panel_markup())
 
 
 
@@ -146,10 +158,8 @@ async def check_status(message):
         if len(active_orders) == 0:
             return await bot.send_message(telegram_id, "У вас немає замовлень")
 
-        await bot.send_message(telegram_id, f"Кількість ваших замовлень: {len(active_orders)}")
-
-        for order in active_orders:
-            await make_order(bot, telegram_id, order["items"], None, order, client)
+        _client_page_cache[telegram_id] = {"orders": active_orders, "client": client}
+        await _show_client_order_page(bot, telegram_id, 0)
     except TypeError as error:
         await send_error_log(bot, 516842877, error)
         await no_connection_with_server_notification(bot, message)
@@ -175,7 +185,7 @@ async def check_discount(message: types.Message):
     """
     try:
         telegram_id = message.chat.id
-        reply_text = "В магазині <b>Airbag “AutoDelivery”</b> діють накопичувальні знижки для гуртових покупців.\n\n"
+        reply_text = 'В магазині <b>Airbag "AutoDelivery"</b> діють накопичувальні знижки для гуртових покупців.\n\n'
         discounts_info = await get_discounts_info()
         
         clients = await get_client_by_tg_id(telegram_id)
@@ -289,41 +299,206 @@ async def merge_order_handler(message: types.Message, state: FSMContext):
 
 
 
-async def order_list_builder(bot, orders, admin_id, goods):
-    for order in orders:
-        notes_info = await manager_notes_builder(order, goods)  # {"text":goods_info, "client": base_client}
+def _build_order_action_kb(order: dict) -> types.InlineKeyboardMarkup:
+    kb = types.InlineKeyboardMarkup(row_width=1)
+    if not order["ttn"]:
+        kb.add(types.InlineKeyboardButton("Додати ttn", callback_data=f"add_ttn/{order['id']}"))
+    else:
+        kb.add(
+            types.InlineKeyboardButton("Оновити ttn", callback_data=f"add_ttn/{order['id']}"),
+            get_check_ttn_button(order['ttn']),
+        )
+    if order['prepayment'] and order['is_paid'] == 0:
+        kb.add(get_to_not_prepayment_button(order['id']))
+        kb.add(get_make_paid_button(order['id']))
+    kb.add(
+        get_deactive_order_button(order['id']),
+        get_delete_order_button(order['id']),
+        get_merge_order_button(order['id']),
+    )
+    return kb
 
-        markup_i = types.InlineKeyboardMarkup(row_width=1)
-        deactivate_button = get_deactive_order_button(order['id'])
-        delete_button = get_delete_order_button(order['id'])
-        merge_button = get_merge_order_button(order['id'])
 
-        if not order["ttn"]:
-            add_ttn_button = types.InlineKeyboardButton("Додати ttn", callback_data=f"add_ttn/{order['id']}")
-            markup_i.add(add_ttn_button)
+async def _show_order_page(bot, admin_id: int, chat_id: int, index: int, message_id: int | None = None):
+    orders = _page_cache.get(admin_id, [])
+    if not orders:
+        text = "Список замовлень порожній або застарів — відкрийте знову."
+        if message_id:
+            await bot.edit_message_text(text, chat_id, message_id)
         else:
-            add_ttn_button = types.InlineKeyboardButton("Оновити ttn", callback_data=f"add_ttn/{order['id']}")
-            check_ttn_button = get_check_ttn_button(order['ttn'])
-            markup_i.add(add_ttn_button, check_ttn_button)
-        if order['prepayment']:
-            if order['is_paid'] == 0:
-                to_not_prepayment_button = get_to_not_prepayment_button(order['id'])
-                markup_i.add(to_not_prepayment_button)
-                markup_i.add(get_make_paid_button(order['id']))
+            await bot.send_message(chat_id, text)
+        return
 
-        markup_i.add(deactivate_button, delete_button, merge_button)
-        await bot.send_message(admin_id, text=notes_info["text"], reply_markup=markup_i)
+    total = len(orders)
+    index = max(0, min(index, total - 1))
+    order = orders[index]
+
+    notes_info = await manager_notes_builder(order, None)
+    action_kb = _build_order_action_kb(order)
+
+    def _nav(label: str, new_idx: int) -> types.InlineKeyboardButton:
+        if 0 <= new_idx < total and new_idx != index:
+            return types.InlineKeyboardButton(label, callback_data=f"order_nav/{new_idx}")
+        return types.InlineKeyboardButton("·", callback_data="noop")
+
+    final_kb = types.InlineKeyboardMarkup(row_width=5)
+    final_kb.row(
+        _nav("⏪", index - 5),
+        _nav("⬅️", index - 1),
+        types.InlineKeyboardButton(f"📋 {index + 1}/{total}", callback_data="noop"),
+        _nav("➡️", index + 1),
+        _nav("⏩", index + 5),
+    )
+    for row in action_kb.inline_keyboard:
+        final_kb.row(*row)
+    final_kb.row(types.InlineKeyboardButton("🔙 Панель", callback_data="back_to_admin"))
+
+    text = notes_info["text"]
+    if message_id:
+        try:
+            await bot.edit_message_text(text, chat_id, message_id, reply_markup=final_kb, parse_mode="HTML")
+        except Exception:
+            await bot.send_message(chat_id, text, reply_markup=final_kb, parse_mode="HTML")
+    else:
+        await bot.send_message(chat_id, text, reply_markup=final_kb, parse_mode="HTML")
 
 
-async def edit_discount(telegram_id):
-    discounts_info = await get_discounts_info()
-    for discount in discounts_info:
-        markup_i = types.InlineKeyboardMarkup()
-        delete_discount = types.InlineKeyboardButton("Видалити знижку ❌",
-                                                     callback_data=f"delete_discount/{discount['id']}")
-        markup_i.add(delete_discount)
-        await bot.send_message(telegram_id, f"<b>{discount['month_payment']} грн</b> — <b>{discount['percentage']}%</b>",
-                               reply_markup=markup_i)
+async def order_list_builder(bot, orders, admin_id, goods, message_id=None):
+    if not orders:
+        await bot.send_message(admin_id, "Немає замовлень для відображення")
+        return
+    _page_cache[admin_id] = list(orders)
+    await _show_order_page(bot, admin_id, admin_id, 0, message_id)
+
+
+async def _show_client_order_page(bot, telegram_id: int, index: int, message_id: int | None = None):
+    data = _client_page_cache.get(telegram_id)
+    if not data:
+        text = "Замовлень не знайдено або кеш застарів. Спробуйте ще раз."
+        if message_id:
+            try:
+                await bot.edit_message_text(text, telegram_id, message_id)
+            except Exception:
+                await bot.send_message(telegram_id, text)
+        else:
+            await bot.send_message(telegram_id, text)
+        return
+
+    orders = data["orders"]
+    client = data["client"]
+    total = len(orders)
+    index = max(0, min(index, total - 1))
+    order = orders[index]
+
+    nav_kb = None
+    if total > 1:
+        def _cnav(label: str, new_idx: int) -> types.InlineKeyboardButton:
+            if 0 <= new_idx < total and new_idx != index:
+                return types.InlineKeyboardButton(label, callback_data=f"client_order_nav/{new_idx}")
+            return types.InlineKeyboardButton("·", callback_data="noop")
+
+        nav_kb = types.InlineKeyboardMarkup(row_width=3)
+        nav_kb.row(
+            _cnav("⬅️", index - 1),
+            types.InlineKeyboardButton(f"📦 {index + 1}/{total}", callback_data="noop"),
+            _cnav("➡️", index + 1),
+        )
+
+    await make_order(bot, telegram_id, order["items"], None, order, client, message_id, nav_kb)
+
+
+async def _show_client_list_page(bot, admin_id: int, chat_id: int, index: int, message_id: int | None = None):
+    clients = _client_list_cache.get(admin_id, [])
+    if not clients:
+        text = "Клієнтів не знайдено."
+        if message_id:
+            try:
+                await bot.edit_message_text(text, chat_id, message_id)
+            except Exception:
+                await bot.send_message(chat_id, text)
+        else:
+            await bot.send_message(chat_id, text)
+        return
+
+    total = len(clients)
+    index = max(0, min(index, total - 1))
+    client = clients[index]
+
+    text = await make_client(client)
+
+    def _nav(label: str, new_idx: int) -> types.InlineKeyboardButton:
+        if 0 <= new_idx < total and new_idx != index:
+            return types.InlineKeyboardButton(label, callback_data=f"client_list_nav/{new_idx}")
+        return types.InlineKeyboardButton("·", callback_data="noop")
+
+    final_kb = types.InlineKeyboardMarkup(row_width=5)
+    final_kb.row(
+        _nav("⏪", index - 5),
+        _nav("⬅️", index - 1),
+        types.InlineKeyboardButton(f"👤 {index + 1}/{total}", callback_data="noop"),
+        _nav("➡️", index + 1),
+        _nav("⏩", index + 5),
+    )
+    final_kb.row(get_add_month_payment_button(client['id']))
+    final_kb.row(types.InlineKeyboardButton("🔙 Панель", callback_data="back_to_admin"))
+
+    if message_id:
+        try:
+            await bot.edit_message_text(text, chat_id, message_id, reply_markup=final_kb)
+        except Exception:
+            await bot.send_message(chat_id, text, reply_markup=final_kb)
+    else:
+        await bot.send_message(chat_id, text, reply_markup=final_kb)
+
+
+async def _show_discount_page(bot, admin_id: int, chat_id: int, index: int, message_id: int | None = None):
+    discounts = _discount_cache.get(admin_id, [])
+
+    if not discounts:
+        text = "Знижок немає.\nДодайте нову у форматі <code>сума@відсоток</code>, наприклад <code>1000@2</code>"
+        kb = types.InlineKeyboardMarkup()
+        kb.add(types.InlineKeyboardButton("🔙 Панель", callback_data="back_to_admin"))
+        if message_id:
+            try:
+                await bot.edit_message_text(text, chat_id, message_id, reply_markup=kb, parse_mode="HTML")
+            except Exception:
+                await bot.send_message(chat_id, text, reply_markup=kb, parse_mode="HTML")
+        else:
+            await bot.send_message(chat_id, text, reply_markup=kb, parse_mode="HTML")
+        return
+
+    total = len(discounts)
+    index = max(0, min(index, total - 1))
+    discount = discounts[index]
+
+    text = (
+        f"<b>Знижки</b>\n\n"
+        f"💰 Від <b>{discount['month_payment']} грн</b> — <b>{discount['percentage']}%</b>\n\n"
+        f"Щоб додати нову: <code>сума@відсоток</code>"
+    )
+
+    def _nav(label: str, new_idx: int) -> types.InlineKeyboardButton:
+        if 0 <= new_idx < total and new_idx != index:
+            return types.InlineKeyboardButton(label, callback_data=f"discount_nav/{new_idx}")
+        return types.InlineKeyboardButton("·", callback_data="noop")
+
+    final_kb = types.InlineKeyboardMarkup(row_width=3)
+    if total > 1:
+        final_kb.row(
+            _nav("⬅️", index - 1),
+            types.InlineKeyboardButton(f"💎 {index + 1}/{total}", callback_data="noop"),
+            _nav("➡️", index + 1),
+        )
+    final_kb.row(types.InlineKeyboardButton("Видалити ❌", callback_data=f"delete_discount/{discount['id']}"))
+    final_kb.row(types.InlineKeyboardButton("🔙 Панель", callback_data="back_to_admin"))
+
+    if message_id:
+        try:
+            await bot.edit_message_text(text, chat_id, message_id, reply_markup=final_kb, parse_mode="HTML")
+        except Exception:
+            await bot.send_message(chat_id, text, reply_markup=final_kb, parse_mode="HTML")
+    else:
+        await bot.send_message(chat_id, text, reply_markup=final_kb, parse_mode="HTML")
 
     markup_i = types.InlineKeyboardMarkup()
     add_discount = types.InlineKeyboardButton("Додати знижку ➕", callback_data=f"new_discount")
@@ -646,6 +821,53 @@ async def on_startup(dp):
     asyncio.create_task(client_updates(bot, admin_list))
 
 
+@dp.callback_query_handler(lambda c: c.data == 'noop')
+async def noop_handler(callback: types.CallbackQuery):
+    await callback.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith('order_nav/'))
+async def order_nav_handler(callback: types.CallbackQuery):
+    index = int(callback.data.split('/')[1])
+    await callback.answer()
+    await _show_order_page(bot, callback.from_user.id, callback.message.chat.id, index, callback.message.message_id)
+
+
+@dp.callback_query_handler(lambda c: c.data == 'back_to_admin')
+async def back_to_admin_handler(callback: types.CallbackQuery):
+    await callback.answer()
+    try:
+        await bot.edit_message_text(
+            chat_id=callback.message.chat.id,
+            message_id=callback.message.message_id,
+            text=AdminLabels.enter_notifications.value,
+            reply_markup=_build_admin_panel_markup(),
+        )
+    except Exception:
+        await bot.send_message(callback.message.chat.id, text=AdminLabels.enter_notifications.value, reply_markup=_build_admin_panel_markup())
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith('client_list_nav/'))
+async def client_list_nav_handler(callback: types.CallbackQuery):
+    index = int(callback.data.split('/')[1])
+    await callback.answer()
+    await _show_client_list_page(bot, callback.from_user.id, callback.message.chat.id, index, callback.message.message_id)
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith('discount_nav/'))
+async def discount_nav_handler(callback: types.CallbackQuery):
+    index = int(callback.data.split('/')[1])
+    await callback.answer()
+    await _show_discount_page(bot, callback.from_user.id, callback.message.chat.id, index, callback.message.message_id)
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith('client_order_nav/'))
+async def client_order_nav_handler(callback: types.CallbackQuery):
+    index = int(callback.data.split('/')[1])
+    await callback.answer()
+    await _show_client_order_page(bot, callback.from_user.id, index, callback.message.message_id)
+
+
 @dp.callback_query_handler()
 async def callback_admin_panel(callback: types.CallbackQuery, state: FSMContext):
     # try:
@@ -657,50 +879,66 @@ async def callback_admin_panel(callback: types.CallbackQuery, state: FSMContext)
             logger.info(f"Active orders: {len(active_orders)}")
             if not active_orders:
                 return await bot.send_message(admin_id, text="На данний момент немає активних замовлень")
-            await order_list_builder(bot, active_orders, admin_id, goods)
+            await order_list_builder(bot, active_orders, admin_id, goods, callback.message.message_id)
 
         if callback.data == "show_all_clients":
-            await show_clients(callback.message, bot)
+            all_clients = await get_all_clients()
+            if not all_clients:
+                return await bot.send_message(admin_id, "Клієнтів не знайдено")
+            _client_list_cache[admin_id] = all_clients
+            await _show_client_list_page(bot, admin_id, callback.message.chat.id, 0, callback.message.message_id)
 
         if "check_order/" in callback.data:
             order_id = await id_spliter(callback.data)
             order = [await get_order_by_id(order_id)]
-            await order_list_builder(bot, order, callback.message.chat.id, goods)
+            await order_list_builder(bot, order, callback.message.chat.id, goods, callback.message.message_id)
 
         if callback.data == "discount_info":
             await check_discount(callback.message)
 
         if "make_paid/" in callback.data:
             order_id = await id_spliter(callback.data)
-            order = await get_order_by_id(order_id)
-            admin_text = f"Чудово, тепер перевірте замовлення в remonline №{order_id}!"
-            client_text = f"Дякую, ви успішно оплатили замовлення №{order_id}!"
             await make_pay_order(int(order_id))
-            await bot.send_message(order['telegram_id'], client_text)
-            await bot.send_message(callback.message.chat.id, admin_text)
+            await callback.answer(f"Замовлення #{order_id} оплачено ✅")
+            fresh_order = await get_order_by_id(order_id)
+            if fresh_order and fresh_order.get('telegram_id'):
+                await bot.send_message(fresh_order['telegram_id'], f"Дякую, ви успішно оплатили замовлення №{order_id}!")
+            cached = _page_cache.get(admin_id, [])
+            idx = next((i for i, o in enumerate(cached) if o['id'] == order_id), None)
+            if idx is not None and fresh_order:
+                _page_cache[admin_id][idx] = fresh_order
+                await _show_order_page(bot, admin_id, callback.message.chat.id, idx, callback.message.message_id)
 
 
         if "deactivate_order/" in callback.data:
             order_id = await id_spliter(callback.data)
             order = await get_order_by_id(order_id)
-
             response = await finish_order(order_id)
             if not response:
                 return None
-            if response:
-                client_text = f"Дякуємо за замовлення <b>№{order['id']}</b>!\nДо нових зустрічей у AirBag “AutoDelivery” 💛💙"
-                await bot.send_message(admin_id,
-                                       text="Замовлення успішно закрито. Не забудьте змінити статус замовлення на remonline!")
+            try:
+                await bot.delete_message(callback.message.chat.id, callback.message.message_id)
+            except Exception:
+                pass
+            cached = _page_cache.get(admin_id, [])
+            _page_cache[admin_id] = [o for o in cached if o['id'] != order_id]
+            await callback.answer("Замовлення закрито ✅")
+            if order and order.get('telegram_id'):
+                client_text = f'Дякуємо за замовлення <b>№{order["id"]}</b>!\nДо нових зустрічей у AirBag "AutoDelivery" 💛💙'
                 await bot.send_message(order['telegram_id'], client_text)
-            else:
-                await unknown_error_notifications(bot, admin_id)
 
         if "to_not_prepayment/" in callback.data:
             order_id = await id_spliter(callback.data)
-            order = await get_order_by_id(order_id)
             await change_to_not_prepayment(order_id)
-            await change_to_not_prepayment_notifications(bot, order_id, callback.message.chat.id)
-            await change_to_not_prepayment_notifications(bot, order_id, order['telegram_id'])
+            await callback.answer(f"Тип замовлення #{order_id} змінено на накладений платіж ✅")
+            fresh_order = await get_order_by_id(order_id)
+            if fresh_order and fresh_order.get('telegram_id'):
+                await change_to_not_prepayment_notifications(bot, order_id, fresh_order['telegram_id'])
+            cached = _page_cache.get(admin_id, [])
+            idx = next((i for i, o in enumerate(cached) if o['id'] == order_id), None)
+            if idx is not None and fresh_order:
+                _page_cache[admin_id][idx] = fresh_order
+                await _show_order_page(bot, admin_id, callback.message.chat.id, idx, callback.message.message_id)
         if "check_ttn/" in callback.data:
             ttn = await id_spliter(callback.data)
             order = await get_order_by_ttn(ttn)
@@ -727,6 +965,10 @@ async def callback_admin_panel(callback: types.CallbackQuery, state: FSMContext)
             await state.set_state(MergeOrderState.target_order_id.state)
             client_orders = list(filter(lambda order_obj: order_obj['id'] != order_id, await get_active_orders_by_telegram_id(order['telegram_id'])))
             await state.update_data(source_order_id=order_id, order=order, orders=client_orders, goods=goods)
+            try:
+                await bot.delete_message(callback.message.chat.id, callback.message.message_id)
+            except Exception:
+                pass
             kb = types.InlineKeyboardMarkup()
             kb.add(types.InlineKeyboardButton("Поєднати з", switch_inline_query_current_chat='merge'))
             await bot.send_message(callback.message.chat.id, 'Натисність, щоб переглянути замовлення доступні до поєднання', reply_markup=kb)
@@ -737,10 +979,17 @@ async def callback_admin_panel(callback: types.CallbackQuery, state: FSMContext)
             order_id = await id_spliter(callback.data)
             order = await get_order_by_id(order_id)
             response = await delete_order(order_id)
-            markup_i = types.InlineKeyboardMarkup().add(get_our_contact_button())
             if not response:
                 return None
+            try:
+                await bot.delete_message(callback.message.chat.id, callback.message.message_id)
+            except Exception:
+                pass
+            # remove from cache so navigation skips deleted order
+            cached = _page_cache.get(admin_id, [])
+            _page_cache[admin_id] = [o for o in cached if o['id'] != order_id]
             if response:
+                markup_i = types.InlineKeyboardMarkup().add(get_our_contact_button())
                 client_text = f"<b>На жаль, ми не дочекалися підтвердження Вашого замовлення №{order_id} 😟</b>" \
                               f"\nЗамовлення видалено, чекаємо на Ваше повернення! 😀"
                 if callback.message.chat.id in admin_list:
@@ -754,7 +1003,7 @@ async def callback_admin_panel(callback: types.CallbackQuery, state: FSMContext)
             orders = await unpaid_overdue()
             if not orders:
                 return await bot.send_message(admin_id, text="Наразі немає несплачених замовлень, з передплатою")
-            await order_list_builder(bot, orders, admin_id, goods)
+            await order_list_builder(bot, orders, admin_id, goods, callback.message.message_id)
 
         if callback.data == "Зв‘язок":
             await show_info(callback)
@@ -772,17 +1021,20 @@ async def callback_admin_panel(callback: types.CallbackQuery, state: FSMContext)
 
 
         if callback.data == "edit_discount":
-            await edit_discount(callback.message.chat.id)
+            discounts = await get_discounts_info()
+            _discount_cache[admin_id] = discounts
+            await _show_discount_page(bot, admin_id, callback.message.chat.id, 0, callback.message.message_id)
 
         if "delete_discount/" in callback.data:
             discount_id = await id_spliter(callback.data)
             response = await delete_discount(discount_id)
             if not response:
-                return None
-            if response:
-                await bot.send_message(callback.message.chat.id, text="Знижку було успішно видалено!")
-            else:
-                await unknown_error_notifications(bot, callback.message.chat.id)
+                return await unknown_error_notifications(bot, callback.message.chat.id)
+            await callback.answer("Знижку видалено ✅")
+            discounts = await get_discounts_info()
+            _discount_cache[admin_id] = discounts
+            idx = max(0, len(discounts) - 1)
+            await _show_discount_page(bot, admin_id, callback.message.chat.id, idx, callback.message.message_id)
 
         if callback.data == "new_discount":
             await bot.send_message(callback.message.chat.id, text="Очікую нові дані")
@@ -794,8 +1046,11 @@ async def callback_admin_panel(callback: types.CallbackQuery, state: FSMContext)
 
 
         if callback.data == "show_client_info":
-            message = callback.message
-            await show_clients(message, bot)
+            all_clients = await get_all_clients()
+            if not all_clients:
+                return await bot.send_message(admin_id, "Клієнтів не знайдено")
+            _client_list_cache[admin_id] = all_clients
+            await _show_client_list_page(bot, admin_id, callback.message.chat.id, 0, callback.message.message_id)
 
         if "add_client_monthpayment/" in callback.data:
             client_id = await id_spliter(callback.data)
