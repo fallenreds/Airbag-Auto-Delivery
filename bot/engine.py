@@ -13,15 +13,13 @@ def find_good(goods:list[dict], good_id:int):
         if good["id"] == good_id:
             return good
 
-async def make_order(bot, telegram_id, order_items, goods, order, client):
-    #TODO: Вероятно не будет работать или кривые числа будут после qantity
+async def make_order(bot, telegram_id, order_items, goods, order, client, message_id=None, extra_kb=None):
     markup_i = types.InlineKeyboardMarkup(row_width=2)
 
     text = f"<b>Номер замовлення</b> {order['id']}\n<b>Ім'я:</b> {order['name']}\n<b>Прізвище</b>: {order['last_name']}\n<b>Адреса доставки:</b> {order['nova_post_address']} \n"
     if ttn := order['ttn']:
         text += f"<b>Номер ТТН</b>: {ttn}\n"
-        check_ttn_button = get_check_ttn_button(order['ttn'])
-        markup_i.add(check_ttn_button)
+        markup_i.add(get_check_ttn_button(order['ttn']))
 
     if order["prepayment"]:
         text += '<b>Тип платежу:</b> Передплата\n'
@@ -33,35 +31,45 @@ async def make_order(bot, telegram_id, order_items, goods, order, client):
         text += '<b>Тип платежу:</b> Накладений платіж\n\n'
     to_pay = 0
 
-
     for good in order_items:
         to_pay += good["original_price_minor"] * good['quantity']
         text += f"<b>Товар:</b> {good['title']} - Кількість: {good['quantity']}\n\n"
-    
-    
+
     discounts_info = await get_discount(client["id"])
     percent = 0
-
     if discounts_info:
         percent = discounts_info.get('discount_percentage')
-        to_pay -= to_pay * percent / 100 
+        to_pay -= to_pay * percent / 100
 
     if not order['is_paid']:
         text += f"<b>До сплати {to_major(to_pay)}💳</b>"
 
     if order['prepayment'] == 1 and order['is_paid'] == 0:
-        delete_button = get_delete_order_button(order['id'])
-        markup_i.add(delete_button)
+        markup_i.add(get_delete_order_button(order['id']))
 
     if order["prepayment"] and not order["is_paid"]:
-        props: dict
-        with open('props.json', "r", encoding='utf-8') as f:
-            props = json.load(f)
         text += "\n\nДля того щоб отримати реквізити натисніть на кнопку <b>Переглянути реквізити👇</b>" \
                 "\nПісля сплати замовлення натисніть кнопку <b>Відправити фото з оплатою</b>"
         markup_i.add(get_props_info_button())
         markup_i.add(get_send_payment_photo_button(order['id']))
-    await bot.send_message(telegram_id, text=text, reply_markup=markup_i)
+
+    if extra_kb:
+        combined = types.InlineKeyboardMarkup(row_width=2)
+        for row in extra_kb.inline_keyboard:
+            combined.row(*row)
+        for row in markup_i.inline_keyboard:
+            combined.row(*row)
+        markup_i = combined
+
+    if message_id:
+        try:
+            return await bot.edit_message_text(
+                chat_id=telegram_id, message_id=message_id, text=text,
+                reply_markup=markup_i, parse_mode="HTML",
+            )
+        except Exception:
+            pass
+    return await bot.send_message(telegram_id, text=text, reply_markup=markup_i)
 
 async def base_client_info_builder(client):
     print(client)
