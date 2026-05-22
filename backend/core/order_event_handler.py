@@ -29,14 +29,16 @@ def order_event_handler():
 
 
 def process_order(remonline_order: dict, local_order: Order):
-    TTN = None
     if "закрито" in remonline_order["status"]["name"].lower():
-        local_order.is_completed = True
-        OrderEvent.objects.create(
-            type=OrderEventType.FINISHED,
-            order=local_order,
-            details="Order marked as completed",
-        )
+        if not local_order.is_completed:
+            local_order.is_completed = True
+            local_order.save(update_fields=["is_completed"])
+            OrderEvent.objects.create(
+                type=OrderEventType.FINISHED,
+                order=local_order,
+                details="Order marked as completed",
+            )
+        return
 
     TTN = parse_engineer_notes(remonline_order.get("engineer_notes", ""))
 
@@ -49,9 +51,12 @@ def process_order(remonline_order: dict, local_order: Order):
         )
 
     if TTN is not None:
-        ttn_data = {"DocumentNumber": TTN, "Phone": local_order.phone}
-        ttn_details = get_ttn_details([ttn_data]).get("data")[0]
-        if ttn_details["StatusCode"] in (9, 10):
+        try:
+            ttn_details = get_ttn_details([{"DocumentNumber": TTN, "Phone": local_order.phone}]).get("data")[0]
+        except Exception:
+            return local_order.save()
+
+        if ttn_details["StatusCode"] in (9, 10) and not local_order.is_completed:
             local_order.is_completed = True
             OrderEvent.objects.create(
                 type=OrderEventType.FINISHED,
@@ -59,7 +64,7 @@ def process_order(remonline_order: dict, local_order: Order):
                 details="Order marked as completed due to TTN status",
             )
 
-        if ttn_details["StatusCode"] in (7,):
+        elif ttn_details["StatusCode"] in (7,):
             if local_order.branch_remember_count == 0 or (
                 local_order.branch_remember_count == 1
                 and one_day_difference(local_order)
