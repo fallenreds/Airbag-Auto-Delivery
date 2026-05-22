@@ -19,6 +19,8 @@ async def new_order_notification(bot, order, admin_list):
     await send_messages_to_admins(bot, admin_list, "Нове замовлення в remonline успішно створено!")
 
 async def merge_order_notification(bot, oder:dict):
+    if not oder.get('telegram_id'):
+        return
     await bot.send_message(oder['telegram_id'], f"Декілька ваших замовлень були об'єднані в замовлення {oder['id']}.")
 
 async def ttn_update_notification(bot, order):
@@ -48,6 +50,8 @@ async def order_in_branch_reminder_notifications(bot, order, remember_time):
 
 
 async def new_order_client_notification(bot, order):
+    if not order.get('telegram_id'):
+        return
     try:
         await check_status_notification(bot, order['telegram_id'], order)
     except Exception as error:
@@ -60,8 +64,10 @@ async def no_connection_with_server_notification(bot, message):
 
 
 async def order_in_branch_notifications(bot, order):
+    if not order.get('telegram_id'):
+        return
     try:
-        message_text = f"Ваше замовлення №{order['id']} від <b>Airbag “Autodelivery”</b> прибуло у відділення."
+        message_text = f”Ваше замовлення №{order['id']} від <b>Airbag “Autodelivery”</b> прибуло у відділення.”
         markup_i = types.InlineKeyboardMarkup()
         markup_i.add(get_check_ttn_button(order['ttn']))
         await update_branch_remember_count(order['id'])
@@ -72,22 +78,25 @@ async def order_in_branch_notifications(bot, order):
 
 async def deactivated_notifications(bot, order, admin_list):
     try:
-        client_text = f"Дякуємо за замовлення <b>№{order['id']}</b>!\nДо нових зустрічей у AirBag “AutoDelivery” 💛💙"
-        admin_text = f"Вітаю, замовлення №{order['id']} успішно завершенo."
-        await bot.send_message(order['telegram_id'], client_text)
+        admin_text = f”Вітаю, замовлення №{order['id']} успішно завершенo.”
         await send_messages_to_admins(bot, admin_list, admin_text)
+        if not order.get('telegram_id'):
+            return
+        client_text = f”Дякуємо за замовлення <b>№{order['id']}</b>!\nДо нових зустрічей у AirBag “AutoDelivery” 💛💙”
+        await bot.send_message(order['telegram_id'], client_text)
     except Exception as error:
         await send_error_log(bot, 516842877, error)
 
 
 async def deleted_notifications(bot, order, reason:str|None, admin_list):
     try:
-        client_text = f"<b>Ваше замовлення №{order['id']} було видалено адміністратором🗑.</b>\n{reason if reason else ''}"
-
         admin_text = f"Шановний адміністратов, замовлення №{order['id']} успішно видалено."
+        await send_messages_to_admins(bot, admin_list, admin_text)
+        if not order.get('telegram_id'):
+            return
+        client_text = f"<b>Ваше замовлення №{order['id']} було видалено адміністратором🗑.</b>\n{reason if reason else ''}"
         markup_i = types.InlineKeyboardMarkup().add(get_our_contact_button())
         await bot.send_message(order['telegram_id'], client_text, reply_markup=markup_i)
-        await send_messages_to_admins(bot, admin_list, admin_text)
     except Exception as error:
         await send_error_log(bot, 516842877, error)
 
