@@ -67,7 +67,7 @@ async def order_in_branch_notifications(bot, order):
     if not order.get('telegram_id'):
         return
     try:
-        message_text = f'Ваше замовлення №{order[“id”]} від <b>Airbag “Autodelivery”</b> прибуло у відділення.'
+        message_text = f"Ваше замовлення №{order['id']} від <b>Airbag \"Autodelivery\"</b> прибуло у відділення."
         markup_i = types.InlineKeyboardMarkup()
         markup_i.add(get_check_ttn_button(order['ttn']))
         await update_branch_remember_count(order['id'])
@@ -78,11 +78,11 @@ async def order_in_branch_notifications(bot, order):
 
 async def deactivated_notifications(bot, order, admin_list):
     try:
-        admin_text = f”Вітаю, замовлення №{order['id']} успішно завершенo.”
+        admin_text = f"Вітаю, замовлення №{order['id']} успішно завершенo."
         await send_messages_to_admins(bot, admin_list, admin_text)
         if not order.get('telegram_id'):
             return
-        client_text = f'Дякуємо за замовлення <b>№{order[“id”]}</b>!\nДо нових зустрічей у AirBag “AutoDelivery” 💛💙'
+        client_text = f'Дякуємо за замовлення <b>№{order["id"]}</b>!\nДо нових зустрічей у AirBag "AutoDelivery” 💛💙'
         await bot.send_message(order['telegram_id'], client_text)
     except Exception as error:
         await send_error_log(bot, 516842877, error)
