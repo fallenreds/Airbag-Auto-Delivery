@@ -1,3 +1,8 @@
+import hashlib
+import random
+from datetime import date
+
+from django.core.cache import cache
 from django.db.models import Case, IntegerField, Value, When
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
@@ -28,6 +33,55 @@ class GoodViewSet(viewsets.ModelViewSet):
         if self.request.method in ("GET", "HEAD", "OPTIONS"):
             return [AllowAny()]
         return [IsAdminUser()]
+
+    @action(detail=False, methods=["GET"], permission_classes=[AllowAny], url_path="featured")
+    def featured(self, request):
+        today = date.today().isoformat()
+        cache_key = f"featured_goods:{today}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return Response(cached)
+
+        all_cats = list(GoodCategory.objects.all())
+        cat_map = {c.id_remonline: {"local_id": c.id, "children": []} for c in all_cats}
+        roots = []
+        for c in all_cats:
+            if c.parent_id is None:
+                roots.append(c.id_remonline)
+            elif c.parent_id in cat_map:
+                cat_map[c.parent_id]["children"].append(c.id_remonline)
+
+        def subtree_local_ids(rem_id):
+            node = cat_map.get(rem_id)
+            if node is None:
+                return []
+            result = [node["local_id"]]
+            for child_rem in node["children"]:
+                result.extend(subtree_local_ids(child_rem))
+            return result
+
+        seed = int(hashlib.md5(today.encode()).hexdigest(), 16) % (2**32)
+        slots_per_cat = max(2, 12 // max(len(roots), 1))
+        selected = []
+
+        for rem_id in roots:
+            local_ids = subtree_local_ids(rem_id)
+            goods = list(Good.objects.filter(category_id__in=local_ids, residue__gt=0))
+            rng = random.Random(seed ^ rem_id)
+            rng.shuffle(goods)
+            selected.extend(goods[:slots_per_cat])
+
+        if len(selected) < 12:
+            seen_ids = {g.id for g in selected}
+            extra = list(Good.objects.filter(residue__gt=0).exclude(id__in=seen_ids))
+            rng = random.Random(seed)
+            rng.shuffle(extra)
+            selected.extend(extra[:12 - len(selected)])
+
+        serializer = GoodSerializer(selected[:12], many=True, context={"request": request})
+        data = serializer.data
+        cache.set(cache_key, data, timeout=86400)
+        return Response(data)
 
 
 class GoodCategoryViewSet(viewsets.ModelViewSet):
