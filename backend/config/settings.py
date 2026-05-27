@@ -52,10 +52,10 @@ REMONLINE_TOGETHERBUY_CUSTOM_FIELD_ID = os.getenv(
 PRICE_ID_PROD = os.getenv("PRICE_ID_PROD")
 BONUS_ID = os.getenv("BONUS_ID")
 DELETE_ORDER_STATUS_ID = os.getenv("DELETE_ORDER_STATUS_ID")  # Used for merge orders
-_CATEGORIES_IGNORE_IDS_RAW = os.getenv("CATEGORIES_IGNORE_IDS", "")
-CATEGORIES_IGNORE_IDS = [
+_CATEGORIES_WHITELIST_IDS_RAW = os.getenv("CATEGORIES_WHITELIST_IDS", "")
+CATEGORIES_WHITELIST_IDS = [
     int(t)
-    for t in [x.strip() for x in _CATEGORIES_IGNORE_IDS_RAW.split(",")]
+    for t in [x.strip() for x in _CATEGORIES_WHITELIST_IDS_RAW.split(",")]
     if t.strip().isdigit()
 ]
 

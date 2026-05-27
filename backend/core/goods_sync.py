@@ -8,7 +8,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from django.db import transaction
 
 from config.settings import (
-    CATEGORIES_IGNORE_IDS,
+    CATEGORIES_WHITELIST_IDS,
     PRICE_ID_PROD,
     REMONLINE_API_KEY,
     REMONLINE_TOGETHERBUY_CUSTOM_FIELD_ID,
@@ -29,19 +29,19 @@ def sync_categories()->list[GoodCategory]:
     """
     Синхронизирует категории с Remonline
     Возвращает текущий список категорий
-    Игорирует ненужные категории (включая дочерние)
+    Синхронизирует только категории из вайтлиста (включая дочерние)
     Удаляет категории которые уже не существуют в ремонлайн
-    Удаляет категории которые игнорируются
+    Удаляет категории которые не входят в вайтлист
     Обновляет категории которые изменились
     Добавляет категории которые есть в ремонлайн и нет в БД
     """
     remonline = RemonlineInterface(REMONLINE_API_KEY)
     remonline_categories_data = remonline.get_categories()
-    # Корневые игнорируемые категории (указываешь ты)
-    ignore_root_ids = set(CATEGORIES_IGNORE_IDS)
+    # Корневые разрешённые категории
+    whitelist_root_ids = set(CATEGORIES_WHITELIST_IDS)
 
-    # Полный список ID, которые нужно игнорировать (включая потомков)
-    ignored_ids = get_ignored_category_ids(remonline_categories_data, ignore_root_ids)
+    # Полный список ID, которые нужно синхронизировать (включая потомков)
+    allowed_ids = get_allowed_category_ids(remonline_categories_data, whitelist_root_ids)
 
     # Категории из БД
     db_categories = GoodCategory.objects.all()
@@ -54,8 +54,8 @@ def sync_categories()->list[GoodCategory]:
     for category in remonline_categories_data:
         cat_id = category["id"]
 
-        # Пропускаем игнорируемые
-        if cat_id in ignored_ids:
+        # Пропускаем категории не из вайтлиста
+        if cat_id not in allowed_ids:
             continue
 
         existing = current_map.get(cat_id)
@@ -77,19 +77,17 @@ def sync_categories()->list[GoodCategory]:
                 existing.parent_id = category.get("parent_id")
                 categories_to_update.append(existing)
 
-    # ID категорий, которые реально должны быть в БД по данным Remonline (без игнорируемых)
+    # ID категорий, которые реально должны быть в БД (только из вайтлиста)
     remonline_ids = {
         c["id"]
         for c in remonline_categories_data
-        if c["id"] not in ignored_ids
+        if c["id"] in allowed_ids
     }
 
     db_ids = {c.id_remonline for c in db_categories}
 
-    # Удаляем:
-    # 1) всё, что попало в игнор
-    # 2) всё, чего больше нет в Remonline среди неигнорируемых
-    ids_to_delete = (db_ids & ignored_ids) | (db_ids - remonline_ids)
+    # Удаляем всё, чего нет в вайтлисте или нет в Remonline
+    ids_to_delete = db_ids - remonline_ids
 
     with transaction.atomic():
         if ids_to_delete:
@@ -107,31 +105,31 @@ def sync_categories()->list[GoodCategory]:
     logger.info(f"Synced categories: {len(current_categories)}")
     return current_categories
 
-def get_ignored_category_ids(remonline_categories_data:list[dict], ignore_root_ids:set[int]):
+def get_allowed_category_ids(remonline_categories_data: list[dict], whitelist_root_ids: set[int]) -> set[int]:
     """
     remonline_categories_data: список dict-ов с полями "id", "parent_id"
-    ignore_root_ids: set/id категорий, от которых игнорируем всё поддерево
+    whitelist_root_ids: set id корневых категорий, которые нужно включить вместе со всеми потомками
     """
     # parent_id -> [child_id, ...]
     children_map = {}
     for cat in remonline_categories_data:
-        pid = cat.get("parent_id") #Ремонлайн отправляет без ключа если нет перента
+        pid = cat.get("parent_id")  # Remonline не присылает ключ если нет parent
         cid = cat["id"]
         children_map.setdefault(pid, []).append(cid)
 
-    ignored_ids = set(ignore_root_ids)
-    stack = list(ignore_root_ids)
+    allowed_ids = set(whitelist_root_ids)
+    stack = list(whitelist_root_ids)
 
-    # DFS/BFS по дереву от корневых игнорируемых категорий
+    # DFS по дереву от корневых разрешённых категорий
     while stack:
         current_id = stack.pop()
 
         for child_id in children_map.get(current_id, []):
-            if child_id not in ignored_ids:
-                ignored_ids.add(child_id)
+            if child_id not in allowed_ids:
+                allowed_ids.add(child_id)
                 stack.append(child_id)
 
-    return ignored_ids
+    return allowed_ids
 
 def sync_goods(categories: list[GoodCategory]) -> None:
     """
