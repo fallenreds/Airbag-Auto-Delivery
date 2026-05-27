@@ -82,6 +82,7 @@ REST_FRAMEWORK = {
     "DEFAULT_FILTER_BACKENDS": (
         "django_filters.rest_framework.DjangoFilterBackend",
         "core.filters.backend.UniversalFieldFilterBackend",
+        "rest_framework.filters.OrderingFilter",
     ),
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "core.authentication.ApiKeyAuthentication",

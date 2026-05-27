@@ -28,6 +28,7 @@ class GoodViewSet(viewsets.ModelViewSet):
     )
     serializer_class = GoodSerializer
     filterset_class = generate_filterset_for_model(Good)
+    ordering_fields = ['price_minor', 'title', 'residue']
 
     def get_permissions(self):
         if self.request.method in ("GET", "HEAD", "OPTIONS"):
