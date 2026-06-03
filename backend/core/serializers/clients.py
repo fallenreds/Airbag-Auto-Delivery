@@ -95,13 +95,16 @@ class ClientRegisterSerializer(serializers.ModelSerializer):
         client = Client.objects.create_user(**validated_data)
 
         # Create client in Remonline (only for new registrations, not for guest conversions)
-        name = validated_data.get("name", "")
+        first_name = validated_data.get("name", "")
+        last_name = validated_data.get("last_name", "")
         phone = validated_data.get("phone", "")
-        if name and phone:
+        address = validated_data.get("nova_post_address", "")
+        email = validated_data.get("email", "")
+        if first_name and phone:
             try:
                 remonline = RemonlineInterface(REMONLINE_API_KEY)
                 remonline_client = remonline.find_or_create_client(
-                    phone=phone, name=name
+                    phone=phone, first_name=first_name, last_name=last_name, address=address, email=email
                 )
                 logging.info(remonline_client)
                 # Update client with Remonline ID if available
