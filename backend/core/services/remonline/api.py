@@ -184,12 +184,12 @@ class RemonlineInterface:
             return "+38" + phone
         return phone
 
-    def create_client(self, name: str, phone: str, last_name: str = "", address: str = "", email: str = "") -> dict:
-        """Создает нового клиента: имя, прізвище (second_name), телефон, адрес, email"""
+    def create_client(self, first_name: str, phone: str, last_name: str = "", address: str = "", email: str = "") -> dict:
+        """Создает клиента в Remonline. Поля: first_name, last_name, phone[], address, email"""
         normalized_phone = self._normalize_phone(phone)
-        kwargs: dict = dict(name=name, phone=[normalized_phone])
+        kwargs: dict = dict(first_name=first_name, phone=[normalized_phone])
         if last_name:
-            kwargs["second_name"] = last_name
+            kwargs["last_name"] = last_name
         if address:
             kwargs["address"] = address
         if email:
@@ -200,15 +200,18 @@ class RemonlineInterface:
             **kwargs,
         )
 
-    def find_or_create_client(self, phone: str, name: str, last_name: str = "", address: str = "", email: str = "") -> dict:
-        """Ищет клиента по телефону или создает нового, если не найден"""
+    def find_or_create_client(self, phone: str, first_name: str, last_name: str = "", address: str = "", email: str = "") -> dict:
+        """Ищет клиента по телефону или создает нового с полными полями"""
         normalized_phone = self._normalize_phone(phone)
         existing = self.get_objects(
             "clients/", accepted_params_path="clients_params.json", phones=normalized_phone
         )
         if existing["data"]:
             return existing["data"][0]
-        self.create_client(name=name, phone=normalized_phone, last_name=last_name, address=address, email=email)
+        self.create_client(
+            first_name=first_name, phone=normalized_phone,
+            last_name=last_name, address=address, email=email
+        )
         new_client = self.get_objects(
             "clients/", accepted_params_path="clients_params.json", phones=normalized_phone
         )

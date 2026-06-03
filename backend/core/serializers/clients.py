@@ -104,7 +104,7 @@ class ClientRegisterSerializer(serializers.ModelSerializer):
             try:
                 remonline = RemonlineInterface(REMONLINE_API_KEY)
                 remonline_client = remonline.find_or_create_client(
-                    phone=phone, name=first_name, last_name=last_name, address=address, email=email
+                    phone=phone, first_name=first_name, last_name=last_name, address=address, email=email
                 )
                 logging.info(remonline_client)
                 # Update client with Remonline ID if available
