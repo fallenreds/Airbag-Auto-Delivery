@@ -172,25 +172,43 @@ class RemonlineInterface:
             "clients/", accepted_params_path="clients_params.json"
         ).get("data", [])
 
-    def create_client(self, name: str, phone: str) -> dict:
-        """Создает нового клиента по имени и телефону"""
+    @staticmethod
+    def _normalize_phone(phone: str) -> str:
+        """Normalize phone to +380XXXXXXXXX format"""
+        phone = (phone or "").replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+        if phone.startswith("+380"):
+            return phone
+        if phone.startswith("380"):
+            return "+" + phone
+        if phone.startswith("0") and len(phone) == 10:
+            return "+38" + phone
+        return phone
+
+    def create_client(self, name: str, phone: str, address: str = "", email: str = "") -> dict:
+        """Создает нового клиента с заполненными полями: имя, телефон, адрес, email"""
+        normalized_phone = self._normalize_phone(phone)
+        kwargs = dict(name=name, phone=[normalized_phone])
+        if address:
+            kwargs["address"] = address
+        if email:
+            kwargs["email"] = email
         return self.post_objects(
             "clients/",
             accepted_params_path="new_client.json",
-            name=name,
-            phone=[phone],
+            **kwargs,
         )
 
-    def find_or_create_client(self, phone: str, name: str) -> dict:
+    def find_or_create_client(self, phone: str, name: str, address: str = "", email: str = "") -> dict:
         """Ищет клиента по телефону или создает нового, если не найден"""
+        normalized_phone = self._normalize_phone(phone)
         existing = self.get_objects(
-            "clients/", accepted_params_path="clients_params.json", phones=phone
+            "clients/", accepted_params_path="clients_params.json", phones=normalized_phone
         )
         if existing["data"]:
             return existing["data"][0]
-        self.create_client(name=name, phone=phone)
+        self.create_client(name=name, phone=normalized_phone, address=address, email=email)
         new_client = self.get_objects(
-            "clients/", accepted_params_path="clients_params.json", phones=phone
+            "clients/", accepted_params_path="clients_params.json", phones=normalized_phone
         )
         return new_client["data"][0]
 

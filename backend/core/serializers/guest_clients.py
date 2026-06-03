@@ -53,14 +53,18 @@ class GuestClientSerializer(serializers.ModelSerializer):
         # Create guest with required and optional data
         guest_client = Client.objects.create_guest(**validated_data)
 
-        # Create client in Remonline
-        name = validated_data.get("name", "")
+        # Create client in Remonline with full fields
+        first_name = validated_data.get("name", "")
+        last_name = validated_data.get("last_name", "")
+        full_name = f"{first_name} {last_name}".strip() or first_name
         phone = validated_data.get("phone", "")
-        if name and phone:
+        address = validated_data.get("nova_post_address", "")
+        email = validated_data.get("email", "")
+        if full_name and phone:
             try:
                 remonline = RemonlineInterface(REMONLINE_API_KEY)
                 remonline_client = remonline.find_or_create_client(
-                    phone=phone, name=name
+                    phone=phone, name=full_name, address=address, email=email
                 )
 
                 # Update guest client with Remonline ID if available
