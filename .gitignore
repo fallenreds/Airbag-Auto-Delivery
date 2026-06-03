@@ -11,3 +11,12 @@ backend/googlepay_monobank_test.html
 .vscode/
 bot/logs/
 cloudflared.rpm
+
+# Claude Code working files
+.claude-screenshots/
+.playwright-mcp/
+*.playwright.png
+
+# doc-gen skill: ignore all working files except the JSON structure
+.docgen/**
+!.docgen/doc-structure.json

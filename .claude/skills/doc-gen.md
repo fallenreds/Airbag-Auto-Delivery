@@ -96,8 +96,12 @@ Store as:
 }
 ```
 
-> ⚠️ `doc-structure.json` is already in `.gitignore`. The token is stored there in plaintext —
-> never commit this file, never put token in Confluence.
+> 📁 **File storage policy:**
+> - All working files go into `.docgen/` folder (screenshots, logs, temp files)
+> - `.docgen/**` is in `.gitignore` — nothing is committed except one file
+> - `doc-structure.json` **IS committed** to git (tracks feature inventory and hashes for incremental runs)
+> - The Atlassian token stored in `doc-structure.json` must be removed before committing — store separately in `.env`
+> - After Phase 0, always run: `git add .docgen/doc-structure.json` to stage only the JSON structure
 
 After collecting everything, show summary and wait for confirmation:
 ```
