@@ -1,0 +1,107 @@
+{
+  "includeCoAuthoredBy": false,
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git branch:*)",
+      "Bash(git fetch:*)",
+      "Bash(git show:*)",
+      "Bash(git stash list:*)",
+      "Bash(git rev-parse:*)",
+
+      "Bash(make help:*)",
+      "Bash(make setup:*)",
+      "Bash(make test:*)",
+      "Bash(make lint:*)",
+      "Bash(make format:*)",
+      "Bash(make migrate:*)",
+      "Bash(make logs:*)",
+      "Bash(make ps:*)",
+
+      "Bash(python backend/manage.py test:*)",
+      "Bash(python backend/manage.py check:*)",
+      "Bash(python backend/manage.py migrate:*)",
+      "Bash(python backend/manage.py makemigrations:*)",
+      "Bash(python backend/manage.py shell:*)",
+      "Bash(python backend/manage.py collectstatic:*)",
+      "Bash(python backend/manage.py runserver:*)",
+      "Bash(pip install:*)",
+      "Bash(pip list:*)",
+
+      "Bash(pnpm install:*)",
+      "Bash(pnpm typecheck:*)",
+      "Bash(pnpm lint:*)",
+      "Bash(pnpm test:*)",
+      "Bash(pnpm build:*)",
+      "Bash(pnpm prettier:*)",
+      "Bash(npx shadcn:*)",
+
+      "Bash(docker compose ps:*)",
+      "Bash(docker compose logs:*)",
+      "Bash(docker compose exec:*)",
+
+      "Bash(gh pr list:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(gh issue view:*)",
+      "Bash(gh workflow view:*)",
+      "Bash(gh workflow list:*)",
+      "Bash(gh repo view:*)",
+
+      "Read",
+      "Glob",
+      "Grep",
+
+      "WebFetch(domain:docs.djangoproject.com)",
+      "WebFetch(domain:docs.python.org)",
+      "WebFetch(domain:docs.anthropic.com)",
+      "WebFetch(domain:docs.sentry.io)",
+      "WebFetch(domain:nextjs.org)",
+      "WebFetch(domain:ui.shadcn.com)",
+      "WebFetch(domain:tailwindcss.com)"
+    ],
+    "deny": [
+      "Bash(git push --force:*)",
+      "Bash(rm -rf /:*)",
+      "Bash(sudo:*)",
+      "Bash(curl * | bash:*)",
+      "Bash(curl * | sh:*)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/post-edit.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/pre-bash.sh"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/session-start.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
