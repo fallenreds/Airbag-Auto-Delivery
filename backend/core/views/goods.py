@@ -1,6 +1,6 @@
 import hashlib
 import random
-from datetime import date
+from datetime import date, datetime
 
 from django.core.cache import cache
 from django.db.models import Case, IntegerField, Value, When
@@ -37,8 +37,10 @@ class GoodViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["GET"], permission_classes=[AllowAny], url_path="featured")
     def featured(self, request):
-        today = date.today().isoformat()
-        cache_key = f"featured_goods:{today}"
+        now = datetime.now()
+        # 15-minute bucket: changes order every 15 minutes
+        bucket = now.strftime("%Y-%m-%d-%H") + f"-{(now.minute // 15) * 15:02d}"
+        cache_key = f"featured_goods:{bucket}"
         cached = cache.get(cache_key)
         if cached is not None:
             return Response(cached)
@@ -61,7 +63,7 @@ class GoodViewSet(viewsets.ModelViewSet):
                 result.extend(subtree_local_ids(child_rem))
             return result
 
-        seed = int(hashlib.md5(today.encode()).hexdigest(), 16) % (2**32)
+        seed = int(hashlib.md5(bucket.encode()).hexdigest(), 16) % (2**32)
         slots_per_cat = max(2, 12 // max(len(roots), 1))
         selected = []
 
@@ -81,7 +83,7 @@ class GoodViewSet(viewsets.ModelViewSet):
 
         serializer = GoodSerializer(selected[:12], many=True, context={"request": request})
         data = serializer.data
-        cache.set(cache_key, data, timeout=86400)
+        cache.set(cache_key, data, timeout=900)  # 15 minutes
         return Response(data)
 
 
