@@ -1,3 +1,4 @@
+import logging
 import requests
 from django.utils import timezone
 
@@ -7,24 +8,37 @@ from config.settings import (
 from core.models import Order, OrderEvent, OrderEventType
 from core.services.remonline.api import RemonlineInterface
 
+logger = logging.getLogger(__name__)
+
 
 def order_event_handler():
     # Get active orders with valid remonline_order_id
-    active_local_orders = Order.objects.filter(
-        is_completed=False, remonline_order_id__isnull=False
+    active_local_orders = list(
+        Order.objects.filter(is_completed=False, remonline_order_id__isnull=False)
     )
-    if not active_local_orders.exists():
+    if not active_local_orders:
         return  # No orders to process
 
     # Get remonline orders data for valid orders
-    active_remonline_orders = RemonlineInterface(REMONLINE_API_KEY).get_orders_by_ids(
+    remonline_orders_list = RemonlineInterface(REMONLINE_API_KEY).get_orders_by_ids(
         ids=[order.remonline_order_id for order in active_local_orders]
     )
 
-    # Process each order with its corresponding remonline data
-    for remonline_order, local_order in zip(
-        active_remonline_orders, active_local_orders
-    ):
+    # Build lookup dict by remonline id for O(1) matching
+    remonline_by_id = {ro["id"]: ro for ro in remonline_orders_list}
+
+    for local_order in active_local_orders:
+        remonline_order = remonline_by_id.get(local_order.remonline_order_id)
+
+        if remonline_order is None:
+            # Order was deleted in Remonline — delete locally too
+            logger.info(
+                "Order %s (remonline_id=%s) not found in Remonline, deleting locally",
+                local_order.id, local_order.remonline_order_id,
+            )
+            local_order.delete()
+            continue
+
         process_order(remonline_order, local_order)
 
 
