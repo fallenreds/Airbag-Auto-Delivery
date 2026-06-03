@@ -158,7 +158,7 @@ class OrderCreateSerializer(serializers.ModelSerializer):
             f"Телефон: {order.phone}\n"
             f"Адреса: {order.nova_post_address}\n"
             f"Коментар: {order.description if order.description else 'Відсутній'}\n"
-            f"Тип платежа: {'Предоплата' if order.prepayment else 'Накладений платеж'}\n"
+            f"Тип платежа: {'Передоплата' if order.prepayment else ('Оплата в магазині' if not order.nova_post_address or not order.nova_post_address.strip() else 'Накладений платіж')}\n"
             f"Знижка клієнта {discount_info['discount_percentage']}%\n"
             f"Сума до сплати {Good.convert_minore_to_major(order.subtotal_minor)} UAH\n"
             f"До сплати зі знижкою: {Good.convert_minore_to_major(order.grand_total_minor)} UAH"
