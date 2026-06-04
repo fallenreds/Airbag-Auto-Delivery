@@ -1,9 +1,13 @@
 import asyncio
+import os
+from io import BytesIO
+from urllib.parse import urlparse
 
+import aiohttp
 from aiogram import types
 
-
-from api import update_branch_remember_count, get_order_by_id, get_client_by_id, ttn_tracking
+import config
+from api import update_branch_remember_count, get_order_by_id, get_client_by_id, ttn_tracking, headers
 from buttons import get_check_ttn_button, get_our_contact_button, get_show_discount_info_button, get_status_button, \
     get_make_paid_button, get_to_not_prepayment_button
 from engine import send_messages_to_admins, send_error_log, make_order
@@ -20,27 +24,70 @@ async def new_order_notification(bot, order, admin_list):
     await send_messages_to_admins(bot, admin_list, "Нове замовлення в remonline успішно створено!")
 
 
+IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.heic', '.heif'}
+
+
+async def _download_payment_document(doc_url: str):
+    """Download the payment document from backend. Returns (bytes, filename) or (None, None)."""
+    if not doc_url:
+        return None, None
+    # payment_document arrives as absolute URL (e.g. http://localhost:8000/media/...),
+    # but the bot must reach the backend via its own base_url (http://backend:8000/).
+    path = urlparse(doc_url).path  # /media/payment_docs/xxx.png
+    filename = os.path.basename(path) or "payment_document"
+    fetch_url = f"{config.BASE_URL.rstrip('/')}/{path.lstrip('/')}"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(fetch_url, headers=headers) as resp:
+                if resp.status != 200:
+                    return None, None
+                data = await resp.read()
+                return data, filename
+    except Exception:
+        return None, None
+
+
 async def payment_doc_uploaded_notification(bot, order, admin_list):
-    """Notify admins that a client uploaded a bank-transfer payment document for review."""
+    """Notify admins that a client uploaded a bank-transfer payment document for review.
+
+    The document is sent as a Telegram photo (if image) or document (otherwise),
+    not as a plain link.
+    """
     if not order:
         return
-    text = (
+
+    caption = (
         f"💰 <b>Надійшла оплата за реквізитами</b>\n\n"
         f"Замовлення №{order['id']}\n"
         f"Клієнт: {order.get('name', '')} {order.get('last_name', '')}\n"
-        f"Телефон: {order.get('phone', '')}\n"
+        f"Телефон: {order.get('phone', '')}\n\n"
+        f"Перевірте оплату та підтвердіть її, або змініть тип оплати 👇"
     )
-    if order.get('payment_document'):
-        text += f"\n📎 Документ про оплату: {order['payment_document']}\n"
-    text += "\nПеревірте оплату та підтвердіть її, або змініть тип оплати 👇"
 
     markup_i = types.InlineKeyboardMarkup(row_width=1)
     markup_i.add(get_make_paid_button(order['id']))
     markup_i.add(get_to_not_prepayment_button(order['id']))
 
+    doc_url = order.get('payment_document')
+    data, filename = await _download_payment_document(doc_url)
+    is_image = bool(filename) and os.path.splitext(filename)[1].lower() in IMAGE_EXTS
+
     for admin in admin_list:
         try:
-            await bot.send_message(admin, text=text, reply_markup=markup_i, parse_mode="HTML")
+            if data:
+                if is_image:
+                    await bot.send_photo(
+                        admin, photo=types.InputFile(BytesIO(data), filename=filename),
+                        caption=caption, reply_markup=markup_i, parse_mode="HTML",
+                    )
+                else:
+                    await bot.send_document(
+                        admin, document=types.InputFile(BytesIO(data), filename=filename),
+                        caption=caption, reply_markup=markup_i, parse_mode="HTML",
+                    )
+            else:
+                # Fallback: no file available — send text only
+                await bot.send_message(admin, text=caption, reply_markup=markup_i, parse_mode="HTML")
         except Exception:
             pass
 
