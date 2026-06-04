@@ -9,6 +9,17 @@ from core.services.discount_service import DiscountService
 from core.services.remonline import RemonlineInterface
 
 
+def get_payment_type_label(order: Order) -> str:
+    """Human-readable payment type for the order (Ukrainian)."""
+    if order.prepayment:
+        return "Передоплата"
+    if getattr(order, "bank_transfer", False):
+        return "Оплата за реквізитами"
+    if not order.nova_post_address or not order.nova_post_address.strip():
+        return "Оплата в магазині"
+    return "Накладений платіж"
+
+
 def build_manager_notes(order: Order, user: Client) -> str:
     client_id = user.id
     discount_info = DiscountService.get_client_discount_info(user)
@@ -18,7 +29,7 @@ def build_manager_notes(order: Order, user: Client) -> str:
         f"Телефон: {order.phone}\n"
         f"Адреса: {order.nova_post_address}\n"
         f"Коментар: {order.description if order.description else 'Відсутній'}\n"
-        f"Тип платежа: {'Передоплата' if order.prepayment else ('Оплата в магазині' if not order.nova_post_address or not order.nova_post_address.strip() else 'Накладений платіж')}\n"
+        f"Тип платежа: {get_payment_type_label(order)}\n"
         f"Знижка клієнта {discount_info['discount_percentage']}%\n"
         f"Сума до сплати {Good.convert_minore_to_major(order.subtotal_minor)} UAH\n"
         f"До сплати зі знижкою: {Good.convert_minore_to_major(order.grand_total_minor)} UAH"

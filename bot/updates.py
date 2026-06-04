@@ -58,6 +58,17 @@ async def order_updates(bot, admin_list):
 
                     if record['type'] == "IN_BRANCH" and order['branch_remember_count'] <= 1:
                         await order_in_branch_notifications(bot, order)
+
+                    if record['type'] == "PAYMENT_DOC_UPLOADED":
+                        doc_url = order.get('payment_document') or ''
+                        await send_messages_to_admins(
+                            bot, admin_list,
+                            f"💳 Клієнт прикріпив документ про оплату за реквізитами до замовлення #{order['id']}.\n"
+                            f"ПІБ: {order['name']} {order['last_name']}\n"
+                            f"Телефон: {order['phone']}\n"
+                            f"Документ: {doc_url}\n\n"
+                            f"Перевірте оплату та позначте замовлення оплаченим або змініть тип оплати."
+                        )
                         
                     if record['type'] == "remonline timeout error":
                         await send_messages_to_admins(admin_ids=admin_list, text=f"Запит на створення замовлення {record['order_id']} був надісланий, але Remonline не дала відповідь. Почекайте автоматичне створення.")

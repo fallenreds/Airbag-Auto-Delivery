@@ -251,6 +251,8 @@ class Order(models.Model):
     nova_post_address = models.TextField()
 
     prepayment = models.BooleanField(default=False)
+    bank_transfer = models.BooleanField(default=False)
+    payment_document = models.FileField(upload_to='payment_docs/', null=True, blank=True)
     is_paid = models.BooleanField(default=False)
     ttn = models.TextField(blank=True, null=True)
     is_completed = models.BooleanField(default=False)
@@ -317,6 +319,7 @@ class OrderEventType:
     PAYMENT_CONFIRMED = "PAYMENT_CONFIRMED"
     REMONLINE_CREATED = "REMONLINE_CREATED"
     PAYMENT_TYPE_CHANGED = "PAYMENT_TYPE_CHANGED"
+    PAYMENT_DOC_UPLOADED = "PAYMENT_DOC_UPLOADED"
 
     CHOICES = [
         (MERGED, "Merged"),
@@ -328,6 +331,7 @@ class OrderEventType:
         (PAYMENT_CONFIRMED, "Payment Confirmed"),
         (REMONLINE_CREATED, "Remonline Created"),
         (PAYMENT_TYPE_CHANGED, "Payment Type Changed"),
+        (PAYMENT_DOC_UPLOADED, "Payment Document Uploaded"),
     ]
 
 
@@ -343,6 +347,24 @@ class OrderEvent(models.Model):
         related_name="order_events",
     )
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class BankDetails(models.Model):
+    """Bank details for 'pay by bank transfer' payment method. Single active record."""
+    full_name = models.CharField(max_length=255, blank=True, default="")
+    card_number = models.CharField(max_length=64, blank=True, default="")
+    account_number = models.CharField(max_length=64, blank=True, default="")
+    edrpou = models.CharField(max_length=32, blank=True, default="")
+    payment_purpose = models.CharField(max_length=255, blank=True, default="")
+    is_active = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Bank Details"
+        verbose_name_plural = "Bank Details"
+
+    def __str__(self):
+        return f"{self.full_name} — {self.card_number}"
 
 
 # ===== Cart =====
