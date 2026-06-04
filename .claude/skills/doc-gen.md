@@ -18,6 +18,26 @@ enum values. Every feature gets 4–9 screenshots showing distinct UI states.
 
 ## Phase 0 — Load / initialize state
 
+### 0.0 Ensure working folder + gitignore (ALWAYS run first)
+
+All screenshots and working files live in `.docgen/`. Create the folders if missing,
+and make sure `.docgen/` is git-ignored (except `doc-structure.json`). Idempotent —
+safe to run every time:
+
+```bash
+mkdir -p .docgen/screenshots
+# Add ignore rule only if it's not already present
+grep -qxF '.docgen/**' .gitignore 2>/dev/null || cat >> .gitignore <<'EOF'
+
+# doc-gen skill working files (screenshots, logs) — keep only the JSON structure
+.docgen/**
+!.docgen/doc-structure.json
+EOF
+```
+
+Never write screenshots or temp files outside `.docgen/`. Every screenshot path
+in this skill is `.docgen/screenshots/<feature-id>-<state>.png`.
+
 ### 0.1 Check for `.docgen/doc-structure.json`
 
 ```bash
