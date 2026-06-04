@@ -5,6 +5,7 @@ from django.urls import path, reverse
 from django.utils.html import format_html
 
 from .models import (
+    BankDetails,
     BotVisitor,
     Cart,
     CartItem,
@@ -18,6 +19,12 @@ from .models import (
     OrderEvent,
     Template,
 )
+
+
+@admin.register(BankDetails)
+class BankDetailsAdmin(admin.ModelAdmin):
+    list_display = ("full_name", "card_number", "account_number", "is_active", "updated_at")
+    list_editable = ("is_active",)
 
 
 @admin.register(Good)

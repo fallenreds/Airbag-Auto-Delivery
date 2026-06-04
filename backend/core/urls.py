@@ -27,6 +27,7 @@ from .views import (
     TemplateViewSet,
 )
 from .views.guest_clients import GuestClientCreationView
+from .views.orders import bank_details
 
 router = DefaultRouter()
 router.register(r"clients", ClientViewSet)
@@ -56,4 +57,5 @@ urlpatterns = router.urls + [
     path("telegram/link/consume/", TelegramLinkConsumeView.as_view(), name="telegram_link_consume"),
     path("telegram/auto-link", TelegramAutoLinkView.as_view(), name="telegram_auto_link"),
     path("payments/", include("payments.urls")),
+    path("bank-details/", bank_details, name="bank_details"),
 ]

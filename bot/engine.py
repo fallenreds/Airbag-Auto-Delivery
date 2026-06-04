@@ -27,6 +27,14 @@ async def make_order(bot, telegram_id, order_items, goods, order, client, messag
             text += '<b>Статус оплати:</b> Оплачено\n\n'
         else:
             text += '<b>Статус оплати:</b> Потребує оплати\n\n'
+    elif order.get('bank_transfer'):
+        text += '<b>Тип платежу:</b> Оплата за реквізитами\n'
+        if order['is_paid'] == 1:
+            text += '<b>Статус оплати:</b> Оплачено\n\n'
+        else:
+            text += '<b>Статус оплати:</b> Потребує перевірки\n\n'
+        if order.get('payment_document'):
+            text += f"<b>Документ про оплату:</b> {order['payment_document']}\n\n"
     else:
         is_pickup = not order.get('nova_post_address', '').strip()
         payment_label = 'Оплата в магазині' if is_pickup else 'Накладений платіж'
@@ -96,7 +104,14 @@ async def manager_notes_builder(order, goods) -> dict:
     phone = f"{order['phone']}"
     address = f"{order['nova_post_address']}"
     _is_pickup = not order.get('nova_post_address', '').strip()
-    prepayment = "Передплата" if order["prepayment"] else ("Оплата в магазині" if _is_pickup else "Накладений платіж")
+    if order["prepayment"]:
+        prepayment = "Передплата"
+    elif order.get('bank_transfer'):
+        prepayment = "Оплата за реквізитами"
+    elif _is_pickup:
+        prepayment = "Оплата в магазині"
+    else:
+        prepayment = "Накладений платіж"
     description = order.get('description')
 
     order_suma = await build_order_suma(order)

@@ -4,7 +4,7 @@ from rest_framework import serializers
 
 from core.models import Client, Good, Order, OrderEvent, OrderItem
 from core.services.discount_service import DiscountService
-from core.services.order_sync import sync_order_to_remonline
+from core.services.order_sync import get_payment_type_label, sync_order_to_remonline
 
 from .common import validate_currency, validate_nonneg_int
 
@@ -83,6 +83,7 @@ class OrderCreateSerializer(serializers.ModelSerializer):
     phone = serializers.CharField(required=True)
     nova_post_address = serializers.CharField(required=True)
     prepayment = serializers.BooleanField(required=True)
+    bank_transfer = serializers.BooleanField(required=False, default=False)
     description = serializers.CharField(
         required=False, allow_blank=True, allow_null=True
     )
@@ -95,6 +96,7 @@ class OrderCreateSerializer(serializers.ModelSerializer):
             "phone",
             "nova_post_address",
             "prepayment",
+            "bank_transfer",
             "description",
             "items",
         ]
@@ -158,7 +160,7 @@ class OrderCreateSerializer(serializers.ModelSerializer):
             f"Телефон: {order.phone}\n"
             f"Адреса: {order.nova_post_address}\n"
             f"Коментар: {order.description if order.description else 'Відсутній'}\n"
-            f"Тип платежа: {'Передоплата' if order.prepayment else ('Оплата в магазині' if not order.nova_post_address or not order.nova_post_address.strip() else 'Накладений платіж')}\n"
+            f"Тип платежа: {get_payment_type_label(order)}\n"
             f"Знижка клієнта {discount_info['discount_percentage']}%\n"
             f"Сума до сплати {Good.convert_minore_to_major(order.subtotal_minor)} UAH\n"
             f"До сплати зі знижкою: {Good.convert_minore_to_major(order.grand_total_minor)} UAH"
@@ -265,6 +267,8 @@ class OrderSerializer(serializers.ModelSerializer):
             "name",
             "last_name",
             "prepayment",
+            "bank_transfer",
+            "payment_document",
             "phone",
             "nova_post_address",
             "description",

@@ -2,9 +2,10 @@
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status, viewsets
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied, ValidationError
-from rest_framework.permissions import IsAdminUser, IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
+from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 from django.utils import timezone
 
@@ -229,6 +230,63 @@ class OrderViewSet(viewsets.ModelViewSet):
                 details="Payment type changed to postpayment",
             )
             sync_order_to_remonline(order)
+
+
+    @action(detail=True, methods=["POST"], permission_classes=[IsAuthenticated],
+            parser_classes=[MultiPartParser, FormParser], url_path="upload-payment-doc")
+    def upload_payment_doc(self, request, pk=None):
+        """Upload bank transfer payment confirmation document."""
+        order = self.get_object()
+        if not order.bank_transfer:
+            return Response({"detail": "Order is not a bank transfer order."}, status=400)
+
+        doc = request.FILES.get("document")
+        if not doc:
+            return Response({"detail": "No document provided."}, status=400)
+
+        order.payment_document = doc
+        order.save(update_fields=["payment_document"])
+
+        OrderEvent.objects.create(
+            type=OrderEventType.PAYMENT_DOC_UPLOADED,
+            order=order,
+            details=f"Payment document uploaded: {doc.name}",
+        )
+        return Response({"detail": "Document uploaded successfully.", "url": order.payment_document.url})
+
+
+BANK_DETAILS_FIELDS = ("full_name", "card_number", "account_number", "edrpou", "payment_purpose")
+
+
+def _serialize_bank_details(details):
+    return {f: getattr(details, f) for f in BANK_DETAILS_FIELDS}
+
+
+@api_view(["GET", "PATCH"])
+@permission_classes([AllowAny])
+def bank_details(request):
+    """
+    GET (public): return active bank details for bank transfer payment.
+    PATCH (admin only): update active bank details (used by Telegram bot and admin tools).
+    """
+    from core.models import BankDetails
+
+    if request.method == "PATCH":
+        if not (request.user and request.user.is_staff):
+            raise PermissionDenied("Only admin can change bank details.")
+        details = BankDetails.objects.filter(is_active=True).order_by("-updated_at").first()
+        if not details:
+            details = BankDetails(is_active=True)
+        for field in BANK_DETAILS_FIELDS:
+            if field in request.data:
+                setattr(details, field, request.data[field] or "")
+        details.save()
+        return Response(_serialize_bank_details(details))
+
+    details = BankDetails.objects.filter(is_active=True).order_by("-updated_at").first()
+    if not details:
+        return Response({"detail": "Bank details not configured."}, status=503)
+    return Response(_serialize_bank_details(details))
 
 
 class OrderItemViewSet(viewsets.ModelViewSet):
