@@ -277,6 +277,24 @@ async def delete_order(order_id):
             if resp.status in (200, 204):
                 return True
 
+
+async def get_bank_details():
+    """Fetch active bank details from backend (DB)."""
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f'{base_url}api/v2/bank-details/', headers=headers) as resp:
+            if resp.status == 200:
+                return await resp.json()
+            return None
+
+
+async def update_bank_details(data: dict):
+    """Update active bank details via backend (admin api-key)."""
+    async with aiohttp.ClientSession() as session:
+        async with session.patch(f'{base_url}api/v2/bank-details/', json=data, headers=headers) as resp:
+            if resp.status == 200:
+                return await resp.json()
+            return None
+
 async def merge_order(source_order_id, target_order_id):
     async with aiohttp.ClientSession() as session:
         async with session.post(

@@ -4,7 +4,7 @@ from api import get_order_updates, delete_order_updates, get_order_by_id, unpaid
     update_no_paid_remember_count, get_clients_updates, delete_client_update,get_client_by_id
 from buttons import get_our_contact_button, get_to_pay_button, get_no_paid_orders_button
 from engine import send_messages_to_admins
-from notifications import deleted_notifications, merge_order_notification, new_order_notification, new_order_client_notification, deactivated_notifications, ttn_update_notification, order_in_branch_notifications
+from notifications import deleted_notifications, merge_order_notification, new_order_notification, new_order_client_notification, deactivated_notifications, ttn_update_notification, order_in_branch_notifications, payment_doc_uploaded_notification
 import asyncio
 
 
@@ -58,6 +58,9 @@ async def order_updates(bot, admin_list):
 
                     if record['type'] == "IN_BRANCH" and order['branch_remember_count'] <= 1:
                         await order_in_branch_notifications(bot, order)
+
+                    if record['type'] == "PAYMENT_DOC_UPLOADED":
+                        await payment_doc_uploaded_notification(bot, order, admin_list)
 
                     if record['type'] == "PAYMENT_DOC_UPLOADED":
                         doc_url = order.get('payment_document') or ''

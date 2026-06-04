@@ -4,7 +4,8 @@ from aiogram import types
 
 
 from api import update_branch_remember_count, get_order_by_id, get_client_by_id, ttn_tracking
-from buttons import get_check_ttn_button, get_our_contact_button, get_show_discount_info_button, get_status_button
+from buttons import get_check_ttn_button, get_our_contact_button, get_show_discount_info_button, get_status_button, \
+    get_make_paid_button, get_to_not_prepayment_button
 from engine import send_messages_to_admins, send_error_log, make_order
 
 
@@ -17,6 +18,31 @@ async def check_status_notification(bot, telegram_id, order):
 
 async def new_order_notification(bot, order, admin_list):
     await send_messages_to_admins(bot, admin_list, "Нове замовлення в remonline успішно створено!")
+
+
+async def payment_doc_uploaded_notification(bot, order, admin_list):
+    """Notify admins that a client uploaded a bank-transfer payment document for review."""
+    if not order:
+        return
+    text = (
+        f"💰 <b>Надійшла оплата за реквізитами</b>\n\n"
+        f"Замовлення №{order['id']}\n"
+        f"Клієнт: {order.get('name', '')} {order.get('last_name', '')}\n"
+        f"Телефон: {order.get('phone', '')}\n"
+    )
+    if order.get('payment_document'):
+        text += f"\n📎 Документ про оплату: {order['payment_document']}\n"
+    text += "\nПеревірте оплату та підтвердіть її, або змініть тип оплати 👇"
+
+    markup_i = types.InlineKeyboardMarkup(row_width=1)
+    markup_i.add(get_make_paid_button(order['id']))
+    markup_i.add(get_to_not_prepayment_button(order['id']))
+
+    for admin in admin_list:
+        try:
+            await bot.send_message(admin, text=text, reply_markup=markup_i, parse_mode="HTML")
+        except Exception:
+            pass
 
 async def merge_order_notification(bot, oder:dict):
     if not oder.get('telegram_id'):
