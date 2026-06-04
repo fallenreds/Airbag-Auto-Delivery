@@ -367,8 +367,15 @@ async def get_order_by_ttn(ttn):
 
 
 async def change_to_not_prepayment(order_id):
+    # Reset both prepayment and bank_transfer so the order is treated as a plain
+    # postpayment (накладений платіж / оплата в магазині). Otherwise a leftover
+    # bank_transfer=True would still display "Оплата за реквізитами".
     async with aiohttp.ClientSession() as session:
-        async with session.patch(f'{base_url}api/v2/orders/{order_id}/', json={"prepayment": False}, headers=headers) as resp:
+        async with session.patch(
+            f'{base_url}api/v2/orders/{order_id}/',
+            json={"prepayment": False, "bank_transfer": False},
+            headers=headers,
+        ) as resp:
             if resp.status == 200:
                 return await resp.json()
 
