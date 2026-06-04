@@ -91,3 +91,11 @@ def get_show_discount_info_button():
 def get_props_info_button():
     return types.InlineKeyboardButton("Переглянути реквізити", callback_data="get_props_info")
 
+
+def get_payment_mode_button():
+    return types.InlineKeyboardButton("Режим оплати 💳", callback_data="payment_mode")
+
+
+def get_set_payment_mode_button(mode: str, title: str):
+    return types.InlineKeyboardButton(title, callback_data=f"set_payment_mode/{mode}")
+

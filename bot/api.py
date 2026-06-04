@@ -295,6 +295,28 @@ async def update_bank_details(data: dict):
                 return await resp.json()
             return None
 
+async def get_payment_mode():
+    """Fetch current payment mode (test/production) from backend."""
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f'{base_url}api/v2/payments/mode/', headers=headers) as resp:
+            if resp.status == 200:
+                return await resp.json()
+            logger.error(f"Failed to get payment mode: {resp.status} {await resp.text()}")
+            return None
+
+
+async def set_payment_mode(mode: str):
+    """Switch payment mode via backend (admin api-key). mode: 'test' | 'production'."""
+    async with aiohttp.ClientSession() as session:
+        async with session.patch(
+            f'{base_url}api/v2/payments/mode/', json={"mode": mode}, headers=headers
+        ) as resp:
+            if resp.status == 200:
+                return await resp.json()
+            logger.error(f"Failed to set payment mode: {resp.status} {await resp.text()}")
+            return None
+
+
 async def merge_order(source_order_id, target_order_id):
     async with aiohttp.ClientSession() as session:
         async with session.post(

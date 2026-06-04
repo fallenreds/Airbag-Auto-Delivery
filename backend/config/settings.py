@@ -64,6 +64,14 @@ MONOBANK_TOKEN = os.getenv("MONOBANK_TOKEN") #https://web.monobank.ua/ or gettin
 MONOBANK_WEBHOOK_URL_PATH = "monobank/webhook/payment-events/" # Webhook URL path for monobank payment events
 MONOBANK_WEBHOOK_KEY = os.getenv("MONOBANK_WEBHOOK_KEY")
 
+# Per-mode Monobank credentials. Активный режим выбирается в БД
+# (payments.PaymentSettings), а токены берутся отсюда. Fallback на общие
+# MONOBANK_TOKEN/MONOBANK_WEBHOOK_KEY — для обратной совместимости.
+MONOBANK_TOKEN_TEST = os.getenv("MONOBANK_TOKEN_TEST", MONOBANK_TOKEN)
+MONOBANK_TOKEN_PROD = os.getenv("MONOBANK_TOKEN_PROD", MONOBANK_TOKEN)
+MONOBANK_WEBHOOK_KEY_TEST = os.getenv("MONOBANK_WEBHOOK_KEY_TEST", MONOBANK_WEBHOOK_KEY)
+MONOBANK_WEBHOOK_KEY_PROD = os.getenv("MONOBANK_WEBHOOK_KEY_PROD", MONOBANK_WEBHOOK_KEY)
+
 # Celery settings
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/1")

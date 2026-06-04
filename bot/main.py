@@ -16,7 +16,7 @@ from api import (
     make_pay_order, merge_order, get_templates, create_template,
     get_template, update_ttn, unpaid_overdue, get_order_by_ttn,
     finish_order, ttn_tracking, change_to_not_prepayment, get_discount, delete_discount, get_all_clients,
-    get_bank_details, update_bank_details,
+    get_bank_details, update_bank_details, get_payment_mode, set_payment_mode,
 )
 from aiogram import Bot, Dispatcher, executor, filters, types
 
@@ -25,6 +25,7 @@ from buttons import (
     get_make_post, get_set_props, get_props_info_button, get_deactive_order_button, get_delete_order_button,
     get_merge_order_button, get_check_ttn_button, get_to_not_prepayment_button, get_make_paid_button,
     get_order_info_button, get_send_payment_photo_button, get_our_contact_button, get_add_month_payment_button,
+    get_payment_mode_button, get_set_payment_mode_button,
 )
 from config import BOT_TOKEN, WEB_URL
 from engine import manager_notes_builder, id_spliter, ttn_info_builder, send_error_log, make_order, show_order_goods
@@ -117,6 +118,7 @@ def _build_admin_panel_markup() -> types.InlineKeyboardMarkup:
         get_make_post(),
         get_set_props(),
         get_props_info_button(),
+        get_payment_mode_button(),
         types.InlineKeyboardButton("Шаблони", callback_data=templates_callback.new()),
     )
     return markup_i
@@ -577,6 +579,56 @@ async def get_props()->str:
 @dp.callback_query_handler(lambda call: call.data == "get_props_info")
 async def show_props(callback: types.CallbackQuery):
     await bot.send_message(callback.message.chat.id, await get_props())
+
+
+_PAYMENT_MODE_LABELS = {"test": "Тестовий 🧪", "production": "Бойовий 🟢"}
+
+
+@dp.callback_query_handler(lambda call: call.data == "payment_mode")
+async def show_payment_mode(callback: types.CallbackQuery):
+    if not check_admin_permission(callback.message):
+        return await callback.answer()
+
+    data = await get_payment_mode()
+    if not data:
+        return await bot.send_message(
+            callback.message.chat.id, "Не вдалося отримати режим оплати ❌"
+        )
+
+    current = data.get("mode")
+    current_label = _PAYMENT_MODE_LABELS.get(current, current)
+
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    # Кнопка для переключения на противоположный режим.
+    target = "production" if current == "test" else "test"
+    markup.add(
+        get_set_payment_mode_button(target, f"Переключити на: {_PAYMENT_MODE_LABELS[target]}")
+    )
+    await bot.send_message(
+        callback.message.chat.id,
+        f"Поточний режим оплати: <b>{current_label}</b>",
+        reply_markup=markup,
+    )
+
+
+@dp.callback_query_handler(lambda call: call.data.startswith("set_payment_mode/"))
+async def switch_payment_mode(callback: types.CallbackQuery):
+    if not check_admin_permission(callback.message):
+        return await callback.answer()
+
+    mode = callback.data.split("/", 1)[1]
+    data = await set_payment_mode(mode)
+    if not data:
+        return await bot.send_message(
+            callback.message.chat.id, "Не вдалося змінити режим оплати ❌"
+        )
+
+    new_label = _PAYMENT_MODE_LABELS.get(data.get("mode"), data.get("mode"))
+    await callback.answer("Режим змінено ✅")
+    await bot.send_message(
+        callback.message.chat.id,
+        f"Режим оплати змінено на: <b>{new_label}</b>",
+    )
 
 
 @dp.callback_query_handler(lambda call: call.data.startswith('add_ttn/'))

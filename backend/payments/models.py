@@ -1,6 +1,48 @@
 # payments/models.py
 from django.db import models
 
+
+class PaymentSettings(models.Model):
+    """Singleton-настройка режима оплаты (тестовый/боевой).
+
+    В БД хранится только режим; сами токены Monobank берутся из env
+    в зависимости от выбранного режима (см. payments.credentials).
+    """
+
+    class Mode(models.TextChoices):
+        TEST = "test", "Тестовий"
+        PRODUCTION = "production", "Бойовий"
+
+    mode = models.CharField(
+        max_length=16, choices=Mode.choices, default=Mode.TEST
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Налаштування оплати"
+        verbose_name_plural = "Налаштування оплати"
+
+    def __str__(self):
+        return f"PaymentSettings(mode={self.mode})"
+
+    def save(self, *args, **kwargs):
+        self.pk = 1  # singleton
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def load(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    @property
+    def is_production(self):
+        return self.mode == self.Mode.PRODUCTION
+
+    @property
+    def google_pay_environment(self):
+        return "PRODUCTION" if self.is_production else "TEST"
+
+
 class Payment(models.Model):
     STATUS_PENDING = "pending"
     STATUS_SUCCESS = "success"

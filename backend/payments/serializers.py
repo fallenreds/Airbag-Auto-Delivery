@@ -2,9 +2,10 @@ import logging
 
 from rest_framework import serializers
 
-from config.settings import MONOBANK_TOKEN, MONOBANK_WEBHOOK_URL_PATH, DOMAIN
+from config.settings import MONOBANK_WEBHOOK_URL_PATH, DOMAIN
 from core.models import Order
 
+from .credentials import get_active_monobank_credentials
 from .models import Payment
 from .mono import MonobankPaymentService
 from .googlepay import (
@@ -71,10 +72,11 @@ class PaymentCreateSerializer(serializers.Serializer):
         redirect_url = validated_data.get("redirect_url")
         success_url = validated_data.get("success_url")
         fail_url = validated_data.get("fail_url")
-        if not MONOBANK_TOKEN:
+        token, _ = get_active_monobank_credentials()
+        if not token:
             raise serializers.ValidationError("MONOBANK_TOKEN is not configured")
 
-        payment = MonobankPaymentService(token=MONOBANK_TOKEN).create_invoice(
+        payment = MonobankPaymentService(token=token).create_invoice(
             order,
             redirect_url=redirect_url,
             success_url=success_url,

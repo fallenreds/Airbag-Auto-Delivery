@@ -7,9 +7,10 @@ from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from config.settings import MONOBANK_TOKEN, MONOBANK_WEBHOOK_KEY
+from core.permissions import IsAdminUserCustom
 
-from .models import MonobankInvoiceEvent
+from .credentials import get_active_monobank_credentials
+from .models import MonobankInvoiceEvent, PaymentSettings
 from .mono import MonobankPaymentService
 from .serializers import (
     GooglePayWalletPaymentSerializer,
@@ -47,13 +48,14 @@ class GooglePayWalletPaymentView(APIView):
         # DRF returns dict, but type checkers don't always know that.
         data = cast(Dict[str, Any], serializer.validated_data)
 
-        if not MONOBANK_TOKEN:
+        token, _ = get_active_monobank_credentials()
+        if not token:
             return Response(
                 {"detail": "MONOBANK_TOKEN is not configured"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-        service = MonobankPaymentService(token=MONOBANK_TOKEN)
+        service = MonobankPaymentService(token=token)
 
         try:
             payment, mono_resp = service.pay_order_by_google_token(
@@ -76,6 +78,48 @@ class GooglePayWalletPaymentView(APIView):
         return Response(response_payload, status=status.HTTP_200_OK)
 
 
+class PaymentConfigView(APIView):
+    """Публичная (несекретная) конфигурация оплаты для фронта."""
+
+    authentication_classes = []
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        settings_obj = PaymentSettings.load()
+        return Response(
+            {
+                "mode": settings_obj.mode,
+                "google_pay_environment": settings_obj.google_pay_environment,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class PaymentModeView(APIView):
+    """Чтение и переключение режима оплаты (для Django admin и админ-бота)."""
+
+    permission_classes = [IsAdminUserCustom]
+
+    def get(self, request, *args, **kwargs):
+        settings_obj = PaymentSettings.load()
+        return Response({"mode": settings_obj.mode}, status=status.HTTP_200_OK)
+
+    def patch(self, request, *args, **kwargs):
+        mode = request.data.get("mode")
+        valid_modes = PaymentSettings.Mode.values
+        if mode not in valid_modes:
+            return Response(
+                {"detail": f"mode must be one of {valid_modes}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        settings_obj = PaymentSettings.load()
+        settings_obj.mode = mode
+        settings_obj.save()
+        logger.info("Payment mode switched to %s by %s", mode, request.user)
+        return Response({"mode": settings_obj.mode}, status=status.HTTP_200_OK)
+
+
 @method_decorator(csrf_exempt, name="dispatch")
 class MonobankWebhookView(APIView):
     authentication_classes = []
@@ -86,12 +130,13 @@ class MonobankWebhookView(APIView):
         Обработка событий от монобанка
         """
        
-        if not MONOBANK_TOKEN:
+        token, webhook_key = get_active_monobank_credentials()
+        if not token:
             return Response({"ok": False, "detail": "MONOBANK_TOKEN is not configured"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         payment_service = MonobankPaymentService(
-            token=MONOBANK_TOKEN,
-            webhook_key=MONOBANK_WEBHOOK_KEY,
+            token=token,
+            webhook_key=webhook_key,
         )
         
         
