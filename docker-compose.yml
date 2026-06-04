@@ -10,6 +10,12 @@ services:
     restart: unless-stopped
     env_file:
       - ./frontend/.env.local
+    environment:
+      # Server-side (SSR/sitemap/generateMetadata) reaches the backend via the
+      # compose network name — `localhost` inside this container is not the backend.
+      - API_BASE_URL_INTERNAL=http://backend:8000/api/v2
+    depends_on:
+      - backend
 
   backend:
     build: backend/
