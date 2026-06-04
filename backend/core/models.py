@@ -9,6 +9,8 @@ from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone  # keep import
 
+from core.text_utils import transliterate_slug
+
 # ===== Common =====
 
 
@@ -144,12 +146,24 @@ class GoodCategory(models.Model):
     id_remonline = models.BigIntegerField()
     title = models.CharField(max_length=255)
     parent_id = models.BigIntegerField(null=True, blank=True)
-    
+
     image = models.ImageField(
         upload_to="categories/",
         null=True,
         blank=True
     )
+
+    # ===== SEO =====
+    # Transliterated slug auto-derived from title (mirrors frontend slugify).
+    # Not unique: titles may repeat; routing relies on the trailing id.
+    slug = models.SlugField(max_length=280, blank=True, db_index=True)
+    meta_title = models.CharField(max_length=255, blank=True, null=True)
+    meta_description = models.TextField(blank=True, null=True)
+
+    def save(self, *args, **kwargs):
+        if not self.slug and self.title:
+            self.slug = transliterate_slug(self.title)
+        super().save(*args, **kwargs)
 
 
 class Good(models.Model):
@@ -178,6 +192,18 @@ class Good(models.Model):
         blank=True,
         related_name="goods",
     )
+
+    # ===== SEO =====
+    # Transliterated slug auto-derived from title (mirrors frontend slugify).
+    # Not unique: titles may repeat; routing relies on the trailing id.
+    slug = models.SlugField(max_length=280, blank=True, db_index=True)
+    meta_title = models.CharField(max_length=255, blank=True, null=True)
+    meta_description = models.TextField(blank=True, null=True)
+
+    def save(self, *args, **kwargs):
+        if not self.slug and self.title:
+            self.slug = transliterate_slug(self.title)
+        super().save(*args, **kwargs)
 
     @staticmethod
     def convert_minore_to_major(price_minor):
