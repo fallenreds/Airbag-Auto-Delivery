@@ -4,7 +4,7 @@ from api import get_order_updates, delete_order_updates, get_order_by_id, unpaid
     update_no_paid_remember_count, get_clients_updates, delete_client_update,get_client_by_id
 from buttons import get_our_contact_button, get_to_pay_button, get_no_paid_orders_button
 from engine import send_messages_to_admins
-from notifications import deleted_notifications, merge_order_notification, new_order_notification, new_order_client_notification, deactivated_notifications, ttn_update_notification, order_in_branch_notifications
+from notifications import deleted_notifications, merge_order_notification, new_order_notification, new_order_client_notification, deactivated_notifications, ttn_update_notification, order_in_branch_notifications, payment_doc_uploaded_notification
 import asyncio
 
 
@@ -43,10 +43,14 @@ async def order_updates(bot, admin_list):
                         await new_order_client_notification(bot, order)
 
                         if order['prepayment'] == 1:
-                            await send_messages_to_admins(bot, admin_list, "Створено нове замовлення з передплатою")
+                            payment_label = "передплата"
+                        elif order.get('bank_transfer'):
+                            payment_label = "оплата за реквізитами"
+                        elif not (order.get('nova_post_address') or '').strip():
+                            payment_label = "оплата в магазині"
                         else:
-                            await send_messages_to_admins(bot, admin_list,
-                                                          "Створено нове замовлення з типом накладений платіж")
+                            payment_label = "накладений платіж"
+                        await send_messages_to_admins(bot, admin_list, f"Створено нове замовлення, тип оплати: {payment_label}")
 
                     if record['type'] == "FINISHED":
                         await deactivated_notifications(bot, order, admin_list)
@@ -60,16 +64,9 @@ async def order_updates(bot, admin_list):
                         await order_in_branch_notifications(bot, order)
 
                     if record['type'] == "PAYMENT_DOC_UPLOADED":
-                        doc_url = order.get('payment_document') or ''
-                        await send_messages_to_admins(
-                            bot, admin_list,
-                            f"💳 Клієнт прикріпив документ про оплату за реквізитами до замовлення #{order['id']}.\n"
-                            f"ПІБ: {order['name']} {order['last_name']}\n"
-                            f"Телефон: {order['phone']}\n"
-                            f"Документ: {doc_url}\n\n"
-                            f"Перевірте оплату та позначте замовлення оплаченим або змініть тип оплати."
-                        )
-                        
+                        await payment_doc_uploaded_notification(bot, order, admin_list)
+
+
                     if record['type'] == "remonline timeout error":
                         await send_messages_to_admins(admin_ids=admin_list, text=f"Запит на створення замовлення {record['order_id']} був надісланий, але Remonline не дала відповідь. Почекайте автоматичне створення.")
 

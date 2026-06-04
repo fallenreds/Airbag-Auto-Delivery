@@ -16,6 +16,7 @@ from api import (
     make_pay_order, merge_order, get_templates, create_template,
     get_template, update_ttn, unpaid_overdue, get_order_by_ttn,
     finish_order, ttn_tracking, change_to_not_prepayment, get_discount, delete_discount, get_all_clients,
+    get_bank_details, update_bank_details,
 )
 from aiogram import Bot, Dispatcher, executor, filters, types
 
@@ -517,11 +518,11 @@ async def _show_discount_page(bot, admin_id: int, chat_id: int, index: int, mess
 @dp.callback_query_handler(lambda call: call.data == "change_props")
 async def change_props(callback: types.CallbackQuery):
 
-    with open('props.json', "r", encoding='utf-8') as f:
-        props = json.load(f)
+    props = await get_bank_details() or {}
 
+    order = ["full_name", "card_number", "edrpou", "account_number", "payment_purpose"]
     try:
-        current_props = ",".join(props.values())
+        current_props = ",".join(props.get(k, "") for k in order)
     except Exception:
         current_props = ""
 
@@ -544,22 +545,25 @@ async def save_changed_props(message: types.Message, state: FSMContext):
     await state.finish()
     new_props:list[str] = [prop.strip() for prop in message.text.split(',')]
 
+    if len(new_props) < 5:
+        await bot.send_message(message.chat.id, "Потрібно 5 значень через кому. Спробуйте ще раз через кнопку.")
+        return
+
     props = {
         "full_name": new_props[0],
         "card_number": new_props[1],
         "edrpou": new_props[2],
         "account_number": new_props[3],
         "payment_purpose": new_props[4],
-
     }
-    with open('props.json', 'w') as file:
-        file.write(json.dumps(props, indent=4))
-
-    await bot.send_message(message.chat.id, "Реквізити успішно змінені✅")
+    result = await update_bank_details(props)
+    if result:
+        await bot.send_message(message.chat.id, "Реквізити успішно змінені✅")
+    else:
+        await bot.send_message(message.chat.id, "Не вдалося оновити реквізити. Спробуйте пізніше.")
 
 async def get_props()->str:
-    with open('props.json', "r", encoding='utf-8') as f:
-        props = json.load(f)
+    props = await get_bank_details() or {}
 
     message_text = (f"<b>Натисніть, щоб скопіювати</b>\n"
                  f"<b>Номер картки </b>: <code>{props.get('card_number')}</code>\nАБО"
