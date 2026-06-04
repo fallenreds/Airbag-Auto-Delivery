@@ -20,3 +20,5 @@ cloudflared.rpm
 # doc-gen skill: ignore all working files except the JSON structure
 .docgen/**
 !.docgen/doc-structure.json
+# Safety net: doc-gen screenshots accidentally left in repo root
+screen-*.png
