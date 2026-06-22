@@ -14,7 +14,8 @@ def get_payment_type_label(order: Order) -> str:
         return "Передоплата"
     if getattr(order, "bank_transfer", False):
         return "Оплата за реквізитами"
-    if not order.nova_post_address or not order.nova_post_address.strip():
+    # AIRBAG-82: пустой адрес ИЛИ адрес из одних пробелов/запятых (", ") = самовывоз
+    if not order.nova_post_address or not order.nova_post_address.strip(" ,"):
         return "Оплата в магазині"
     return "Накладений платіж"
 
