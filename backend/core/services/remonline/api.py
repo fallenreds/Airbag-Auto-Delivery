@@ -260,23 +260,15 @@ class RemonlineInterface:
         order_type: int,
         client_id: int,
         manager_notes: str,
-        estimated_cost: Optional[float] = None,
     ) -> dict:
         """Создает новый заказ"""
-        params = dict(
+        return self.post_objects(
+            "order/",
+            accepted_params_path="new_order.json",
             branch_id=branch_id,
             order_type=order_type,
             client_id=client_id,
             manager_notes=manager_notes,
-        )
-        # AIRBAG-81: передаём итоговую сумму со скидкой, чтобы заказ в RemOnline
-        # отражал стоимость с учётом скидки клиента, а не полную сумму.
-        if estimated_cost is not None:
-            params["estimated_cost"] = estimated_cost
-        return self.post_objects(
-            "order/",
-            accepted_params_path="new_order.json",
-            **params,
         )
 
     def update_order_status(self, order_id: int, status_id: int) -> dict:

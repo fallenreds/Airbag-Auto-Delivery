@@ -74,7 +74,6 @@ def sync_order_to_remonline(order: Order) -> bool:
         order_type=int(REMONLINE_ORDER_TYPE_ID),
         client_id=int(client.id_remonline),
         manager_notes=manager_notes,
-        estimated_cost=Good.convert_minore_to_major(order.grand_total_minor),
     )
 
     order.remonline_order_id = response.get("data", {}).get("id")
