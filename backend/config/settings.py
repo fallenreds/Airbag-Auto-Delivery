@@ -100,6 +100,9 @@ REST_FRAMEWORK = {
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(days=1),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=2),
+    # Dedicated JWT signing key (>=32 bytes recommended for HS256). Falls back
+    # to SECRET_KEY if not set. Rotating this invalidates all existing tokens.
+    "SIGNING_KEY": os.getenv("JWT_SIGNING_KEY", SECRET_KEY),
 }
 SWAGGER_SETTINGS = {
     "SECURITY_DEFINITIONS": {
