@@ -17,6 +17,9 @@ cloudflared.rpm
 .playwright-mcp/
 *.playwright.png
 
+# Telegram MCP downloads (media/transcripts) — never commit
+downloads/
+
 # doc-gen skill: ignore all working files except the JSON structure
 .docgen/**
 !.docgen/doc-structure.json
