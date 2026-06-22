@@ -5,7 +5,6 @@ from config.settings import (
 )
 from core.models import Client, Good, Order, OrderEvent, OrderEventType
 from core.models import OrderItem
-from core.services.discount_service import DiscountService
 from core.services.remonline import RemonlineInterface
 
 
@@ -22,7 +21,6 @@ def get_payment_type_label(order: Order) -> str:
 
 def build_manager_notes(order: Order, user: Client) -> str:
     client_id = user.id
-    discount_info = DiscountService.get_client_discount_info(user)
     goods_info = (
         f"ID Клієнта: {client_id}\n"
         f"ФІО: {order.name} {order.last_name}\n"
@@ -30,7 +28,7 @@ def build_manager_notes(order: Order, user: Client) -> str:
         f"Адреса: {order.nova_post_address}\n"
         f"Коментар: {order.description if order.description else 'Відсутній'}\n"
         f"Тип платежа: {get_payment_type_label(order)}\n"
-        f"Знижка клієнта {discount_info['discount_percentage']}%\n"
+        f"Знижка клієнта {order.discount_percent or 0}%\n"
         f"Сума до сплати {Good.convert_minore_to_major(order.subtotal_minor)} UAH\n"
         f"До сплати зі знижкою: {Good.convert_minore_to_major(order.grand_total_minor)} UAH"
     )
