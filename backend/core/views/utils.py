@@ -28,7 +28,17 @@ def generate_filterset_for_model(model):
 
 def get_own_queryset(view):
     qs = view.queryset
-    if not IsAdminUser().has_permission(view.request, view):
+
+    # AIRBAG-89: список личных данных всегда принадлежит запрашивающему — даже
+    # админу. Иначе админ, зайдя на сайт как пользователь, видит чужие заказы и
+    # суммы как свои. Форсим скоуп к request.user для action="list" на НЕ
+    # админ-эндпоинтах (где нет IsAdminUser). Админ-эндпоинты (IsAdminUser) и
+    # точечные действия админа (retrieve/update/merge любого заказа) не трогаем.
+    permission_classes = getattr(view, "permission_classes", [])
+    is_admin_endpoint = IsAdminUser in permission_classes
+    force_own = getattr(view, "action", None) == "list" and not is_admin_endpoint
+
+    if force_own or not IsAdminUser().has_permission(view.request, view):
         # Check if user is authenticated before filtering
         if not view.request.user.is_authenticated:
             # Return empty queryset for unauthenticated users
