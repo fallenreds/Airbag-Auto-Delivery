@@ -221,20 +221,20 @@ class OrderCreateSerializer(serializers.ModelSerializer):
         order.subtotal_minor = order_total_price["line_total_minor"]
         order.discount_total_minor = order_total_price["discount_total_minor"]
         order.grand_total_minor = order_total_price["grand_total_minor"]
+        # AIRBAG: агрегаты сумм сохраняем для ВСЕХ заказов. Раньше save с ними был
+        # только в ветке предоплаты, поэтому у постоплатных заказов в БД оставались
+        # subtotal/discount/grand_total = 0 (скидка/сумма терялись).
+        order.save(
+            update_fields=[
+                "subtotal_minor",
+                "discount_total_minor",
+                "grand_total_minor",
+            ]
+        )
 
-        # Legacy behavior: postpayment syncs immediately, prepayment waits for payment success.
-        should_sync_now = not order.prepayment
-        if should_sync_now:
+        # Postpayment syncs immediately; prepayment waits for payment success.
+        if not order.prepayment:
             sync_order_to_remonline(order)
-        else:
-            order.save(
-                update_fields=[
-                    "subtotal_minor",
-                    "discount_total_minor",
-                    "grand_total_minor",
-                    "remonline_sync_status",
-                ]
-            )
 
         return order
 
