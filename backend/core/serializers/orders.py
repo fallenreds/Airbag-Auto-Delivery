@@ -81,7 +81,8 @@ class OrderCreateSerializer(serializers.ModelSerializer):
     name = serializers.CharField(required=True)
     last_name = serializers.CharField(required=True)
     phone = serializers.CharField(required=True)
-    nova_post_address = serializers.CharField(required=True)
+    # AIRBAG-82: при самовывозе адрес доставки пустой — разрешаем blank/null
+    nova_post_address = serializers.CharField(required=False, allow_blank=True, allow_null=True, default="")
     prepayment = serializers.BooleanField(required=True)
     bank_transfer = serializers.BooleanField(required=False, default=False)
     description = serializers.CharField(

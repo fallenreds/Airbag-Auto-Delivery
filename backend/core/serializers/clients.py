@@ -132,6 +132,9 @@ class ClientSerializer(serializers.ModelSerializer):
     class Meta:
         model = Client
         exclude = ("password", "last_login")
+        # AIRBAG: login управляется flow регистрации/telegram; профиль-апдейт из
+        # чекаута не должен его переписывать (иначе UNIQUE constraint failed: login).
+        read_only_fields = ("login",)
 
     def validate_email(self, value):
         # Check if email exists but exclude the current instance
