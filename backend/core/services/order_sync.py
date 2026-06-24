@@ -20,13 +20,25 @@ def get_payment_type_label(order: Order) -> str:
     return "Накладений платіж"
 
 
+def is_pickup_order(order: Order) -> bool:
+    """Заказ без адреса доставки = самовывоз из магазина."""
+    addr = order.nova_post_address
+    return not addr or not addr.strip(" ,")
+
+
+def get_delivery_type_label(order: Order) -> str:
+    """Human-readable delivery type (Ukrainian)."""
+    return "Самовивіз із магазину" if is_pickup_order(order) else "Доставка Новою Поштою"
+
+
 def build_manager_notes(order: Order, user: Client) -> str:
     client_id = user.id
     goods_info = (
         f"ID Клієнта: {client_id}\n"
         f"ФІО: {order.name} {order.last_name}\n"
         f"Телефон: {order.phone}\n"
-        f"Адреса: {order.nova_post_address}\n"
+        f"Спосіб доставки: {get_delivery_type_label(order)}\n"
+        f"Адреса: {order.nova_post_address if not is_pickup_order(order) else 'Самовивіз із магазину'}\n"
         f"Коментар: {order.description if order.description else 'Відсутній'}\n"
         f"Тип платежа: {get_payment_type_label(order)}\n"
         f"Знижка клієнта {order.discount_percent or 0}%\n"
