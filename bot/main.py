@@ -55,6 +55,9 @@ _client_list_cache: dict[int, list] = {}
 _discount_cache: dict[int, list] = {}
 storage = MemoryStorage()
 
+# Контактні телефони компанії.
+COMPANY_PHONES = ["+380989989828", "+380939989828"]
+
 bot = Bot(token=BOT_TOKEN, parse_mode="HTML", )
 dp = Dispatcher(bot, storage=storage)
 
@@ -173,12 +176,11 @@ async def show_info(message):
     write_to_button = types.InlineKeyboardButton("Написати", url='https://t.me/airbagsale')
     to_call_button = types.InlineKeyboardButton("Позвонити", callback_data="to_call")
     markup_i.add(write_to_button, to_call_button)
-    if type(message) == type(types.Message()):
-        await bot.send_contact(message.chat.id, phone_number="+380989989828", first_name='AIRBAG "DELIVERY AUTO"',
-                               reply_markup=markup_i)
-    else:
-        await bot.send_contact(message["from"]["id"], phone_number="+380989989828", first_name='AIRBAG "DELIVERY AUTO"',
-                               reply_markup=markup_i)
+    chat_id = message.chat.id if type(message) == type(types.Message()) else message["from"]["id"]
+    for index, phone_number in enumerate(COMPANY_PHONES):
+        # Кнопки прикріплюємо лише до останнього контакту, щоб не дублювати клавіатуру.
+        await bot.send_contact(chat_id, phone_number=phone_number, first_name='AIRBAG "DELIVERY AUTO"',
+                               reply_markup=markup_i if index == len(COMPANY_PHONES) - 1 else None)
 
 
 @dp.message_handler(filters.Text(contains="знижки", ignore_case=True))
@@ -1013,7 +1015,8 @@ async def callback_admin_panel(callback: types.CallbackQuery, state: FSMContext)
                                    f'Будь ласка, напишіть ваш номер замовлення, за яке ви хочете відправити фото оплати. Номер цього замовлення {order_id}.\nДля відміни операції натисніть /stop')
 
         if callback.data == "to_call":
-            await bot.send_message(callback.message.chat.id, text="Номер телефону: \n+380989989828")
+            phones_text = "\n".join(COMPANY_PHONES)
+            await bot.send_message(callback.message.chat.id, text=f"Номери телефонів: \n{phones_text}")
 
         if "merge_order" in callback.data:
             order_id = await id_spliter(callback.data)
