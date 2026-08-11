@@ -72,6 +72,13 @@ MONOBANK_TOKEN_PROD = os.getenv("MONOBANK_TOKEN_PROD", MONOBANK_TOKEN)
 MONOBANK_WEBHOOK_KEY_TEST = os.getenv("MONOBANK_WEBHOOK_KEY_TEST", MONOBANK_WEBHOOK_KEY)
 MONOBANK_WEBHOOK_KEY_PROD = os.getenv("MONOBANK_WEBHOOK_KEY_PROD", MONOBANK_WEBHOOK_KEY)
 
+# Google Pay gatewayMerchantId — не секрет, отдаётся фронту через /payments/config/
+# по активному режиму. Раньше жил только в NEXT_PUBLIC_* и вшивался в бандл на
+# этапе сборки, поэтому переключение режима его не меняло.
+GOOGLE_PAY_MERCHANT_ID = os.getenv("GOOGLE_PAY_MERCHANT_ID")
+GOOGLE_PAY_MERCHANT_ID_TEST = os.getenv("GOOGLE_PAY_MERCHANT_ID_TEST", GOOGLE_PAY_MERCHANT_ID)
+GOOGLE_PAY_MERCHANT_ID_PROD = os.getenv("GOOGLE_PAY_MERCHANT_ID_PROD", GOOGLE_PAY_MERCHANT_ID)
+
 # Celery settings
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/1")

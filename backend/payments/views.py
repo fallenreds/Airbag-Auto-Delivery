@@ -9,7 +9,11 @@ from rest_framework.views import APIView
 
 from core.permissions import IsAdminUserCustom
 
-from .credentials import get_active_monobank_credentials
+from .credentials import (
+    get_active_google_pay_merchant_id,
+    get_active_monobank_credentials,
+    validate_mode_credentials,
+)
 from .models import MonobankInvoiceEvent, PaymentSettings
 from .mono import MonobankPaymentService
 from .serializers import (
@@ -90,6 +94,7 @@ class PaymentConfigView(APIView):
             {
                 "mode": settings_obj.mode,
                 "google_pay_environment": settings_obj.google_pay_environment,
+                "google_pay_merchant_id": get_active_google_pay_merchant_id(),
             },
             status=status.HTTP_200_OK,
         )
@@ -112,6 +117,12 @@ class PaymentModeView(APIView):
                 {"detail": f"mode must be one of {valid_modes}"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        # save() идёт в обход full_clean(), поэтому проверяем креды явно —
+        # иначе режим «переключится», а платежи останутся на старом токене.
+        reason = validate_mode_credentials(mode)
+        if reason:
+            return Response({"detail": reason}, status=status.HTTP_400_BAD_REQUEST)
 
         settings_obj = PaymentSettings.load()
         settings_obj.mode = mode

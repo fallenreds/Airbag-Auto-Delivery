@@ -1,4 +1,5 @@
 # payments/models.py
+from django.core.exceptions import ValidationError
 from django.db import models
 
 
@@ -24,6 +25,14 @@ class PaymentSettings(models.Model):
 
     def __str__(self):
         return f"PaymentSettings(mode={self.mode})"
+
+    def clean(self):
+        # Импорт внутри метода: credentials импортирует эту же модель.
+        from .credentials import validate_mode_credentials
+
+        reason = validate_mode_credentials(self.mode)
+        if reason:
+            raise ValidationError({"mode": reason})
 
     def save(self, *args, **kwargs):
         self.pk = 1  # singleton
