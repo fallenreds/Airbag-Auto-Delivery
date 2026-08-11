@@ -46,7 +46,11 @@ class GooglePayWalletPaymentView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        serializer = GooglePayWalletPaymentSerializer(data=request.data)
+        # context обязателен: validate_order_id читает context["request"],
+        # чтобы не дать оплатить чужой заказ, и кладёт туда же найденный order.
+        serializer = GooglePayWalletPaymentSerializer(
+            data=request.data, context={"request": request}
+        )
         serializer.is_valid(raise_exception=True)
 
         # DRF returns dict, but type checkers don't always know that.
