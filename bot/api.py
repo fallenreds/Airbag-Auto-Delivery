@@ -306,15 +306,28 @@ async def get_payment_mode():
 
 
 async def set_payment_mode(mode: str):
-    """Switch payment mode via backend (admin api-key). mode: 'test' | 'production'."""
+    """Switch payment mode via backend (admin api-key). mode: 'test' | 'production'.
+
+    При отказе возвращает {"error": <detail>}: бэкенд объясняет в detail, почему
+    режим включить нельзя (например, MONOBANK_TOKEN_PROD совпадает с тестовым),
+    и админу в Telegram нужна именно эта причина, а не общее «не вдалося».
+    """
     async with aiohttp.ClientSession() as session:
         async with session.patch(
             f'{base_url}api/v2/payments/mode/', json={"mode": mode}, headers=headers
         ) as resp:
             if resp.status == 200:
                 return await resp.json()
-            logger.error(f"Failed to set payment mode: {resp.status} {await resp.text()}")
-            return None
+
+            text = await resp.text()
+            logger.error(f"Failed to set payment mode: {resp.status} {text}")
+
+            detail = None
+            try:
+                detail = (await resp.json()).get("detail")
+            except Exception:
+                pass
+            return {"error": detail or f"HTTP {resp.status}"}
 
 
 async def merge_order(source_order_id, target_order_id):

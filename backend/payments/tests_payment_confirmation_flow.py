@@ -36,7 +36,10 @@ class PaymentConfirmationFlowTests(TestCase):
         )
 
         service = MonobankPaymentService(token="dummy")
-        with patch.object(service, "client"):
+        # Синк отложен до коммита, чтобы его падение не откатывало оплату.
+        with patch.object(service, "client"), self.captureOnCommitCallbacks(
+            execute=True
+        ):
             service.mark_order_as_paid(order)
 
         order.refresh_from_db()

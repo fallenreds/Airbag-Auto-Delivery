@@ -3,9 +3,9 @@ import json
 import logging
 from typing import Any, Dict, Optional
 import base64
+import binascii
 import hashlib
 import ecdsa
-import hmac
 import requests
 
 
@@ -299,12 +299,26 @@ class MonobankAPI:
         return self._handle_response(resp)
 
     def validate(self, x_sign: str, raw_body: bytes) -> bool:
+        """True только для подписи, сделанной ключом нашего мерчанта.
+
+        Любой мусор на входе — это False, а не исключение: ecdsa.verify()
+        бросает BadSignatureError вместо возврата False, отсутствующий заголовок
+        даёт TypeError, а не-base64 — binascii.Error. Раньше всё это уходило
+        наверх и превращалось в 500 на вебхуке вместо тихого 400.
+        """
         if not self.webhook_key:
             raise ValueError("Parametr webhook_key must be provided")
-        logging.info(self.webhook_key)
-        pub_key_bytes = base64.b64decode(self.webhook_key)
-        signature_bytes = base64.b64decode(x_sign)
-        pub_key = ecdsa.VerifyingKey.from_pem(pub_key_bytes.decode())
 
-        is_verified = pub_key.verify(signature_bytes, raw_body, sigdecode=ecdsa.util.sigdecode_der, hashfunc=hashlib.sha256)
-        return is_verified 
+        try:
+            pub_key_bytes = base64.b64decode(self.webhook_key)
+            signature_bytes = base64.b64decode(x_sign)
+            pub_key = ecdsa.VerifyingKey.from_pem(pub_key_bytes.decode())
+            return pub_key.verify(
+                signature_bytes,
+                raw_body,
+                sigdecode=ecdsa.util.sigdecode_der,
+                hashfunc=hashlib.sha256,
+            )
+        except (ecdsa.BadSignatureError, binascii.Error, TypeError, ValueError):
+            logging.warning("Monobank webhook signature rejected")
+            return False

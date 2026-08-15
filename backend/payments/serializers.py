@@ -2,7 +2,8 @@ import logging
 
 from rest_framework import serializers
 
-from config.settings import MONOBANK_WEBHOOK_URL_PATH, DOMAIN
+from django.conf import settings
+
 from core.models import Order
 
 from .credentials import get_active_monobank_credentials
@@ -68,7 +69,11 @@ class PaymentCreateSerializer(serializers.Serializer):
         Создание сущности платежа и инвойса в Monobank
         """
         order = self.context["order"]
-        webhook_url = f"{DOMAIN}api/v2/payments/{MONOBANK_WEBHOOK_URL_PATH}"
+        # Через django.conf.settings, а не импортом из модуля: иначе значение
+        # привязывается на импорте и не переопределяется в тестах.
+        webhook_url = (
+            f"{settings.DOMAIN}api/v2/payments/{settings.MONOBANK_WEBHOOK_URL_PATH}"
+        )
         redirect_url = validated_data.get("redirect_url")
         success_url = validated_data.get("success_url")
         fail_url = validated_data.get("fail_url")

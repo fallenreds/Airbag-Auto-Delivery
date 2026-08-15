@@ -5,7 +5,6 @@
 400 {"order_id": ["This field is required."]} — оплата не проходила никогда.
 Сумма берётся из заказа, поэтому order_id обязателен.
 """
-import json
 from unittest.mock import patch
 
 from django.test import TestCase, override_settings
@@ -13,36 +12,9 @@ from rest_framework.test import APIClient
 
 from core.models import Client, Order
 from payments.models import Payment, PaymentSettings
+from payments.tests_factories import build_gtoken
 
-def _build_gtoken() -> str:
-    """Структурно валидный ECv2-токен (см. payments.googlepay.validate_google_pay_g_token).
-
-    Криптография не проверяется ни нами, ни в тесте — расшифровкой занимается
-    Monobank, поэтому достаточно правильной формы.
-    """
-    signed_message = json.dumps(
-        {
-            "encryptedMessage": "stub-encrypted",
-            "ephemeralPublicKey": "stub-ephemeral",
-            "tag": "stub-tag",
-        }
-    )
-    return json.dumps(
-        {
-            "protocolVersion": "ECv2",
-            "signature": "stub-signature",
-            "signedMessage": signed_message,
-            "intermediateSigningKey": {
-                "signedKey": json.dumps(
-                    {"keyValue": "stub-key", "keyExpiration": "1787132764000"}
-                ),
-                "signatures": ["stub-isk-signature"],
-            },
-        }
-    )
-
-
-GTOKEN = _build_gtoken()
+GTOKEN = build_gtoken()
 
 
 @override_settings(

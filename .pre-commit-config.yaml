@@ -1,0 +1,14 @@
+# Установка (один раз на машину):
+#   pip install pre-commit && pre-commit install
+#
+# Тесты платёжного флоу гоняются перед каждым коммитом: два бага подряд
+# доехали до прода именно потому, что их никто не запускал автоматически.
+repos:
+  - repo: local
+    hooks:
+      - id: project-tests
+        name: backend + bot + frontend tests
+        entry: scripts/run-tests.sh
+        language: script
+        pass_filenames: false
+        stages: [pre-commit]

@@ -1,11 +1,16 @@
 import logging
 from django.db import transaction
+from django.utils import timezone
 from core.models import Order
 from core.models import OrderEvent, OrderEventType
 from core.services.order_sync import sync_order_to_remonline
 from payments.models import MonobankInvoiceEvent, Payment
 from payments.services.monobank.api import MonobankAPI, MonobankError, MonobankOrderInProgress, MonobankInvoiceAlreadyUsed
 from rest_framework.exceptions import ValidationError
+
+
+class PaymentNotFound(Exception):
+    """Вебхук пришёл на invoiceId, которого нет в нашей базе."""
 
 
 class MonobankPaymentService:
@@ -111,22 +116,74 @@ class MonobankPaymentService:
     def proccess_invoice_event(self, event: dict):
         """
         Обрабатывает событие от монобанка.
+
+        Monobank ретраит вебхуки и не гарантирует порядок доставки, поэтому
+        обработка обязана быть идемпотентной: дубль события игнорируется,
+        событие старше уже обработанного не откатывает статус платежа.
         """
         logging.info("Registering invoice event: %s", event)
         with transaction.atomic():
-            invoice_event = MonobankInvoiceEvent.objects.create(
+            payment = (
+                Payment.objects.select_for_update()
+                .filter(mono_invoice_id=event.get("invoiceId"))
+                .first()
+            )
+            if payment is None:
+                raise PaymentNotFound(
+                    f"No payment for invoiceId {event.get('invoiceId')!r}"
+                )
+
+            invoice_event, created = MonobankInvoiceEvent.objects.get_or_create(
                 invoice_id=event.get("invoiceId"),
                 status=event.get("status"),
-                amount=event.get("amount"),
-                ccy=event.get("ccy"),
-                created_date=event.get("createdDate"),
                 modified_date=event.get("modifiedDate"),
-                raw_payload=event,
+                defaults={
+                    "amount": event.get("amount"),
+                    "ccy": event.get("ccy"),
+                    "created_date": event.get("createdDate"),
+                    "raw_payload": event,
+                },
             )
+            if not created:
+                logging.info(
+                    "Duplicate webhook for invoice %s (%s), skipping",
+                    invoice_event.invoice_id,
+                    invoice_event.status,
+                )
+                return invoice_event
 
-            payment = Payment.objects.select_for_update().get(
-                mono_invoice_id=invoice_event.invoice_id
+            is_stale = (
+                MonobankInvoiceEvent.objects.filter(
+                    invoice_id=invoice_event.invoice_id,
+                    modified_date__gt=invoice_event.modified_date,
+                )
+                .exclude(pk=invoice_event.pk)
+                .exists()
             )
+            if is_stale:
+                logging.warning(
+                    "Out-of-order webhook for invoice %s (%s) — newer event already "
+                    "processed, payment status left untouched",
+                    invoice_event.invoice_id,
+                    invoice_event.status,
+                )
+                return invoice_event
+
+            # Сумма события обязана совпасть с суммой платежа: иначе заказ можно
+            # было бы закрыть оплатой на произвольную сумму.
+            if invoice_event.amount != payment.amount:
+                logging.error(
+                    "Amount mismatch for invoice %s: event=%s payment=%s",
+                    invoice_event.invoice_id,
+                    invoice_event.amount,
+                    payment.amount,
+                )
+                payment.failure_reason = (
+                    f"Amount mismatch: expected {payment.amount}, "
+                    f"got {invoice_event.amount}"
+                )
+                payment.save(update_fields=["failure_reason"])
+                return invoice_event
 
             failure_reason = None
             failure_code = None
@@ -147,12 +204,15 @@ class MonobankPaymentService:
                 case Payment.STATUS_EXPIRED:
                     self.client.deactivate_invoice(payment.mono_invoice_id)
                 case Payment.STATUS_SUCCESS:
+                    payment.paid_at = timezone.now()
                     self.mark_order_as_paid(payment.order)
 
             payment.status = invoice_event.status
             payment.failure_code = failure_code
             payment.failure_reason = failure_reason
-            payment.save(update_fields=["status", "failure_code", "failure_reason"])
+            payment.save(
+                update_fields=["status", "failure_code", "failure_reason", "paid_at"]
+            )
             return invoice_event
 
     
@@ -246,18 +306,24 @@ class MonobankPaymentService:
     
     def mark_order_as_paid(self, order: Order):
         was_paid = order.is_paid
-        if not was_paid:
-            order.is_paid = True
-            order.save(update_fields=["is_paid"])
+        if was_paid:
+            # Повторный вебхук: заказ уже закрыт, дёргать RemOnline снова незачем.
+            return
 
-            OrderEvent.objects.create(
-                type=OrderEventType.PAYMENT_CONFIRMED,
-                order=order,
-                details="Order payment confirmed",
-            )
+        order.is_paid = True
+        order.save(update_fields=["is_paid"])
+
+        OrderEvent.objects.create(
+            type=OrderEventType.PAYMENT_CONFIRMED,
+            order=order,
+            details="Order payment confirmed",
+        )
 
         if order.prepayment:
-            sync_order_to_remonline(order)
+            # Только после коммита: sync_order_to_remonline ходит по сети и умеет
+            # бросать ValueError (нет ключа/филиала). Внутри транзакции вебхука
+            # это откатывало бы is_paid при уже списанных деньгах.
+            transaction.on_commit(lambda: sync_order_to_remonline(order))
         
     
   

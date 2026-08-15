@@ -620,3 +620,38 @@ class TestTtnTracking:
         mocked.post("https://api.novaposhta.ua/v2.0/json/", status=500)
         result = await api.ttn_tracking("20450000001234", "+380501234567")
         assert result is None
+
+
+class TestPaymentMode:
+    async def test_get_payment_mode(self, mocked):
+        mocked.get(f"{BASE_URL}api/v2/payments/mode/", payload={"mode": "test"})
+        result = await api.get_payment_mode()
+        assert result["mode"] == "test"
+
+    async def test_get_payment_mode_failure(self, mocked):
+        mocked.get(f"{BASE_URL}api/v2/payments/mode/", status=403)
+        result = await api.get_payment_mode()
+        assert result is None
+
+    async def test_set_payment_mode_success(self, mocked):
+        mocked.patch(
+            f"{BASE_URL}api/v2/payments/mode/", payload={"mode": "production"}
+        )
+        result = await api.set_payment_mode("production")
+        assert result["mode"] == "production"
+        assert "error" not in result
+
+    async def test_set_payment_mode_surfaces_backend_detail(self, mocked):
+        # Бэкенд объясняет, почему боевой режим включить нельзя — админ должен
+        # увидеть именно эту причину, а не общее «не вдалося».
+        detail = "MONOBANK_TOKEN_PROD збігається з тестовим токеном"
+        mocked.patch(
+            f"{BASE_URL}api/v2/payments/mode/", status=400, payload={"detail": detail}
+        )
+        result = await api.set_payment_mode("production")
+        assert result["error"] == detail
+
+    async def test_set_payment_mode_without_detail_falls_back_to_status(self, mocked):
+        mocked.patch(f"{BASE_URL}api/v2/payments/mode/", status=500, body="boom")
+        result = await api.set_payment_mode("production")
+        assert result["error"] == "HTTP 500"

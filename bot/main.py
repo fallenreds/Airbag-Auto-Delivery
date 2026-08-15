@@ -625,6 +625,14 @@ async def switch_payment_mode(callback: types.CallbackQuery):
             callback.message.chat.id, "Не вдалося змінити режим оплати ❌"
         )
 
+    if data.get("error"):
+        # Бэкенд объясняет причину отказа — показываем её, иначе админ не поймёт,
+        # что не хватает боевых кредов в .env.
+        return await bot.send_message(
+            callback.message.chat.id,
+            f"Не вдалося змінити режим оплати ❌\n\n{data['error']}",
+        )
+
     new_label = _PAYMENT_MODE_LABELS.get(data.get("mode"), data.get("mode"))
     await callback.answer("Режим змінено ✅")
     await bot.send_message(

@@ -86,3 +86,11 @@ class MonobankInvoiceEvent(models.Model):
         indexes = [
             models.Index(fields=["invoice_id", "modified_date"]),
         ]
+        constraints = [
+            # Monobank ретраит вебхуки — повтор одного и того же события не должен
+            # создавать вторую строку и повторно применяться к платежу.
+            models.UniqueConstraint(
+                fields=["invoice_id", "status", "modified_date"],
+                name="uniq_monobank_invoice_event",
+            ),
+        ]

@@ -15,7 +15,7 @@ from .credentials import (
     validate_mode_credentials,
 )
 from .models import MonobankInvoiceEvent, PaymentSettings
-from .mono import MonobankPaymentService
+from .mono import MonobankPaymentService, PaymentNotFound
 from .serializers import (
     GooglePayWalletPaymentSerializer,
     PaymentCreateSerializer,
@@ -158,6 +158,14 @@ class MonobankWebhookView(APIView):
         if not payment_service.validate_webhook(request.headers.get("X-Sign"), request.body):
             return Response({"ok": False}, status=status.HTTP_400_BAD_REQUEST)
 
-        payment_service.proccess_invoice_event(event=request.data)
-        
+        try:
+            payment_service.proccess_invoice_event(event=request.data)
+        except PaymentNotFound as exc:
+            # Такой инвойс нам неизвестен — ретраи Monobank его не создадут,
+            # поэтому отвечаем 404, а не 500 с трейсом.
+            logger.warning("Monobank webhook for unknown invoice: %s", exc)
+            return Response(
+                {"ok": False, "detail": str(exc)}, status=status.HTTP_404_NOT_FOUND
+            )
+
         return Response({"ok": True}, status=status.HTTP_200_OK)
