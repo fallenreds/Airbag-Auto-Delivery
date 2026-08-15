@@ -9,13 +9,14 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 from django.utils import timezone
 
-from core.models import Order, OrderEvent, OrderEventType, OrderItem
+from core.models import CancelReason, Order, OrderEvent, OrderEventType, OrderItem
 from core.serializers import (
     OrderCreateSerializer,
     OrderEventSerializer,
     OrderItemSerializer,
     OrderSerializer,
 )
+from core.services import order_cancel
 from core.services.order_sync import sync_order_to_remonline
 from core.views.utils import get_own_queryset
 
@@ -34,6 +35,13 @@ class OrderViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return get_own_queryset(self)
+
+    def get_permissions(self):
+        # Физическое удаление заказа — только админ. Клиент отменяет заказ
+        # через /cancel/, чтобы платежи и история отмены не терялись.
+        if self.action == "destroy":
+            return [IsAuthenticated(), IsAdminUser()]
+        return super().get_permissions()
 
     def get_serializer_class(self):
         if self.action == "create":
@@ -253,6 +261,104 @@ class OrderViewSet(viewsets.ModelViewSet):
             details=f"Payment document uploaded: {doc.name}",
         )
         return Response({"detail": "Document uploaded successfully.", "url": order.payment_document.url})
+
+    # ===== Скасування замовлення =====
+
+    # get_object() ходит через get_own_queryset: админ получает любой заказ,
+    # клиент — только свой, чужой id превращается в 404.
+
+    @staticmethod
+    def _cancel_payload(request):
+        reason = (request.data.get("reason") or "").strip()
+        comment = (request.data.get("comment") or "").strip()
+        if reason not in dict(CancelReason.CHOICES):
+            raise ValidationError({"reason": "Unknown cancellation reason"})
+        return reason, comment
+
+    @action(detail=True, methods=["POST"], permission_classes=[IsAuthenticated],
+            url_path="cancel")
+    def cancel(self, request, pk=None):
+        """Отменить заказ. Клиент — только свой неоплаченный и неотгруженный."""
+        order = self.get_object()
+        reason, comment = self._cancel_payload(request)
+
+        allowed, block_code = order_cancel.can_cancel(order, request.user)
+        if not allowed:
+            return Response(
+                {"detail": "Cancellation is not allowed", "code": block_code},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        # Админ отменяет оплаченный заказ — деньги возвращаем сразу.
+        if order.is_paid and IsAdminUser().has_permission(request, self):
+            order.cancel_reason = reason
+            order.cancel_comment = comment
+            order_cancel.approve_cancel(order, actor=request.user)
+        else:
+            order_cancel.cancel_order(
+                order, actor=request.user, reason=reason, comment=comment
+            )
+
+        order.refresh_from_db()
+        return Response(self.get_serializer(order).data)
+
+    @action(detail=True, methods=["POST"], permission_classes=[IsAuthenticated],
+            url_path="request-cancel")
+    def request_cancel(self, request, pk=None):
+        """Запрос на отмену оплаченного заказа — решение принимает админ."""
+        order = self.get_object()
+        reason, comment = self._cancel_payload(request)
+
+        allowed, block_code = order_cancel.can_request_cancel(order, request.user)
+        if not allowed:
+            return Response(
+                {"detail": "Cancellation request is not allowed", "code": block_code},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        order_cancel.request_cancel(
+            order, actor=request.user, reason=reason, comment=comment
+        )
+        return Response(self.get_serializer(order).data)
+
+    @action(detail=True, methods=["POST"], permission_classes=[IsAdminUser],
+            url_path="cancel-approve")
+    def cancel_approve(self, request, pk=None):
+        """Админ подтверждает запрос на отмену: возврат средств + отмена заказа."""
+        order = self.get_object()
+        if order.cancel_state != Order.CancelState.REQUESTED:
+            return Response(
+                {"detail": "Order has no pending cancellation request"},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        order_cancel.approve_cancel(order, actor=request.user)
+        order.refresh_from_db()
+        return Response(self.get_serializer(order).data)
+
+    @action(detail=True, methods=["POST"], permission_classes=[IsAdminUser],
+            url_path="cancel-reject")
+    def cancel_reject(self, request, pk=None):
+        """Админ отклоняет запрос на отмену — заказ остаётся в работе."""
+        order = self.get_object()
+        if order.cancel_state != Order.CancelState.REQUESTED:
+            return Response(
+                {"detail": "Order has no pending cancellation request"},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        order_cancel.reject_cancel(
+            order, actor=request.user, comment=(request.data.get("comment") or "").strip()
+        )
+        return Response(self.get_serializer(order).data)
+
+    @action(detail=True, methods=["POST"], permission_classes=[IsAdminUser],
+            url_path="mark-refunded")
+    def mark_refunded(self, request, pk=None):
+        """Админ вернул деньги вне Monobank (например, по реквизитам) и фиксирует это."""
+        order = self.get_object()
+        order_cancel.mark_refunded_manually(order, actor=request.user)
+        return Response(self.get_serializer(order).data)
 
 
 BANK_DETAILS_FIELDS = ("full_name", "card_number", "account_number", "edrpou", "payment_purpose")

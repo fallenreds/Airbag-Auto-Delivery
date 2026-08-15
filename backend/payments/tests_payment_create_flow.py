@@ -132,6 +132,18 @@ class PaymentCreateTests(TestCase):
         self.assertEqual(resp.status_code, 400)
         self.assertIn("order_id", resp.data)
 
+    def test_canceled_order_is_rejected(self):
+        """Stale-вкладка чекауту не має провести гроші за скасоване замовлення."""
+        canceled = self._make_order(phone="+380000400009")
+        canceled.cancel_state = Order.CancelState.CANCELED
+        canceled.save(update_fields=["cancel_state"])
+
+        resp = self._post(self._payload(order_id=canceled.pk))
+
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("order_id", resp.data)
+        self.assertFalse(Payment.objects.filter(order=canceled).exists())
+
     def test_postpayment_order_is_rejected(self):
         postpaid = self._make_order(phone="+380000400006", prepayment=False)
 

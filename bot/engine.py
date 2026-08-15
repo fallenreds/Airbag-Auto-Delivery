@@ -3,8 +3,11 @@ from aiogram import types
 from aiogram.utils.exceptions import ChatNotFound, BotBlocked
 
 from api import get_client_by_id, get_orders_by_tg_id, get_client_by_tg_id, get_discount
-from buttons import get_delete_order_button, get_props_info_button, get_send_payment_photo_button, get_check_ttn_button
+from buttons import get_cancel_order_button, get_props_info_button, \
+    get_request_cancel_button, get_send_payment_photo_button, get_check_ttn_button
 from config import PRICE_ID_PROD
+from utils.cancel_rules import client_can_cancel, client_can_request_cancel, is_canceled, \
+    is_cancel_requested
 from utils.utils import to_major
 
 
@@ -54,10 +57,20 @@ async def make_order(bot, telegram_id, order_items, goods, order, client, messag
     if not order['is_paid']:
         text += f"<b>До сплати {to_major(to_pay)}💳</b>"
 
-    if order['prepayment'] == 1 and order['is_paid'] == 0:
-        markup_i.add(get_delete_order_button(order['id']))
+    if is_canceled(order):
+        text += f"\n\n<b>Замовлення скасовано ❌</b>"
+        if order.get('refund_state') in ('done', 'manual'):
+            text += "\nКошти повернуто 💵"
+        elif order.get('refund_state') == 'pending':
+            text += "\nПовернення коштів в обробці ⏳"
+    elif is_cancel_requested(order):
+        text += "\n\n<b>Запит на скасування надіслано, очікує підтвердження ⏳</b>"
+    elif client_can_cancel(order):
+        markup_i.add(get_cancel_order_button(order['id']))
+    elif client_can_request_cancel(order):
+        markup_i.add(get_request_cancel_button(order['id']))
 
-    if order["prepayment"] and not order["is_paid"]:
+    if order["prepayment"] and not order["is_paid"] and not is_canceled(order):
         text += "\n\nДля того щоб отримати реквізити натисніть на кнопку <b>Переглянути реквізити👇</b>" \
                 "\nПісля сплати замовлення натисніть кнопку <b>Відправити фото з оплатою</b>"
         markup_i.add(get_props_info_button())

@@ -9,8 +9,9 @@ from aiogram import types
 import config
 from api import update_branch_remember_count, get_order_by_id, get_client_by_id, ttn_tracking, headers
 from buttons import get_check_ttn_button, get_our_contact_button, get_show_discount_info_button, get_status_button, \
-    get_make_paid_button, get_to_not_prepayment_button
+    get_make_paid_button, get_to_not_prepayment_button, get_cancel_request_decision_keyboard
 from engine import send_messages_to_admins, send_error_log, make_order
+from utils.utils import to_major
 
 
 async def check_status_notification(bot, telegram_id, order):
@@ -170,6 +171,74 @@ async def deleted_notifications(bot, order, reason:str|None, admin_list):
         client_text = f"<b>Ваше замовлення №{order['id']} було видалено адміністратором🗑.</b>\n{reason if reason else ''}"
         markup_i = types.InlineKeyboardMarkup().add(get_our_contact_button())
         await bot.send_message(order['telegram_id'], client_text, reply_markup=markup_i)
+    except Exception as error:
+        await send_error_log(bot, 516842877, error)
+
+
+def _refund_suffix(order) -> str:
+    refund_state = (order or {}).get('refund_state')
+    if refund_state in ('done', 'manual'):
+        return "\nКошти повернуто 💵"
+    if refund_state == 'pending':
+        return "\nПовернення коштів в обробці ⏳"
+    return ""
+
+
+async def canceled_notifications(bot, order, details: str | None, admin_list):
+    """Заказ отменён — уведомляем клиента и админов."""
+    try:
+        await send_messages_to_admins(
+            bot, admin_list, f"Замовлення №{order['id']} скасовано ❌"
+        )
+        if not order.get('telegram_id'):
+            return
+        client_text = (
+            f"<b>Ваше замовлення №{order['id']} скасовано ❌</b>"
+            f"{_refund_suffix(order)}"
+        )
+        markup_i = types.InlineKeyboardMarkup().add(get_our_contact_button())
+        await bot.send_message(order['telegram_id'], client_text, reply_markup=markup_i)
+    except Exception as error:
+        await send_error_log(bot, 516842877, error)
+
+
+async def cancel_requested_notifications(bot, order, admin_list):
+    """
+    Клиент попросил отменить оплаченный заказ (обычно с сайта) — админам
+    уходит карточка с кнопками решения.
+    """
+    try:
+        reason = order.get('cancel_reason') or '—'
+        comment = order.get('cancel_comment') or ''
+        text = (
+            f"🔄 <b>Запит на скасування замовлення №{order['id']}</b>\n"
+            f"Клієнт: {order.get('name', '')} {order.get('last_name', '')}\n"
+            f"Сума: {to_major(order.get('grand_total_minor') or 0)} грн\n"
+            f"Причина: {reason}"
+        )
+        if comment:
+            text += f"\nКоментар: {comment}"
+
+        markup = get_cancel_request_decision_keyboard(order['id'])
+        for admin in admin_list:
+            await bot.send_message(admin, text, reply_markup=markup)
+    except Exception as error:
+        await send_error_log(bot, 516842877, error)
+
+
+async def refunded_notifications(bot, order, admin_list):
+    """Возврат средств подтверждён Monobank."""
+    try:
+        await send_messages_to_admins(
+            bot, admin_list, f"Кошти за замовлення №{order['id']} повернуто клієнту 💵"
+        )
+        if not order.get('telegram_id'):
+            return
+        await bot.send_message(
+            order['telegram_id'],
+            f"Кошти за замовлення №{order['id']} повернуто 💵\n"
+            f"Вони надійдуть на картку протягом кількох банківських днів.",
+        )
     except Exception as error:
         await send_error_log(bot, 516842877, error)
 

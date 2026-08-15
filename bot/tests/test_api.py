@@ -165,6 +165,52 @@ class TestOrders:
         result = await api.delete_order(999)
         assert result is None
 
+    async def test_cancel_order_success(self, mocked):
+        canceled = {**ORDER, "cancel_state": "canceled"}
+        mocked.post(f"{BASE_URL}api/v2/orders/1/cancel/", payload=canceled)
+        ok, data = await api.cancel_order(1, "changed_mind")
+        assert ok is True
+        assert data["cancel_state"] == "canceled"
+
+    async def test_cancel_order_conflict_returns_code(self, mocked):
+        """409 від бекенда несе код блокування — бот показує його клієнту."""
+        mocked.post(
+            f"{BASE_URL}api/v2/orders/1/cancel/",
+            status=409,
+            payload={"detail": "Cancellation is not allowed", "code": "order_shipped"},
+        )
+        ok, data = await api.cancel_order(1, "changed_mind")
+        assert ok is False
+        assert data["code"] == "order_shipped"
+
+    async def test_request_cancel_order_success(self, mocked):
+        requested = {**ORDER, "cancel_state": "requested"}
+        mocked.post(f"{BASE_URL}api/v2/orders/1/request-cancel/", payload=requested)
+        ok, data = await api.request_cancel_order(1, "changed_mind")
+        assert ok is True
+        assert data["cancel_state"] == "requested"
+
+    async def test_approve_cancel_order_success(self, mocked):
+        refunded = {**ORDER, "cancel_state": "canceled", "refund_state": "pending"}
+        mocked.post(f"{BASE_URL}api/v2/orders/1/cancel-approve/", payload=refunded)
+        ok, data = await api.approve_cancel_order(1)
+        assert ok is True
+        assert data["refund_state"] == "pending"
+
+    async def test_reject_cancel_order_success(self, mocked):
+        rejected = {**ORDER, "cancel_state": "rejected"}
+        mocked.post(f"{BASE_URL}api/v2/orders/1/cancel-reject/", payload=rejected)
+        ok, data = await api.reject_cancel_order(1, "товар зарезервовано")
+        assert ok is True
+        assert data["cancel_state"] == "rejected"
+
+    async def test_mark_order_refunded_success(self, mocked):
+        refunded = {**ORDER, "refund_state": "manual"}
+        mocked.post(f"{BASE_URL}api/v2/orders/1/mark-refunded/", payload=refunded)
+        ok, data = await api.mark_order_refunded(1)
+        assert ok is True
+        assert data["refund_state"] == "manual"
+
     async def test_make_pay_order_success(self, mocked):
         paid_order = {**ORDER, "is_paid": True}
         mocked.patch(f"{BASE_URL}api/v2/orders/1/", payload=paid_order)

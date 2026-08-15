@@ -58,6 +58,9 @@ class Payment(models.Model):
     STATUS_FAILED = "failure"
     STATUS_CANCELED = "canceled"
     STATUS_EXPIRED = "expired"
+    # Monobank возвращает "reversed" после успешного возврата средств
+    # (POST /api/merchant/invoice/cancel) по уже оплаченному инвойсу.
+    STATUS_REVERSED = "reversed"
 
     order = models.ForeignKey("core.Order", on_delete=models.CASCADE, related_name="payments")
     amount = models.IntegerField() #Minor
@@ -71,7 +74,8 @@ class Payment(models.Model):
     failure_reason = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     paid_at = models.DateTimeField(blank=True, null=True)
-    
+    refunded_at = models.DateTimeField(blank=True, null=True)
+
     
 class MonobankInvoiceEvent(models.Model):
     invoice_id = models.CharField(max_length=64, db_index=True)

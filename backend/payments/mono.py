@@ -1,7 +1,7 @@
 import logging
 from django.db import transaction
 from django.utils import timezone
-from core.models import Order
+from core.models import CancelReason, Order
 from core.models import OrderEvent, OrderEventType
 from core.services.order_sync import sync_order_to_remonline
 from payments.models import MonobankInvoiceEvent, Payment
@@ -113,6 +113,67 @@ class MonobankPaymentService:
                 f"Deactivated invoice {payment.mono_invoice_id} for order {order.id}"
             )
 
+    def refund_order_payment(self, order: Order) -> Payment | None:
+        """
+        Возвращает средства по последнему успешному платежу заказа.
+
+        Возврат подтверждается вебхуком со статусом `reversed`, поэтому здесь
+        заказ переводится в refund_state=PENDING; финальное состояние ставит
+        proccess_invoice_event. Если Monobank ответил финальным статусом сразу —
+        закрываем возврат, не дожидаясь вебхука (вебхук отработает идемпотентно).
+
+        Возвращает платёж, по которому пошёл возврат, или None, если успешных
+        платежей у заказа нет (оплата была не через Monobank).
+        """
+        payment = (
+            Payment.objects.filter(order=order, status=Payment.STATUS_SUCCESS)
+            .order_by("-paid_at", "-created_at", "-id")
+            .first()
+        )
+        if payment is None:
+            logging.info(
+                "No successful Monobank payment for order %s — nothing to refund",
+                order.id,
+            )
+            return None
+
+        response = self.client.cancel_invoice(
+            payment.mono_invoice_id,
+            amount=payment.amount,
+            # extRef делает повторный вызов идемпотентным на стороне Monobank:
+            # двойное подтверждение отмены не спишет деньги дважды.
+            ext_ref=f"order-{order.id}-refund",
+        )
+
+        if response.get("status") == "success":
+            self.mark_order_as_refunded(payment)
+        else:
+            order.refund_state = Order.RefundState.PENDING
+            order.save(update_fields=["refund_state"])
+
+        return payment
+
+    def mark_order_as_refunded(self, payment: Payment):
+        """Фиксирует состоявшийся возврат средств по платежу."""
+        order = payment.order
+
+        if payment.status != Payment.STATUS_REVERSED:
+            payment.status = Payment.STATUS_REVERSED
+            payment.refunded_at = timezone.now()
+            payment.save(update_fields=["status", "refunded_at"])
+
+        if order is None or order.refund_state == Order.RefundState.DONE:
+            return
+
+        order.refund_state = Order.RefundState.DONE
+        order.save(update_fields=["refund_state"])
+
+        OrderEvent.objects.create(
+            type=OrderEventType.REFUNDED,
+            order=order,
+            details=f"Refunded {payment.amount} via Monobank",
+        )
+
     def proccess_invoice_event(self, event: dict):
         """
         Обрабатывает событие от монобанка.
@@ -206,14 +267,58 @@ class MonobankPaymentService:
                 case Payment.STATUS_SUCCESS:
                     payment.paid_at = timezone.now()
                     self.mark_order_as_paid(payment.order)
+                case Payment.STATUS_REVERSED:
+                    payment.refunded_at = timezone.now()
+                    self.handle_reversal(payment.order)
 
             payment.status = invoice_event.status
             payment.failure_code = failure_code
             payment.failure_reason = failure_reason
             payment.save(
-                update_fields=["status", "failure_code", "failure_reason", "paid_at"]
+                update_fields=[
+                    "status",
+                    "failure_code",
+                    "failure_reason",
+                    "paid_at",
+                    "refunded_at",
+                ]
             )
             return invoice_event
+
+    def handle_reversal(self, order: Order | None):
+        """
+        Реакция на возврат средств, подтверждённый вебхуком.
+
+        Возврат обычно инициирован подтверждением отмены (approve_cancel), но
+        админ может вернуть деньги и из кабинета Monobank — тогда заказ ещё
+        активен, и его надо закрыть, иначе он уедет в доставку уже оплаченным
+        «в минус».
+        """
+        if order is None:
+            return
+
+        if order.refund_state != Order.RefundState.DONE:
+            order.refund_state = Order.RefundState.DONE
+            order.save(update_fields=["refund_state"])
+            OrderEvent.objects.create(
+                type=OrderEventType.REFUNDED,
+                order=order,
+                details="Refund confirmed by Monobank",
+            )
+
+        if order.cancel_state != Order.CancelState.CANCELED:
+            from core.services.order_cancel import cancel_order
+
+            logging.warning(
+                "Refund for order %s arrived without cancellation — canceling it",
+                order.id,
+            )
+            cancel_order(
+                order,
+                actor=None,
+                reason=CancelReason.OTHER,
+                comment="Кошти повернуто в Monobank без запиту на скасування",
+            )
 
     
     def validate_webhook(self, x_sign: str, raw_body: bytes) -> bool:

@@ -8,6 +8,74 @@ def get_check_ttn_button(ttn):
 def get_delete_order_button(order_id):
     return types.InlineKeyboardButton("Видалити замовлення ❌", callback_data=f"delete_order/{order_id}")
 
+
+# ===== Скасування замовлення =====
+
+# Причины отмены: код должен совпадать с core.models.CancelReason
+CLIENT_CANCEL_REASONS = [
+    ("changed_mind", "Передумав"),
+    ("found_cheaper", "Знайшов дешевше"),
+    ("wrong_items", "Помилка в замовленні"),
+    ("delivery_too_long", "Занадто довга доставка"),
+    ("duplicate", "Дублює інше замовлення"),
+    ("other", "Інша причина"),
+]
+
+ADMIN_CANCEL_REASONS = CLIENT_CANCEL_REASONS + [
+    ("no_contact", "Немає звʼязку з клієнтом"),
+    ("out_of_stock", "Товару немає в наявності"),
+]
+
+
+def get_cancel_order_button(order_id):
+    return types.InlineKeyboardButton(
+        "Скасувати замовлення ❌", callback_data=f"cancel_order/{order_id}"
+    )
+
+
+def get_request_cancel_button(order_id):
+    return types.InlineKeyboardButton(
+        "Запит на скасування 🔄", callback_data=f"request_cancel/{order_id}"
+    )
+
+
+def get_admin_cancel_order_button(order_id):
+    return types.InlineKeyboardButton(
+        "Скасувати замовлення ❌", callback_data=f"admin_cancel_order/{order_id}"
+    )
+
+
+def get_cancel_reasons_keyboard(order_id, *, admin: bool = False):
+    """Клавиатура выбора причины — второй шаг подтверждения отмены."""
+    prefix = "admin_cancel_reason" if admin else "cancel_reason"
+    reasons = ADMIN_CANCEL_REASONS if admin else CLIENT_CANCEL_REASONS
+
+    kb = types.InlineKeyboardMarkup(row_width=1)
+    for code, title in reasons:
+        kb.add(types.InlineKeyboardButton(title, callback_data=f"{prefix}/{order_id}/{code}"))
+    kb.add(types.InlineKeyboardButton("Ні, залишити замовлення ↩️", callback_data="cancel_abort"))
+    return kb
+
+
+def get_cancel_request_decision_keyboard(order_id):
+    """Кнопки админу под запросом клиента на отмену."""
+    kb = types.InlineKeyboardMarkup(row_width=1)
+    kb.add(
+        types.InlineKeyboardButton(
+            "✅ Підтвердити та повернути кошти", callback_data=f"cancel_approve/{order_id}"
+        ),
+        types.InlineKeyboardButton(
+            "❌ Відхилити запит", callback_data=f"cancel_reject/{order_id}"
+        ),
+    )
+    return kb
+
+
+def get_mark_refunded_button(order_id):
+    return types.InlineKeyboardButton(
+        "Кошти повернуто вручну 💵", callback_data=f"mark_refunded/{order_id}"
+    )
+
 def get_merge_order_button(order_id):
     return types.InlineKeyboardButton("Об'єднати з іншим замовленням 🔀", callback_data=f"merge_order/{order_id}")
 

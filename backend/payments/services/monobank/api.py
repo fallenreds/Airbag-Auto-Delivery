@@ -298,6 +298,40 @@ class MonobankAPI:
 
         return self._handle_response(resp)
 
+    def cancel_invoice(
+        self,
+        invoice_id: str,
+        *,
+        amount: Optional[int] = None,
+        ext_ref: Optional[str] = None,
+        timeout: int = 15,
+    ) -> Dict[str, Any]:
+        """
+        Обёртка над POST /api/merchant/invoice/cancel — возврат средств по
+        уже оплаченному инвойсу.
+
+        В отличие от deactivate_invoice (invoice/remove), который лишь снимает
+        неоплаченный счёт, этот метод реально возвращает деньги плательщику.
+
+        invoice_id: идентификатор оплаченного инвойса
+        amount: сумма возврата в копейках; None — полный возврат
+        ext_ref: внешний идентификатор операции возврата (для идемпотентности
+                 на стороне Monobank)
+        """
+        url = f"{self.BASE_URL}/invoice/cancel"
+
+        data: Dict[str, Any] = {"invoiceId": invoice_id}
+        if amount is not None:
+            data["amount"] = amount
+        if ext_ref is not None:
+            data["extRef"] = ext_ref
+
+        resp = requests.post(
+            url, json=data, headers=self._headers(), timeout=timeout
+        )
+
+        return self._handle_response(resp)
+
     def validate(self, x_sign: str, raw_body: bytes) -> bool:
         """True только для подписи, сделанной ключом нашего мерчанта.
 

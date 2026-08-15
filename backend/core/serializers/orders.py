@@ -3,6 +3,7 @@ from typing import TypedDict
 from rest_framework import serializers
 
 from core.models import Client, Good, Order, OrderEvent, OrderItem
+from core.services import order_cancel
 from core.services.discount_service import DiscountService
 from core.services.order_sync import get_payment_type_label, sync_order_to_remonline
 
@@ -240,7 +241,8 @@ class OrderCreateSerializer(serializers.ModelSerializer):
         return order
 
     def to_representation(self, instance):
-        return OrderSerializer(instance).data
+        # context пробрасываем, иначе can_cancel посчитается без request.user
+        return OrderSerializer(instance, context=self.context).data
 
 
 class OrderSerializer(serializers.ModelSerializer):
@@ -248,6 +250,9 @@ class OrderSerializer(serializers.ModelSerializer):
     last_payment_status = serializers.SerializerMethodField()
     last_payment_failure_code = serializers.SerializerMethodField()
     last_payment_failure_reason = serializers.SerializerMethodField()
+    can_cancel = serializers.SerializerMethodField()
+    can_request_cancel = serializers.SerializerMethodField()
+    cancel_block_reason = serializers.SerializerMethodField()
     subtotal_minor = serializers.IntegerField(
         validators=[validate_nonneg_int], required=False
     )
@@ -284,13 +289,58 @@ class OrderSerializer(serializers.ModelSerializer):
             "last_payment_status",
             "last_payment_failure_code",
             "last_payment_failure_reason",
+            "cancel_state",
+            "cancel_reason",
+            "cancel_comment",
+            "cancel_requested_at",
+            "canceled_at",
+            "refund_state",
+            "can_cancel",
+            "can_request_cancel",
+            "cancel_block_reason",
             "date",
             "remember_count",
             "branch_remember_count",
             "in_branch_datetime",
             "items",
         ]
-        read_only_fields = ["id", "date", "remonline_sync_status", "remonline_order_id"]
+        read_only_fields = [
+            "id",
+            "date",
+            "remonline_sync_status",
+            "remonline_order_id",
+            # Состояние отмены меняется только через /cancel/, /request-cancel/
+            # и админские экшены — не обычным PATCH заказа.
+            "cancel_state",
+            "cancel_reason",
+            "cancel_comment",
+            "cancel_requested_at",
+            "canceled_at",
+            "refund_state",
+        ]
+
+    def _actor(self):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        return user if user is not None and user.is_authenticated else None
+
+    def get_can_cancel(self, obj: Order):
+        allowed, _ = order_cancel.can_cancel(obj, self._actor())
+        return allowed
+
+    def get_can_request_cancel(self, obj: Order):
+        allowed, _ = order_cancel.can_request_cancel(obj, self._actor())
+        return allowed
+
+    def get_cancel_block_reason(self, obj: Order):
+        """Код причины, по которой отмена недоступна — для текста в UI."""
+        allowed, code = order_cancel.can_cancel(obj, self._actor())
+        if allowed:
+            return None
+        request_allowed, _ = order_cancel.can_request_cancel(obj, self._actor())
+        if request_allowed:
+            return None
+        return code
 
     def get_last_payment_failure_code(self, obj: Order):
         latest_payment = obj.payments.order_by("-created_at", "-id").first()

@@ -55,6 +55,11 @@ class PaymentCreateSerializer(serializers.Serializer):
         if order.is_paid:
             raise serializers.ValidationError("Order already paid")
 
+        # Скасоване замовлення не можна оплатити: інакше stale-вкладка
+        # чекауту проведе гроші за замовлення, якого вже немає.
+        if order.cancel_state == Order.CancelState.CANCELED:
+            raise serializers.ValidationError("Order is canceled")
+
         # Предоплата only: postpayment orders should not go through online prepayment flow
         if not order.prepayment:
             raise serializers.ValidationError(
@@ -122,6 +127,9 @@ class GooglePayWalletPaymentSerializer(serializers.Serializer):
 
         if order.is_paid:
             raise serializers.ValidationError("Order already paid")
+
+        if order.cancel_state == Order.CancelState.CANCELED:
+            raise serializers.ValidationError("Order is canceled")
 
         if not order.prepayment:
             raise serializers.ValidationError(

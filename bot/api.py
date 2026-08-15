@@ -278,6 +278,51 @@ async def delete_order(order_id):
                 return True
 
 
+# ===== Скасування замовлення =====
+
+async def _post_order_action(order_id, action: str, payload: dict | None = None):
+    """
+    Дёргает POST-экшен заказа. Возвращает (ok, data): при ok=False в data лежит
+    ответ бэкенда — например {"code": "order_shipped"} для 409.
+    """
+    url = f'{base_url}api/v2/orders/{order_id}/{action}/'
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, json=payload or {}, headers=headers) as resp:
+            try:
+                data = await resp.json()
+            except Exception:
+                data = {}
+            if resp.status in (200, 201):
+                return True, data
+            logger.error(
+                "Order action %s failed for order %s: %s %s",
+                action, order_id, resp.status, data,
+            )
+            return False, data
+
+
+async def cancel_order(order_id, reason: str, comment: str = ""):
+    return await _post_order_action(order_id, "cancel", {"reason": reason, "comment": comment})
+
+
+async def request_cancel_order(order_id, reason: str, comment: str = ""):
+    return await _post_order_action(
+        order_id, "request-cancel", {"reason": reason, "comment": comment}
+    )
+
+
+async def approve_cancel_order(order_id):
+    return await _post_order_action(order_id, "cancel-approve")
+
+
+async def reject_cancel_order(order_id, comment: str = ""):
+    return await _post_order_action(order_id, "cancel-reject", {"comment": comment})
+
+
+async def mark_order_refunded(order_id):
+    return await _post_order_action(order_id, "mark-refunded")
+
+
 async def get_bank_details():
     """Fetch active bank details from backend (DB)."""
     async with aiohttp.ClientSession() as session:

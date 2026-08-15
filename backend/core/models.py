@@ -247,6 +247,44 @@ class Discount(models.Model):
 # ===== Orders =====
 
 
+class CancelReason:
+    """Причины отмены. Клиентские + админские (последние два)."""
+
+    CHANGED_MIND = "changed_mind"
+    FOUND_CHEAPER = "found_cheaper"
+    WRONG_ITEMS = "wrong_items"
+    DELIVERY_TOO_LONG = "delivery_too_long"
+    DUPLICATE = "duplicate"
+    PAYMENT_FAILED = "payment_failed"
+    OTHER = "other"
+    NO_CONTACT = "no_contact"
+    OUT_OF_STOCK = "out_of_stock"
+    REMOVED_IN_REMONLINE = "removed_in_remonline"
+
+    CLIENT_CHOICES = [
+        CHANGED_MIND,
+        FOUND_CHEAPER,
+        WRONG_ITEMS,
+        DELIVERY_TOO_LONG,
+        DUPLICATE,
+        PAYMENT_FAILED,
+        OTHER,
+    ]
+
+    CHOICES = [
+        (CHANGED_MIND, "Changed mind"),
+        (FOUND_CHEAPER, "Found cheaper"),
+        (WRONG_ITEMS, "Wrong items"),
+        (DELIVERY_TOO_LONG, "Delivery too long"),
+        (DUPLICATE, "Duplicate order"),
+        (PAYMENT_FAILED, "Payment failed"),
+        (OTHER, "Other"),
+        (NO_CONTACT, "No contact with client"),
+        (OUT_OF_STOCK, "Out of stock"),
+        (REMOVED_IN_REMONLINE, "Removed in Remonline"),
+    ]
+
+
 class Order(models.Model):
     class RemonlineSyncStatus:
         PENDING = "PENDING"
@@ -255,6 +293,34 @@ class Order(models.Model):
         CHOICES = [
             (PENDING, "Pending"),
             (SYNCED, "Synced"),
+        ]
+
+    class CancelState:
+        NONE = ""
+        REQUESTED = "requested"
+        CANCELED = "canceled"
+        REJECTED = "rejected"
+
+        CHOICES = [
+            (NONE, "Not canceled"),
+            (REQUESTED, "Cancellation requested"),
+            (CANCELED, "Canceled"),
+            (REJECTED, "Cancellation rejected"),
+        ]
+
+    class RefundState:
+        NONE = ""
+        PENDING = "pending"
+        DONE = "done"
+        MANUAL = "manual"
+        FAILED = "failed"
+
+        CHOICES = [
+            (NONE, "No refund"),
+            (PENDING, "Refund in progress"),
+            (DONE, "Refunded"),
+            (MANUAL, "Refunded manually"),
+            (FAILED, "Refund failed"),
         ]
 
     id = models.BigAutoField(primary_key=True)
@@ -288,6 +354,35 @@ class Order(models.Model):
     subtotal_minor = models.BigIntegerField(default=0)  # before discounts/taxes
     discount_total_minor = models.BigIntegerField(default=0)  # total discount
     grand_total_minor = models.BigIntegerField(default=0)  # payable total
+
+    # Отмена заказа. is_paid при возврате не сбрасывается — факт оплаты был,
+    # состояние возврата живёт отдельно в refund_state.
+    cancel_state = models.CharField(
+        max_length=16,
+        choices=CancelState.CHOICES,
+        default=CancelState.NONE,
+        blank=True,
+        db_index=True,
+    )
+    cancel_reason = models.CharField(
+        max_length=32, choices=CancelReason.CHOICES, null=True, blank=True
+    )
+    cancel_comment = models.TextField(blank=True, null=True)
+    cancel_requested_at = models.DateTimeField(null=True, blank=True)
+    canceled_at = models.DateTimeField(null=True, blank=True)
+    canceled_by = models.ForeignKey(
+        "Client",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="canceled_orders",
+    )
+    refund_state = models.CharField(
+        max_length=16,
+        choices=RefundState.CHOICES,
+        default=RefundState.NONE,
+        blank=True,
+    )
 
     description = models.TextField(blank=True, null=True)
 
@@ -346,6 +441,10 @@ class OrderEventType:
     REMONLINE_CREATED = "REMONLINE_CREATED"
     PAYMENT_TYPE_CHANGED = "PAYMENT_TYPE_CHANGED"
     PAYMENT_DOC_UPLOADED = "PAYMENT_DOC_UPLOADED"
+    CANCEL_REQUESTED = "CANCEL_REQUESTED"
+    CANCELED = "CANCELED"
+    CANCEL_REJECTED = "CANCEL_REJECTED"
+    REFUNDED = "REFUNDED"
 
     CHOICES = [
         (MERGED, "Merged"),
@@ -358,6 +457,10 @@ class OrderEventType:
         (REMONLINE_CREATED, "Remonline Created"),
         (PAYMENT_TYPE_CHANGED, "Payment Type Changed"),
         (PAYMENT_DOC_UPLOADED, "Payment Document Uploaded"),
+        (CANCEL_REQUESTED, "Cancellation Requested"),
+        (CANCELED, "Canceled"),
+        (CANCEL_REJECTED, "Cancellation Rejected"),
+        (REFUNDED, "Refunded"),
     ]
 
 

@@ -174,6 +174,69 @@ class MonobankWebhookTests(TestCase):
         self.payment.refresh_from_db()
         self.assertEqual(self.payment.status, Payment.STATUS_EXPIRED)
 
+    # --- повернення коштів -------------------------------------------------
+
+    def _make_paid(self):
+        self.payment.status = Payment.STATUS_SUCCESS
+        self.payment.save(update_fields=["status"])
+        self.order.is_paid = True
+        self.order.save(update_fields=["is_paid"])
+
+    @patch("payments.mono.MonobankAPI")
+    def test_reversed_closes_refund_on_canceled_order(self, api_cls):
+        """Повернення після підтвердженого скасування закриває refund_state."""
+        api_cls.return_value.validate.return_value = True
+        self._make_paid()
+        self.order.cancel_state = Order.CancelState.CANCELED
+        self.order.refund_state = Order.RefundState.PENDING
+        self.order.save(update_fields=["cancel_state", "refund_state"])
+
+        resp = self._post(self._event(Payment.STATUS_REVERSED, modified="2026-08-15T11:00:00+00:00"))
+
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.payment.refresh_from_db()
+        self.order.refresh_from_db()
+        self.assertEqual(self.payment.status, Payment.STATUS_REVERSED)
+        self.assertIsNotNone(self.payment.refunded_at)
+        self.assertEqual(self.order.refund_state, Order.RefundState.DONE)
+        self.assertTrue(
+            OrderEvent.objects.filter(order=self.order, type=OrderEventType.REFUNDED).exists()
+        )
+
+    @patch("core.services.order_cancel._mark_canceled_in_remonline")
+    @patch("core.services.order_cancel._deactivate_pending_payments")
+    @patch("payments.mono.MonobankAPI")
+    def test_reversed_without_request_cancels_order(self, api_cls, _deact, _remonline):
+        """Адмін повернув кошти з кабінету Monobank — замовлення має закритися."""
+        api_cls.return_value.validate.return_value = True
+        self._make_paid()
+
+        with self.captureOnCommitCallbacks(execute=True):
+            resp = self._post(
+                self._event(Payment.STATUS_REVERSED, modified="2026-08-15T11:00:00+00:00")
+            )
+
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.cancel_state, Order.CancelState.CANCELED)
+        self.assertEqual(self.order.refund_state, Order.RefundState.DONE)
+
+    @patch("payments.mono.MonobankAPI")
+    def test_reversed_redelivery_is_idempotent(self, api_cls):
+        api_cls.return_value.validate.return_value = True
+        self._make_paid()
+        self.order.cancel_state = Order.CancelState.CANCELED
+        self.order.save(update_fields=["cancel_state"])
+        event = self._event(Payment.STATUS_REVERSED, modified="2026-08-15T11:00:00+00:00")
+
+        self.assertEqual(self._post(event).status_code, 200)
+        self.assertEqual(self._post(event).status_code, 200)
+
+        self.assertEqual(
+            OrderEvent.objects.filter(order=self.order, type=OrderEventType.REFUNDED).count(),
+            1,
+        )
+
     def test_unknown_invoice_id_does_not_500(self):
         event = self._event(Payment.STATUS_SUCCESS)
         event["invoiceId"] = "inv-does-not-exist"

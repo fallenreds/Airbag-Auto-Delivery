@@ -99,6 +99,21 @@ class GooglePayEndpointTests(TestCase):
         self.order.refresh_from_db()
         self.assertFalse(self.order.is_paid)
 
+    def test_cannot_pay_canceled_order(self):
+        self.order.cancel_state = Order.CancelState.CANCELED
+        self.order.save(update_fields=["cancel_state"])
+
+        resp = self.api.post(
+            "/api/v2/payments/googlepay/",
+            {"gToken": GTOKEN, "order_id": self.order.pk},
+            format="json",
+        )
+
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("order_id", resp.data)
+        self.order.refresh_from_db()
+        self.assertFalse(self.order.is_paid)
+
     def test_cannot_pay_someone_elses_order(self):
         other = Client(
             email="other@example.com",

@@ -5,7 +5,8 @@ from django.utils import timezone
 from config.settings import (
     REMONLINE_API_KEY,
 )
-from core.models import Order, OrderEvent, OrderEventType
+from core.models import CancelReason, Order, OrderEvent, OrderEventType
+from core.services.order_cancel import cancel_order
 from core.services.remonline.api import RemonlineInterface
 
 logger = logging.getLogger(__name__)
@@ -14,7 +15,9 @@ logger = logging.getLogger(__name__)
 def order_event_handler():
     # Get active orders with valid remonline_order_id
     active_local_orders = list(
-        Order.objects.filter(is_completed=False, remonline_order_id__isnull=False)
+        Order.objects.filter(
+            is_completed=False, remonline_order_id__isnull=False
+        ).exclude(cancel_state=Order.CancelState.CANCELED)
     )
     if not active_local_orders:
         return  # No orders to process
@@ -31,12 +34,20 @@ def order_event_handler():
         remonline_order = remonline_by_id.get(local_order.remonline_order_id)
 
         if remonline_order is None:
-            # Order was deleted in Remonline — delete locally too
+            # Заказ исчез в RemOnline. Раньше он удалялся локально — вместе с
+            # платежами и историей; теперь помечаем отменённым, чтобы след
+            # оплаты и основание для возврата остались.
             logger.info(
-                "Order %s (remonline_id=%s) not found in Remonline, deleting locally",
+                "Order %s (remonline_id=%s) not found in Remonline, canceling locally",
                 local_order.id, local_order.remonline_order_id,
             )
-            local_order.delete()
+            cancel_order(
+                local_order,
+                actor=None,
+                reason=CancelReason.REMOVED_IN_REMONLINE,
+                comment="Замовлення відсутнє в RemOnline",
+                sync_remonline=False,
+            )
             continue
 
         process_order(remonline_order, local_order)
