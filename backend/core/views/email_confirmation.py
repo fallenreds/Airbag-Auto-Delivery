@@ -5,7 +5,6 @@ from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from core.serializers import (
@@ -21,7 +20,7 @@ from core.services.email_confirmation import (
     resolve_token,
 )
 from core.models import Client
-from core.throttles import EmailConfirmationEmailThrottle
+from core.throttles import EmailConfirmationEmailThrottle, ResilientScopedRateThrottle
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +72,7 @@ class EmailConfirmationView(APIView):
 class EmailConfirmationResendView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
-    throttle_classes = [ScopedRateThrottle, EmailConfirmationEmailThrottle]
+    throttle_classes = [ResilientScopedRateThrottle, EmailConfirmationEmailThrottle]
     throttle_scope = "email_confirmation"
 
     @swagger_auto_schema(

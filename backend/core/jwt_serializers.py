@@ -1,11 +1,19 @@
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework import serializers
 from rest_framework.exceptions import AuthenticationFailed
+from .jwt_tokens import PASSWORD_CLAIM, password_fingerprint
 from .validators import validate_email
 
 
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
     username_field = "email"
+
+    @classmethod
+    def get_token(cls, user):
+        token = super().get_token(user)
+        # Отпечаток пароля: после смены пароля старые токены станут негодными.
+        token[PASSWORD_CLAIM] = password_fingerprint(user)
+        return token
 
     def validate(self, attrs):
         # Проверка формата email перед аутентификацией

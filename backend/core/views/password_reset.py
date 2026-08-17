@@ -6,7 +6,6 @@ from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from core.serializers import (
@@ -20,7 +19,7 @@ from core.services.password_reset import (
     find_resettable_client,
     resolve_uid,
 )
-from core.throttles import PasswordResetEmailThrottle
+from core.throttles import PasswordResetEmailThrottle, ResilientScopedRateThrottle
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +39,7 @@ class PasswordResetRequestView(APIView):
     # Порожній список навмисно: глобально першою йде ApiKeyAuthentication, і
     # протухлий заголовок зі сторінки скидання не повинен валити публічний ендпоінт у 401.
     authentication_classes = []
-    throttle_classes = [ScopedRateThrottle, PasswordResetEmailThrottle]
+    throttle_classes = [ResilientScopedRateThrottle, PasswordResetEmailThrottle]
     throttle_scope = "password_reset"
 
     @swagger_auto_schema(
@@ -75,7 +74,7 @@ class PasswordResetRequestView(APIView):
 class PasswordResetConfirmView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [ResilientScopedRateThrottle]
     throttle_scope = "password_reset_confirm"
 
     @swagger_auto_schema(

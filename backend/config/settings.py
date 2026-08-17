@@ -140,7 +140,9 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "core.authentication.ApiKeyAuthentication",
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        # Не штатный JWTAuthentication: наш отбраковывает токены, выданные до
+        # смены пароля (см. core/authentication.py).
+        "core.authentication.PasswordAwareJWTAuthentication",
     ),
     # DEFAULT_THROTTLE_CLASSES намеренно не задаём — иначе лимиты молча накроют
     # все существующие вьюхи. Троттлинг включается точечно, на публичных вьюхах.

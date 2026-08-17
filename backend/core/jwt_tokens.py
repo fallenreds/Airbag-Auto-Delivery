@@ -1,5 +1,26 @@
+import hashlib
 from datetime import timedelta
+
 from rest_framework_simplejwt.tokens import RefreshToken
+
+# Имя клейма с отпечатком пароля.
+PASSWORD_CLAIM = "pwd"
+
+
+def password_fingerprint(user):
+    """
+    Короткий отпечаток текущего хеша пароля.
+
+    Кладётся в токен, чтобы после смены пароля (в том числе через сброс)
+    ранее выданные access/refresh переставали работать. simplejwt без
+    приложения token_blacklist отзывать токены не умеет, а blacklist потребовал
+    бы записи в БД на каждую выдачу токена — здесь это не нужно.
+
+    В токен уходит хеш от хеша, причём усечённый: восстановить из него пароль
+    нельзя, а для сравнения «тот же/не тот» этого достаточно.
+    """
+    raw = user.password or ""
+    return hashlib.sha256(raw.encode()).hexdigest()[:12]
 
 
 class GuestRefreshToken(RefreshToken):

@@ -2,10 +2,11 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
+from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from core.models import Client
-from core.jwt_tokens import GuestRefreshToken
+from core.jwt_tokens import PASSWORD_CLAIM, GuestRefreshToken, password_fingerprint
 from .jwt_serializers import MyTokenObtainPairSerializer
 
 
@@ -20,9 +21,35 @@ class CustomTokenRefreshView(TokenRefreshView):
     For regular clients, it uses the standard RefreshToken with normal expiration.
     """
     
+    def _reject_if_password_changed(self, refresh_token):
+        """
+        Без этой проверки обновление стало бы дырой в отзыве токенов: сам
+        refresh подписан верно, и по нему выдался бы свежий access уже после
+        смены пароля. Токены без клейма пропускаем (см. PasswordAwareJWTAuthentication).
+        """
+        try:
+            token = RefreshToken(refresh_token)
+        except TokenError:
+            return  # невалидный токен разберёт сериализатор ниже
+
+        claimed = token.get(PASSWORD_CLAIM)
+        if not claimed:
+            return
+
+        user = Client.objects.filter(id=token.get("user_id")).first()
+        if user and claimed != password_fingerprint(user):
+            raise InvalidToken(
+                {
+                    "code": "password_changed",
+                    "detail": "Password has changed, please log in again.",
+                }
+            )
+
     def post(self, request, *args, **kwargs):
+        self._reject_if_password_changed(request.data.get("refresh", ""))
+
         serializer = TokenRefreshSerializer(data=request.data)
-        
+
         try:
             serializer.is_valid(raise_exception=True)
         except TokenError as e:

@@ -12,10 +12,43 @@
 ScopedRateThrottle бере scope із в'юхи (`view.throttle_scope`) і перетирає
 атрибут класу, тож обидва відра отримали б однакову ставку.
 """
-from rest_framework.throttling import SimpleRateThrottle
+import logging
+
+from rest_framework.throttling import ScopedRateThrottle, SimpleRateThrottle
+
+logger = logging.getLogger(__name__)
 
 
-class _EmailFieldThrottle(SimpleRateThrottle):
+class _CacheResilientMixin:
+    """
+    Не даємо недоступному кешу зламати ендпоінт.
+
+    Лічильники живуть у Redis. Якщо він падає, DRF кидає ConnectionError прямо
+    з allow_request — і користувач отримує 500 замість листа. Для відновлення
+    пароля це найгірший результат: людина не може ні скинути пароль, ні
+    зрозуміти, що сталося.
+
+    Тому при збої кешу пропускаємо запит (fail-open) і голосно логуємо. Ризик
+    обмежений: анти-енумерація працює незалежно від кешу, а кількість листів
+    зверху обмежена добовим лімітом акаунта Brevo.
+    """
+
+    def allow_request(self, request, view):
+        try:
+            return super().allow_request(request, view)
+        except Exception:
+            logger.exception(
+                "Throttle backend unavailable (scope=%s) — запит пропущено без ліміту",
+                getattr(self, "scope", None),
+            )
+            return True
+
+
+class ResilientScopedRateThrottle(_CacheResilientMixin, ScopedRateThrottle):
+    """ScopedRateThrottle, який не валить в'юху при недоступному Redis."""
+
+
+class _EmailFieldThrottle(_CacheResilientMixin, SimpleRateThrottle):
     """Відро з ключем по полю email у тілі запиту."""
 
     cache_prefix = "throttle_email"
