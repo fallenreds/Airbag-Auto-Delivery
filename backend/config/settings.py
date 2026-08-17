@@ -90,16 +90,18 @@ CACHES = {
     }
 }
 
-# Email (Gmail SMTP + пароль приложения)
+# Email: SMTP-релей Brevo, отправка от noreply@airbagad.com.
+# Своего почтового сервера у домена нет, поэтому письма идут через релей;
+# домен подтверждён в Brevo по DKIM (SPF не требуется — Return-Path на домене Brevo).
 EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
-EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
+EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp-relay.brevo.com")
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
 EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True") == "True"
 EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "False") == "True"
+# Логин вида 9xxxxx@smtp-brevo.com и SMTP key из панели: SMTP & API -> SMTP.
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
-# Пароль приложения Gmail: 16 символов, пробелы убрать.
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
-# Без таймаута зависший коннект к smtp.gmail.com держит воркер gunicorn бесконечно.
+# Без таймаута зависший коннект к SMTP держит воркер gunicorn бесконечно.
 EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "10"))
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER or "noreply@airbagad.com")
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
