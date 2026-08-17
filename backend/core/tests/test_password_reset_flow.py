@@ -47,13 +47,17 @@ RESET_SETTINGS = dict(
 _phone_seq = iter(range(10000, 99999))
 
 
-def make_client(email, *, is_active=True, password=OLD_PASSWORD):
+def make_client(email, *, is_active=True, password=OLD_PASSWORD, email_confirmed=True):
+    # email_confirmed=True за замовчуванням: тут перевіряється скидання пароля
+    # для звичайних, уже підтверджених клієнтів. Без цього вхід після скидання
+    # впирався б у вимогу підтвердити пошту.
     user = Client(
         email=email,
         name="Name",
         last_name="Last",
         phone=f"+38000{next(_phone_seq)}",
         is_active=is_active,
+        email_confirmed=email_confirmed,
     )
     user.set_password(password)
     user.save()
@@ -270,9 +274,9 @@ class PasswordResetThrottleTests(TestCase):
         self.api = APIClient()
         self.user = make_client("throttle-user@example.com")
 
-    def test_sixth_request_is_throttled(self):
-        # Бойовий ліміт — 5/hour; шостий запит має впертися.
-        for _ in range(5):
+    def test_fourth_request_for_same_email_is_throttled(self):
+        # Бойовий ліміт по адресу — 3/day; четвертий запит має впертися.
+        for _ in range(3):
             response = self.api.post(REQUEST_URL, {"email": self.user.email}, format="json")
             self.assertEqual(response.status_code, 200)
 
@@ -280,7 +284,8 @@ class PasswordResetThrottleTests(TestCase):
         self.assertEqual(blocked.status_code, 429)
 
     def test_email_bucket_survives_ip_change(self):
-        for index in range(5):
+        # Зміна IP не рятує: відро прив'язане саме до адреси пошти.
+        for index in range(3):
             self.api.post(
                 REQUEST_URL,
                 {"email": self.user.email},
@@ -295,3 +300,16 @@ class PasswordResetThrottleTests(TestCase):
             REMOTE_ADDR="10.0.0.250",
         )
         self.assertEqual(blocked.status_code, 429)
+
+    def test_ip_bucket_is_looser_than_email_bucket(self):
+        # За одним NAT сидить багато людей, тож ліміт по IP навмисно вищий:
+        # чотири різні адреси з одного IP не повинні впертися в 3/day.
+        for index in range(4):
+            other = make_client(f"nat-user-{index}@example.com")
+            response = self.api.post(
+                REQUEST_URL,
+                {"email": other.email},
+                format="json",
+                REMOTE_ADDR="10.0.0.99",
+            )
+            self.assertEqual(response.status_code, 200, f"запит {index + 1} впертися не мав")

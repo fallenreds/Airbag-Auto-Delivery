@@ -8,6 +8,7 @@ from .clients import (
     MeView,
 )
 from .discounts import DiscountViewSet
+from .email_confirmation import EmailConfirmationResendView, EmailConfirmationView
 from .goods import GoodCategoryViewSet, GoodViewSet
 from .orders import OrderEventViewSet, OrderItemViewSet, OrderViewSet
 from .password_reset import PasswordResetConfirmView, PasswordResetRequestView
@@ -20,6 +21,8 @@ __all__ = [
     "MeView",
     "ClientRegistrationView",
     "ChangePasswordView",
+    "EmailConfirmationView",
+    "EmailConfirmationResendView",
     "PasswordResetRequestView",
     "PasswordResetConfirmView",
     "OrderViewSet",

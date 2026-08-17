@@ -185,6 +185,7 @@ class ClientProfileSerializer(serializers.ModelSerializer):
             "phone",
             "nova_post_address",
             "discount_percentage",
+            "email_confirmed",
             "is_staff",
             "is_superuser",
             "is_guest",

@@ -123,6 +123,9 @@ FRONTEND_DEFAULT_LOCALE = "uk"
 
 # Время жизни ссылки сброса пароля, секунды (Django по умолчанию даёт 3 суток).
 PASSWORD_RESET_TIMEOUT = int(os.getenv("PASSWORD_RESET_TIMEOUT", "3600"))
+# Ссылка подтверждения почты живёт дольше: её открывают не «прямо сейчас»,
+# а когда дойдут руки до почтового ящика. По умолчанию 3 суток.
+EMAIL_CONFIRMATION_TIMEOUT = int(os.getenv("EMAIL_CONFIRMATION_TIMEOUT", "259200"))
 # False — слать письмо синхронно, минуя Celery (удобно в тестах и в dev без брокера).
 PASSWORD_RESET_EMAIL_ASYNC = os.getenv("PASSWORD_RESET_EMAIL_ASYNC", "True") == "True"
 
@@ -140,10 +143,17 @@ REST_FRAMEWORK = {
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
     # DEFAULT_THROTTLE_CLASSES намеренно не задаём — иначе лимиты молча накроют
-    # все существующие вьюхи. Троттлинг включается точечно, на вьюхах сброса пароля.
+    # все существующие вьюхи. Троттлинг включается точечно, на публичных вьюхах.
+    #
+    # Лимиты по адресу почты жёсткие (это защита конкретного ящика от заваливания
+    # письмами), а по IP — намеренно свободнее: за одним NAT сидит целый офис или
+    # мобильный оператор, и строгий лимит там блокировал бы добросовестных людей.
     "DEFAULT_THROTTLE_RATES": {
-        "password_reset": os.getenv("THROTTLE_PASSWORD_RESET", "5/hour"),
+        "password_reset_email": os.getenv("THROTTLE_PASSWORD_RESET_EMAIL", "3/day"),
+        "password_reset": os.getenv("THROTTLE_PASSWORD_RESET_IP", "20/day"),
         "password_reset_confirm": os.getenv("THROTTLE_PASSWORD_RESET_CONFIRM", "10/hour"),
+        "email_confirmation_email": os.getenv("THROTTLE_EMAIL_CONFIRMATION_EMAIL", "3/day"),
+        "email_confirmation": os.getenv("THROTTLE_EMAIL_CONFIRMATION_IP", "20/day"),
     },
 }
 SIMPLE_JWT = {
