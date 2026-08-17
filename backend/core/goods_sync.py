@@ -15,6 +15,7 @@ from config.settings import (
 )
 from core.models import Good, GoodCategory
 from core.services.remonline.api import RemonlineInterface
+from core.text_utils import transliterate_slug
 
 logger = logging.getLogger(__name__)
 
@@ -61,18 +62,23 @@ def sync_categories()->list[GoodCategory]:
         existing = current_map.get(cat_id)
 
         if existing is None:
-            # Новая категория
+            # Новая категория. Слаг заполняем здесь: bulk_create не вызывает
+            # save(), поэтому автогенерация из GoodCategory.save() не сработает,
+            # а без слага ссылка на категорию выродится в один голый id.
             categories_to_create.append(
                 GoodCategory(
                     id=cat_id,
                     id_remonline=cat_id,
                     title=category["title"],
                     parent_id=category.get("parent_id"),
+                    slug=transliterate_slug(category["title"]),
                 )
             )
         else:
             # Изменились название или parent
             if existing.title != category["title"] or existing.parent_id != category.get("parent_id"):
+                if existing.title != category["title"]:
+                    existing.slug = transliterate_slug(category["title"])
                 existing.title = category["title"]
                 existing.parent_id = category.get("parent_id")
                 categories_to_update.append(existing)
@@ -97,7 +103,7 @@ def sync_categories()->list[GoodCategory]:
             GoodCategory.objects.bulk_create(categories_to_create)
 
         if categories_to_update:
-            GoodCategory.objects.bulk_update(categories_to_update, ["title", "parent_id"])
+            GoodCategory.objects.bulk_update(categories_to_update, ["title", "parent_id", "slug"])
 
         # Текущий список категорий после синка
         current_categories = list(GoodCategory.objects.all())

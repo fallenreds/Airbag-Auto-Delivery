@@ -3,7 +3,8 @@ import random
 from datetime import date, datetime
 
 from django.core.cache import cache
-from django.db.models import Case, IntegerField, Value, When
+from django.db.models import Case, CharField, IntegerField, Value, When
+from django.db.models.functions import Cast, Concat, MD5
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import viewsets
@@ -17,15 +18,28 @@ from core.serializers import GoodCategorySerializer, GoodSerializer
 from .utils import generate_filterset_for_model
 
 
+def in_stock_first():
+    """Сначала товары в наличии, потом остальные."""
+    return Case(
+        When(residue__gt=0, then=Value(0)),
+        default=Value(1),
+        output_field=IntegerField(),
+    )
+
+
+def current_shuffle_bucket():
+    """
+    Метка 15-минутного интервала. Внутри одного интервала порядок товаров
+    одинаков для всех запросов, поэтому листание страниц не дублирует и не
+    теряет товары; раз в 15 минут витрина перемешивается заново.
+    """
+    now = datetime.now()
+    return now.strftime("%Y-%m-%d-%H") + f"-{(now.minute // 15) * 15:02d}"
+
+
 class GoodViewSet(viewsets.ModelViewSet):
     # Получаем все товары и сортируем сначала те что в наличии а потом не в наличии
-    queryset = Good.objects.all().order_by(
-        Case(
-            When(residue__gt=0, then=Value(0)),
-            default=Value(1),
-            output_field=IntegerField(),
-        )
-    )
+    queryset = Good.objects.all().order_by(in_stock_first())
     serializer_class = GoodSerializer
     filterset_class = generate_filterset_for_model(Good)
     ordering_fields = ['price_minor', 'title', 'residue']
@@ -35,11 +49,30 @@ class GoodViewSet(viewsets.ModelViewSet):
             return [AllowAny()]
         return [IsAdminUser()]
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+
+        # Витрина без явной сортировки перемешивается, но перемешивание должно
+        # уживаться с limit/offset: случайный порядок на уровне БД (ORDER BY
+        # random()) пересчитывается на каждый запрос, поэтому вторая страница
+        # показывала бы товары с первой. Хешируем id вместе с меткой интервала —
+        # порядок псевдослучайный, но стабильный, пока метка та же.
+        if self.action == "list" and not self.request.query_params.get("ordering"):
+            qs = qs.annotate(
+                shuffle_key=MD5(
+                    Concat(
+                        Cast("id", output_field=CharField()),
+                        Value(current_shuffle_bucket()),
+                        output_field=CharField(),
+                    )
+                )
+            ).order_by(in_stock_first(), "shuffle_key")
+
+        return qs
+
     @action(detail=False, methods=["GET"], permission_classes=[AllowAny], url_path="featured")
     def featured(self, request):
-        now = datetime.now()
-        # 15-minute bucket: changes order every 15 minutes
-        bucket = now.strftime("%Y-%m-%d-%H") + f"-{(now.minute // 15) * 15:02d}"
+        bucket = current_shuffle_bucket()
         cache_key = f"featured_goods:{bucket}"
         cached = cache.get(cache_key)
         if cached is not None:
@@ -109,6 +142,7 @@ class GoodCategoryViewSet(viewsets.ModelViewSet):
                         "id": openapi.Schema(type=openapi.TYPE_INTEGER),
                         "id_remonline": openapi.Schema(type=openapi.TYPE_INTEGER),
                         "title": openapi.Schema(type=openapi.TYPE_STRING),
+                        "slug": openapi.Schema(type=openapi.TYPE_STRING),
                         "image": openapi.Schema(type=openapi.TYPE_STRING),
                         "children": openapi.Schema(
                             type=openapi.TYPE_ARRAY,
@@ -148,6 +182,7 @@ class GoodCategoryViewSet(viewsets.ModelViewSet):
                     "id": category.id,  # локальный id, если нужен
                     "id_remonline": rem_id,
                     "title": category.title,
+                    "slug": category.slug,
                     "image": image_url,
                     "children": [],
                 }
@@ -156,6 +191,7 @@ class GoodCategoryViewSet(viewsets.ModelViewSet):
                 node["id"] = category.id
                 node["id_remonline"] = rem_id
                 node["title"] = category.title
+                node["slug"] = category.slug
                 node["image"] = image_url
                 node.setdefault("children", [])
 
@@ -168,6 +204,7 @@ class GoodCategoryViewSet(viewsets.ModelViewSet):
                         "id": None,
                         "id_remonline": parent_rem_id,
                         "title": "",
+                        "slug": "",
                         "image": None,
                         "children": [],
                     }
