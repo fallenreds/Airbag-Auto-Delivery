@@ -4,7 +4,7 @@
 # Blocks:
 #   - git push --force without --force-with-lease
 #   - git commit --no-verify (bypasses pre-commit)
-#   - git commit / git push while on a protected branch (master|main|develop)
+#   - git commit / git push while on a protected branch (master|develop)
 #
 # Runs (warns but does not block):
 #   - pre-commit on git commit (warning if pre-commit not installed)
@@ -55,7 +55,9 @@ if echo "$CMD" | grep -qE 'git[[:space:]]+.*\b(commit|push)\b'; then
 
     BRANCH=$(git -C "$REPO_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)
 
-    if echo "${BRANCH:-}" | grep -qE '^(master|main|develop)$'; then
+    # `main` из списка исключён: это трунк сабмодуля frontend, и владелец репозитория
+    # разрешил заливать в него напрямую, без PR.
+    if echo "${BRANCH:-}" | grep -qE '^(master|develop)$'; then
         cat >&2 <<EOF
 ✗ Прямой commit/push в основную ветку ($BRANCH) запрещён.
 
