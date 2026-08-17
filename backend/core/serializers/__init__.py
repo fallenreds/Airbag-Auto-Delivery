@@ -16,7 +16,15 @@ from .orders import (
     OrderEventSerializer,
 )
 from .carts import CartItemSerializer, CartSerializer
+from .email_confirmation import (
+    EmailConfirmationResendSerializer,
+    EmailConfirmationSerializer,
+)
 from .misc import TemplateSerializer, BotVisitorSerializer
+from .password_reset import (
+    PasswordResetConfirmSerializer,
+    PasswordResetRequestSerializer,
+)
 from .telegram import TelegramAuthSerializer, TelegramAutoLinkSerializer
 
 __all__ = [
@@ -38,6 +46,10 @@ __all__ = [
     'CartSerializer',
     'TemplateSerializer',
     'BotVisitorSerializer',
+    'EmailConfirmationSerializer',
+    'EmailConfirmationResendSerializer',
+    'PasswordResetRequestSerializer',
+    'PasswordResetConfirmSerializer',
     'TelegramAuthSerializer',
     'TelegramAutoLinkSerializer',
 ]

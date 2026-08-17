@@ -48,9 +48,16 @@ echo "=== Updating bot/.env WEB_APP_URL ==="
 sed -i "s|WEB_APP_URL=.*|WEB_APP_URL=\"$FRONTEND_URL\"|" bot/.env
 echo "Updated bot/.env -> WEB_APP_URL=\"$FRONTEND_URL\""
 
+# Ссылки в письмах восстановления пароля строятся из FRONTEND_URL. Без этой
+# подстановки они указывали бы на localhost:3000 и не открывались бы с телефона.
 echo ""
-echo "=== Restarting bot container ==="
-docker compose restart bot
+echo "=== Updating backend/.env FRONTEND_URL ==="
+sed -i "s|^FRONTEND_URL=.*|FRONTEND_URL=\"$FRONTEND_URL\"|" backend/.env
+echo "Updated backend/.env -> FRONTEND_URL=\"$FRONTEND_URL\""
+
+echo ""
+echo "=== Restarting bot + backend + celery containers ==="
+docker compose restart bot backend celery
 
 echo ""
 echo "==================================================================="

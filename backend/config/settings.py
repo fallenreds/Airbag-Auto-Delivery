@@ -90,6 +90,45 @@ CACHES = {
     }
 }
 
+# Email: Brevo, отправка от noreply@airbagad.com. Своего почтового сервера у
+# домена нет, поэтому письма идут через Brevo; домен подтверждён по DKIM
+# (SPF не нужен — Return-Path на домене Brevo).
+#
+# По умолчанию — HTTP API (core.mail.brevo), а не SMTP: провайдеры и облака
+# часто режут исходящие почтовые порты (на машине разработчика закрыты и 25,
+# и 587), а API ходит обычным HTTPS на 443. Чтобы вернуться на SMTP, достаточно
+# выставить EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend в .env —
+# настройки EMAIL_HOST/PORT ниже остаются рабочими.
+EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "core.mail.brevo.BrevoAPIEmailBackend")
+BREVO_API_KEY = os.getenv("BREVO_API_KEY", "")
+BREVO_API_URL = os.getenv("BREVO_API_URL", "https://api.brevo.com/v3/smtp/email")
+EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp-relay.brevo.com")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
+EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True") == "True"
+EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "False") == "True"
+# Логин вида 9xxxxx@smtp-brevo.com и SMTP key из панели: SMTP & API -> SMTP.
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+# Без таймаута зависший коннект к SMTP держит воркер gunicorn бесконечно.
+EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "10"))
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER or "noreply@airbagad.com")
+SERVER_EMAIL = DEFAULT_FROM_EMAIL
+
+# Публичный адрес фронтенда — из него строится ссылка сброса пароля.
+# DOMAIN для этого не годится: он указывает на API (см. payments/serializers.py).
+# Берём ТОЛЬКО отсюда, никогда из заголовков запроса — иначе host-header injection.
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
+FRONTEND_LOCALES = ("uk", "ru", "en")
+FRONTEND_DEFAULT_LOCALE = "uk"
+
+# Время жизни ссылки сброса пароля, секунды (Django по умолчанию даёт 3 суток).
+PASSWORD_RESET_TIMEOUT = int(os.getenv("PASSWORD_RESET_TIMEOUT", "3600"))
+# Ссылка подтверждения почты живёт дольше: её открывают не «прямо сейчас»,
+# а когда дойдут руки до почтового ящика. По умолчанию 3 суток.
+EMAIL_CONFIRMATION_TIMEOUT = int(os.getenv("EMAIL_CONFIRMATION_TIMEOUT", "259200"))
+# False — слать письмо синхронно, минуя Celery (удобно в тестах и в dev без брокера).
+PASSWORD_RESET_EMAIL_ASYNC = os.getenv("PASSWORD_RESET_EMAIL_ASYNC", "True") == "True"
+
 # DRF pagination and filter settings
 REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "core.pagination.CustomLimitOffsetPagination",
@@ -101,8 +140,23 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "core.authentication.ApiKeyAuthentication",
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        # Не штатный JWTAuthentication: наш отбраковывает токены, выданные до
+        # смены пароля (см. core/authentication.py).
+        "core.authentication.PasswordAwareJWTAuthentication",
     ),
+    # DEFAULT_THROTTLE_CLASSES намеренно не задаём — иначе лимиты молча накроют
+    # все существующие вьюхи. Троттлинг включается точечно, на публичных вьюхах.
+    #
+    # Лимиты по адресу почты жёсткие (это защита конкретного ящика от заваливания
+    # письмами), а по IP — намеренно свободнее: за одним NAT сидит целый офис или
+    # мобильный оператор, и строгий лимит там блокировал бы добросовестных людей.
+    "DEFAULT_THROTTLE_RATES": {
+        "password_reset_email": os.getenv("THROTTLE_PASSWORD_RESET_EMAIL", "3/day"),
+        "password_reset": os.getenv("THROTTLE_PASSWORD_RESET_IP", "20/day"),
+        "password_reset_confirm": os.getenv("THROTTLE_PASSWORD_RESET_CONFIRM", "10/hour"),
+        "email_confirmation_email": os.getenv("THROTTLE_EMAIL_CONFIRMATION_EMAIL", "3/day"),
+        "email_confirmation": os.getenv("THROTTLE_EMAIL_CONFIRMATION_IP", "20/day"),
+    },
 }
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(days=1),

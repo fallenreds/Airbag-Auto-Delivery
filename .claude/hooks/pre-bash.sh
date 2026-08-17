@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# PreToolUse hook for Bash — enforce Sidis flow rules.
+# PreToolUse hook for Bash — git safety rules.
 #
 # Blocks:
-#   - git push to main/develop (must use PR flow)
 #   - git push --force without --force-with-lease
 #   - git commit --no-verify (bypasses pre-commit)
+#   - git commit / git push while on a protected branch (master|develop)
 #
 # Runs (warns but does not block):
 #   - pre-commit on git commit (warning if pre-commit not installed)
@@ -21,22 +21,6 @@ fi
 
 if [ -z "${CMD:-}" ]; then
     exit 0
-fi
-
-# === Block: push to main/develop ===
-if echo "$CMD" | grep -qE 'git[[:space:]]+push.*\b(main|develop)\b' && \
-   ! echo "$CMD" | grep -q -- '--dry-run'; then
-    cat >&2 <<EOF
-✗ Sidis flow violation: push directly to main/develop is forbidden.
-
-Use the Pull Request flow:
-  - For feature work: branch off develop, open PR via /sidis-create-pr
-  - For hotfix:       branch off main, follow /sidis-hotfix flow
-
-If this is a backmerge after merged hotfix, use:
-  git push origin develop --dry-run     # to preview, then drop --dry-run
-EOF
-    exit 2  # exit code 2 → Claude Code displays as error and aborts the tool call
 fi
 
 # === Block: force push without lease ===
@@ -61,6 +45,29 @@ if echo "$CMD" | grep -qE 'git[[:space:]]+commit.*--no-verify\b'; then
 Per Sidis Dev Process v1.0 section 4.1.6 — fix the issue, don't bypass.
 EOF
     exit 2
+fi
+
+# === Block: commit/push directly into a protected branch ===
+if echo "$CMD" | grep -qE 'git[[:space:]]+.*\b(commit|push)\b'; then
+    # honour `git -C <path> ...` so the rule also covers the frontend submodule
+    REPO_DIR=$(echo "$CMD" | grep -oE 'git[[:space:]]+-C[[:space:]]+[^[:space:]]+' | head -1 | awk '{print $3}' || true)
+    REPO_DIR=${REPO_DIR:-.}
+
+    BRANCH=$(git -C "$REPO_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)
+
+    # `main` из списка исключён: это трунк сабмодуля frontend, и владелец репозитория
+    # разрешил заливать в него напрямую, без PR.
+    if echo "${BRANCH:-}" | grep -qE '^(master|develop)$'; then
+        cat >&2 <<EOF
+✗ Прямой commit/push в основную ветку ($BRANCH) запрещён.
+
+Новые изменения всегда идут в отдельной ветке. Создайте её:
+  git -C $REPO_DIR checkout -b feat/<описание>
+
+Затем повторите команду. Интеграция в $BRANCH — только через Pull Request.
+EOF
+        exit 2
+    fi
 fi
 
 # === Warn (non-blocking): commit without pre-commit installed ===

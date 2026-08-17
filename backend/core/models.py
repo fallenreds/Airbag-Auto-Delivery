@@ -85,6 +85,11 @@ class Client(AbstractBaseUser, PermissionsMixin):
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     is_guest = models.BooleanField(default=False)
+    # Подтверждение почты при регистрации. Новые аккаунты создаются
+    # неподтверждёнными и не могут войти, пока не пройдут по ссылке из письма.
+    # Существующие на момент миграции аккаунты помечены подтверждёнными —
+    # иначе действующие клиенты разом потеряли бы доступ.
+    email_confirmed = models.BooleanField(default=False)
 
     groups = models.ManyToManyField(
         "auth.Group",

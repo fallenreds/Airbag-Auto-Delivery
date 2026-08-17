@@ -18,6 +18,10 @@ from core.serializers import (
     ClientSerializer,
 )
 from core.services.discount_service import DiscountService
+from core.services.email_confirmation import (
+    dispatch_confirmation_email,
+    needs_confirmation,
+)
 
 from .utils import generate_filterset_for_model
 
@@ -150,8 +154,21 @@ class ClientRegistrationView(APIView):
     def post(self, request):
         serializer = ClientRegisterSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save()
-            return Response({"message": "User registered successfully"}, status=201)
+            client = serializer.save()
+
+            # Письмо с подтверждением. Ошибка отправки не должна валить
+            # регистрацию: аккаунт уже создан, письмо можно запросить заново.
+            locale = request.data.get("locale")
+            if needs_confirmation(client):
+                dispatch_confirmation_email(client, locale)
+
+            return Response(
+                {
+                    "message": "User registered successfully",
+                    "email_confirmation_required": True,
+                },
+                status=201,
+            )
         return Response(serializer.errors, status=400)
 
 
