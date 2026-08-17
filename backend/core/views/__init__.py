@@ -10,6 +10,7 @@ from .clients import (
 from .discounts import DiscountViewSet
 from .goods import GoodCategoryViewSet, GoodViewSet
 from .orders import OrderEventViewSet, OrderItemViewSet, OrderViewSet
+from .password_reset import PasswordResetConfirmView, PasswordResetRequestView
 from .templates import TemplateViewSet
 from .telegram import TelegramAuthView, TelegramAutoLinkView, TelegramLinkConsumeView, TelegramLinkView
 
@@ -19,6 +20,8 @@ __all__ = [
     "MeView",
     "ClientRegistrationView",
     "ChangePasswordView",
+    "PasswordResetRequestView",
+    "PasswordResetConfirmView",
     "OrderViewSet",
     "OrderItemViewSet",
     "OrderEventViewSet",

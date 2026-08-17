@@ -90,6 +90,32 @@ CACHES = {
     }
 }
 
+# Email (Gmail SMTP + пароль приложения)
+EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
+EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
+EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True") == "True"
+EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "False") == "True"
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+# Пароль приложения Gmail: 16 символов, пробелы убрать.
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+# Без таймаута зависший коннект к smtp.gmail.com держит воркер gunicorn бесконечно.
+EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "10"))
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER or "noreply@airbagad.com")
+SERVER_EMAIL = DEFAULT_FROM_EMAIL
+
+# Публичный адрес фронтенда — из него строится ссылка сброса пароля.
+# DOMAIN для этого не годится: он указывает на API (см. payments/serializers.py).
+# Берём ТОЛЬКО отсюда, никогда из заголовков запроса — иначе host-header injection.
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
+FRONTEND_LOCALES = ("uk", "ru", "en")
+FRONTEND_DEFAULT_LOCALE = "uk"
+
+# Время жизни ссылки сброса пароля, секунды (Django по умолчанию даёт 3 суток).
+PASSWORD_RESET_TIMEOUT = int(os.getenv("PASSWORD_RESET_TIMEOUT", "3600"))
+# False — слать письмо синхронно, минуя Celery (удобно в тестах и в dev без брокера).
+PASSWORD_RESET_EMAIL_ASYNC = os.getenv("PASSWORD_RESET_EMAIL_ASYNC", "True") == "True"
+
 # DRF pagination and filter settings
 REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "core.pagination.CustomLimitOffsetPagination",
@@ -103,6 +129,12 @@ REST_FRAMEWORK = {
         "core.authentication.ApiKeyAuthentication",
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
+    # DEFAULT_THROTTLE_CLASSES намеренно не задаём — иначе лимиты молча накроют
+    # все существующие вьюхи. Троттлинг включается точечно, на вьюхах сброса пароля.
+    "DEFAULT_THROTTLE_RATES": {
+        "password_reset": os.getenv("THROTTLE_PASSWORD_RESET", "5/hour"),
+        "password_reset_confirm": os.getenv("THROTTLE_PASSWORD_RESET_CONFIRM", "10/hour"),
+    },
 }
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(days=1),
