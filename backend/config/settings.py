@@ -90,10 +90,18 @@ CACHES = {
     }
 }
 
-# Email: SMTP-релей Brevo, отправка от noreply@airbagad.com.
-# Своего почтового сервера у домена нет, поэтому письма идут через релей;
-# домен подтверждён в Brevo по DKIM (SPF не требуется — Return-Path на домене Brevo).
-EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
+# Email: Brevo, отправка от noreply@airbagad.com. Своего почтового сервера у
+# домена нет, поэтому письма идут через Brevo; домен подтверждён по DKIM
+# (SPF не нужен — Return-Path на домене Brevo).
+#
+# По умолчанию — HTTP API (core.mail.brevo), а не SMTP: провайдеры и облака
+# часто режут исходящие почтовые порты (на машине разработчика закрыты и 25,
+# и 587), а API ходит обычным HTTPS на 443. Чтобы вернуться на SMTP, достаточно
+# выставить EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend в .env —
+# настройки EMAIL_HOST/PORT ниже остаются рабочими.
+EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "core.mail.brevo.BrevoAPIEmailBackend")
+BREVO_API_KEY = os.getenv("BREVO_API_KEY", "")
+BREVO_API_URL = os.getenv("BREVO_API_URL", "https://api.brevo.com/v3/smtp/email")
 EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp-relay.brevo.com")
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
 EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True") == "True"
