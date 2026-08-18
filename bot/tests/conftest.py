@@ -22,34 +22,38 @@ os.environ.setdefault("BRANCH_PROD", "1")
 os.environ.setdefault("WEB_APP_URL", "http://localhost:3000")
 
 # ── aiogram 2.x compatibility shim ──────────────────────────────────────────
-# Bot uses aiogram 2.25.2 API paths; installed version is 3.x.
-# Strategy: let aiogram 3.x load fully first, then patch in the missing 2.x
-# sub-modules so that "from aiogram.utils.exceptions import ..." etc. work.
-import aiogram          # trigger full 3.x load (so aiogram.utils is a real pkg)
-import aiogram.utils    # ensure the real package is in sys.modules
+# Прод крутится на aiogram 2.25.2. Если в окружении стоит именно она — ничего
+# не подменяем: хендлер-тесты должны работать с настоящими Message/CallbackQuery
+# и настоящей клавиатурой, иначе они проверяют заглушки, а не бота.
+# Шим включается только когда установлена 3.x, где этих путей уже нет.
+import aiogram          # noqa: E402
+import aiogram.utils    # noqa: E402
 
-# Patch aiogram.utils.exceptions (moved/removed in 3.x)
-_exc = ModuleType("aiogram.utils.exceptions")
-_exc.ChatNotFound = type("ChatNotFound", (Exception,), {})
-_exc.BotBlocked   = type("BotBlocked",   (Exception,), {})
-aiogram.utils.exceptions = _exc                         # type: ignore[attr-defined]
-sys.modules["aiogram.utils.exceptions"] = _exc
+AIOGRAM_MAJOR = int(aiogram.__version__.split(".")[0])
 
-# Patch aiogram.utils.callback_data (removed in 3.x)
-_cb = ModuleType("aiogram.utils.callback_data")
-_cb.CallbackData = MagicMock()
-aiogram.utils.callback_data = _cb                       # type: ignore[attr-defined]
-sys.modules["aiogram.utils.callback_data"] = _cb
+if AIOGRAM_MAJOR >= 3:
+    # Patch aiogram.utils.exceptions (moved/removed in 3.x)
+    _exc = ModuleType("aiogram.utils.exceptions")
+    _exc.ChatNotFound = type("ChatNotFound", (Exception,), {})
+    _exc.BotBlocked   = type("BotBlocked",   (Exception,), {})
+    aiogram.utils.exceptions = _exc                     # type: ignore[attr-defined]
+    sys.modules["aiogram.utils.exceptions"] = _exc
 
-# Patch aiogram.contrib.* (removed in 3.x)
-for _mod_name in (
-    "aiogram.contrib",
-    "aiogram.contrib.fsm_storage",
-    "aiogram.contrib.fsm_storage.memory",
-):
-    _m = ModuleType(_mod_name)
-    _m.MemoryStorage = MagicMock()
-    sys.modules[_mod_name] = _m
+    # Patch aiogram.utils.callback_data (removed in 3.x)
+    _cb = ModuleType("aiogram.utils.callback_data")
+    _cb.CallbackData = MagicMock()
+    aiogram.utils.callback_data = _cb                   # type: ignore[attr-defined]
+    sys.modules["aiogram.utils.callback_data"] = _cb
+
+    # Patch aiogram.contrib.* (removed in 3.x)
+    for _mod_name in (
+        "aiogram.contrib",
+        "aiogram.contrib.fsm_storage",
+        "aiogram.contrib.fsm_storage.memory",
+    ):
+        _m = ModuleType(_mod_name)
+        _m.MemoryStorage = MagicMock()
+        sys.modules[_mod_name] = _m
 
 # ── bot package path ─────────────────────────────────────────────────────────
 BOT_DIR = os.path.dirname(os.path.dirname(__file__))
@@ -125,4 +129,39 @@ def paginated(sample_order):
             "previous": None,
             "results": results,
         }
+    return _make
+
+
+# ── Фикстуры для e2e-тестов хендлеров ────────────────────────────────────────
+# Хендлеры в main.py ходят в сеть через api.* и шлют сообщения через глобальный
+# main.bot. Тесты подменяют оба конца: api — моками с готовыми данными, bot —
+# AsyncMock, по вызовам которого проверяем, что именно бот сказал пользователю.
+
+@pytest.fixture
+def bot_module():
+    """Импортированный main.py с очищенными кешами страниц."""
+    import main
+    main._page_cache.clear()
+    main._client_page_cache.clear()
+    main._client_list_cache.clear()
+    main._discount_cache.clear()
+    return main
+
+
+@pytest.fixture
+def fake_bot(bot_module, monkeypatch):
+    """Подменяет main.bot и возвращает мок для проверки исходящих сообщений."""
+    from unittest.mock import AsyncMock
+    mock = AsyncMock()
+    monkeypatch.setattr(bot_module, "bot", mock)
+    return mock
+
+
+@pytest.fixture
+def order_factory(sample_order):
+    """Заказ с переопределёнными полями — для матрицы состояний."""
+    def _make(**overrides):
+        order = dict(sample_order)
+        order.update(overrides)
+        return order
     return _make
