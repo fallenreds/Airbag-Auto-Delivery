@@ -262,6 +262,14 @@ def get_goods_ids_to_delete(
     Возвращает id_remonline товаров, которые нужно удалить:
     - товара нет в Remonline
     - или категория товара больше не валидна
+    - или у товара вообще нет категории
+
+    Товар без категории — это осиротевший товар: его категорию убрали из
+    вайтлиста, GoodCategory удалилась, а FK Good.category с on_delete=SET_NULL
+    обнулился. Раньше такой товар не проходил ни одну проверку на удаление и
+    навсегда оставался в БД, продолжая показываться в витрине; заново
+    привязаться к категории он тоже не может — sync_goods пропускает товары,
+    чья remonline-категория не входит в вайтлист.
     """
     ids_to_delete: set[int] = set()
 
@@ -270,7 +278,7 @@ def get_goods_ids_to_delete(
             ids_to_delete.add(g.id_remonline)
             continue
 
-        if g.category_id and g.category_id not in valid_category_ids_db:
+        if not g.category_id or g.category_id not in valid_category_ids_db:
             ids_to_delete.add(g.id_remonline)
 
     return ids_to_delete

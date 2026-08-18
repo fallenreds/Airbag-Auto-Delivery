@@ -38,8 +38,13 @@ def current_shuffle_bucket():
 
 
 class GoodViewSet(viewsets.ModelViewSet):
-    # Получаем все товары и сортируем сначала те что в наличии а потом не в наличии
-    queryset = Good.objects.all().order_by(in_stock_first())
+    # Товары без категории в выдачу не попадают: категорию могли убрать из
+    # вайтлиста, и товар остался осиротевшим (Good.category — SET_NULL). Такой
+    # товар относится к скрытой категории, показывать его нельзя.
+    # Основную чистку делает sync_goods, это страховка на уровне выдачи.
+    queryset = (
+        Good.objects.filter(category__isnull=False).order_by(in_stock_first())
+    )
     serializer_class = GoodSerializer
     filterset_class = generate_filterset_for_model(Good)
     ordering_fields = ['price_minor', 'title', 'residue']
@@ -109,7 +114,10 @@ class GoodViewSet(viewsets.ModelViewSet):
 
         if len(selected) < 12:
             seen_ids = {g.id for g in selected}
-            extra = list(Good.objects.filter(residue__gt=0).exclude(id__in=seen_ids))
+            extra = list(
+                Good.objects.filter(residue__gt=0, category__isnull=False)
+                .exclude(id__in=seen_ids)
+            )
             rng = random.Random(seed)
             rng.shuffle(extra)
             selected.extend(extra[:12 - len(selected)])
