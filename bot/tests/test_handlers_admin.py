@@ -167,11 +167,6 @@ class TestDiscountPage:
         assert "Знижок немає" in text
         assert "сума@відсоток" in text
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="B6: мёртвый хвост в _show_discount_page обращается к несуществующей "
-               "переменной telegram_id (main.py:587) — NameError после отрисовки карточки",
-    )
     async def test_card_renders_with_delete_and_back(self, bot_module):
         bot_module._discount_cache[ADMIN_ID] = [
             {"id": 7, "month_payment": 1000, "percentage": "2.00"},
@@ -217,7 +212,9 @@ class TestDiscountFormat:
             await bot_module.add_new_discount(msg)
 
         post.assert_not_awaited()
-        assert "указаном формате" in fake_bot.send_message.await_args.args[1]
+        text = fake_bot.send_message.await_args.args[1]
+        assert "формат" in text.lower()
+        assert "сума@відсоток" in text
 
 
 # ─────────────────── админская отмена и возвраты ─────────────────────────────

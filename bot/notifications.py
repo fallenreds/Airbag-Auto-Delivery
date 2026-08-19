@@ -12,6 +12,7 @@ from buttons import get_check_ttn_button, get_our_contact_button, get_show_disco
     get_make_paid_button, get_to_not_prepayment_button, get_cancel_request_decision_keyboard
 from engine import send_messages_to_admins, send_error_log, make_order
 from utils.utils import to_major
+from utils.cancel_dedup import consume_client_notified
 
 
 async def check_status_notification(bot, telegram_id, order):
@@ -191,6 +192,10 @@ async def canceled_notifications(bot, order, details: str | None, admin_list):
             bot, admin_list, f"Замовлення №{order['id']} скасовано ❌"
         )
         if not order.get('telegram_id'):
+            return
+        if consume_client_notified(order.get('id')):
+            # Отмену запустил сам клиент кнопкой в боте — хендлер ему уже
+            # ответил, второе сообщение было бы дублем.
             return
         client_text = (
             f"<b>Ваше замовлення №{order['id']} скасовано ❌</b>"

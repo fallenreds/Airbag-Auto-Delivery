@@ -51,6 +51,7 @@ from utils.cancel_rules import (
     is_cancel_requested, is_order_owner,
 )
 from utils.utils import to_major
+from utils.cancel_dedup import mark_client_notified
 admin_list = [516842877, 5783466675]
 
 # admin_id → list of orders for paginated card view
@@ -234,34 +235,58 @@ async def check_discount(message: types.Message):
         await no_connection_with_server_notification(bot, message)
 
 
-async def is_discount(text):
-    month_payment, procent = text.split("@")
+def parse_discount(text: str):
+    """
+    Разбирает строку вида "сума@відсоток" в пару (month_payment, percent).
+
+    Возвращает None, если строка не является корректной знижкой. Раньше здесь
+    была распаковка `text.split("@")` в две переменные, и любой текст с двумя
+    и более "@" (например "пошта@gmail.com@") ронял хендлер ValueError ещё до
+    try/except — админ не получал ни знижки, ни подсказки про формат.
+    """
+    parts = (text or "").split("@")
+    if len(parts) != 2:
+        return None
+    raw_payment, raw_percent = (p.strip() for p in parts)
     try:
-        int(month_payment)
-        int(procent)
-        if int(procent) <= 100:
-            return True
-        raise ValueError
+        month_payment = int(raw_payment)
+        percent = int(raw_percent)
     except ValueError:
-        return False
+        return None
+    if not 0 <= percent <= 100 or month_payment < 0:
+        return None
+    return month_payment, percent
 
 
-@dp.message_handler(filters.Text(contains="@", ignore_case=True))
+async def is_discount(text):
+    return parse_discount(text) is not None
+
+
+@dp.message_handler(
+    filters.Text(contains="@", ignore_case=True),
+    lambda message: check_admin_permission(message),
+)
 async def add_new_discount(message: types.Message):
+    """
+    Создание знижки админом. Фильтр по админу висит на самом хендлере: без него
+    сообщение любого клиента с "@" (обычный email) попадало сюда, ни одна ветка
+    не срабатывала, и бот молча ничего не отвечал.
+    """
     telegram_id = message.chat.id
-    if check_admin_permission(message) and await is_discount(message.text):
-        month_payment, procent = message.text.split("@")
-        response = await post_discount(int(procent), int(month_payment))
-        if not response:
-            return None
-        if response:
-            await bot.send_message(telegram_id, "Нова знижка успішно створена!")
-        else:
-            await unknown_error_notifications(bot, telegram_id)
+    parsed = parse_discount(message.text)
 
+    if parsed is None:
+        return await bot.send_message(
+            telegram_id,
+            "Невірний формат. Введіть знижку як <code>сума@відсоток</code>, "
+            "наприклад <code>1000@2</code>.",
+        )
 
-    elif check_admin_permission(message):
-        await bot.send_message(telegram_id, "Введите значения в указаном формате.")
+    month_payment, percent = parsed
+    response = await post_discount(percent, month_payment)
+    if not response:
+        return await unknown_error_notifications(bot, telegram_id)
+    await bot.send_message(telegram_id, "Нова знижка успішно створена!")
 
 @dp.inline_handler(state = MergeOrderState)
 async def show_orders_to_merge(inline_query: types.InlineQuery, state: FSMContext):
@@ -580,13 +605,6 @@ async def _show_discount_page(bot, admin_id: int, chat_id: int, index: int, mess
             await bot.send_message(chat_id, text, reply_markup=final_kb, parse_mode="HTML")
     else:
         await bot.send_message(chat_id, text, reply_markup=final_kb, parse_mode="HTML")
-
-    markup_i = types.InlineKeyboardMarkup()
-    add_discount = types.InlineKeyboardButton("Додати знижку ➕", callback_data=f"new_discount")
-    markup_i.add(add_discount)
-    await bot.send_message(telegram_id,
-                           f"<b>Або додайте нову знижку у форматі:\nкількість витрачених коштів за місяць-процент.\nНаприклад 1000@2</b>",
-                           reply_markup=markup_i)
 
 
 
@@ -953,6 +971,23 @@ async def ttn_state(message: types.Message, state: FSMContext):
         await send_error_log(bot, 516842877, error)
 
 
+@dp.message_handler(content_types=['text'], state=None)
+async def unknown_text_handler(message: types.Message):
+    """
+    Ответ на текст, который не разобрал ни один хендлер выше.
+
+    Регистрируется последним среди message_handler без состояния, поэтому
+    перехватывает только то, что иначе ушло бы в пустоту: раньше клиент,
+    приславший произвольный текст (например email), не получал вообще
+    ничего и не понимал, услышал его бот или нет.
+    """
+    await bot.send_message(
+        message.chat.id,
+        "Не зрозумів команду 🤔\nСкористайтесь, будь ласка, кнопками нижче "
+        "або натисніть /start, щоб відкрити меню.",
+    )
+
+
 async def on_startup(dp):
     await bot.set_my_commands([
         types.BotCommand("start", "Головне меню"),
@@ -1206,6 +1241,11 @@ async def callback_admin_panel(callback: types.CallbackQuery, state: FSMContext)
             except Exception:
                 pass
             if ok:
+                # Клиенту отвечаем сразу, не дожидаясь поллера. Чтобы событие
+                # CANCELED не принесло ему второе такое же сообщение, помечаем
+                # заказ как уже озвученный.
+                if client_can_cancel(order):
+                    mark_client_notified(order_id)
                 return await bot.send_message(
                     callback.message.chat.id, success_text,
                     reply_markup=types.InlineKeyboardMarkup().add(get_our_contact_button()),

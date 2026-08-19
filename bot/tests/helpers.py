@@ -56,3 +56,57 @@ def kb_callbacks(markup):
     if markup is None:
         return []
     return [b.callback_data for row in markup.inline_keyboard for b in row]
+
+
+async def handler_accepts(dp, handler_name, message):
+    """
+    Прогоняет message через фильтры зарегистрированного хендлера.
+
+    Нужен, чтобы проверять не только тело хендлера, но и то, кого он вообще
+    пускает внутрь: фильтр «только админ» — часть поведения, и юнит-вызов
+    самой функции его не увидит.
+    """
+    from aiogram import Bot, Dispatcher
+    from aiogram.dispatcher.filters import check_filters, FilterNotPassed
+
+    # StateFilter лезет за текущим состоянием через контекстные переменные
+    # (bot, dispatcher, а также текущие user/chat), поэтому вне реального
+    # поллинга их надо выставить руками.
+    from aiogram import types as _types
+    Bot.set_current(dp.bot)
+    Dispatcher.set_current(dp)
+
+    # CommandsFilter сверяет "/cmd@username" с именем бота и ради этого лезет
+    # в getMe — в тестах подкладываем готовый ответ вместо похода в сеть.
+    if getattr(dp.bot, "_me", None) is None:
+        dp.bot._me = _types.User.to_object(
+            {"id": 1, "is_bot": True, "first_name": "TestBot", "username": "test_bot"}
+        )
+    if message.from_user:
+        _types.User.set_current(message.from_user)
+    if message.chat:
+        _types.Chat.set_current(message.chat)
+
+    for item in dp.message_handlers.handlers:
+        if item.handler.__name__ != handler_name:
+            continue
+        try:
+            await check_filters(item.filters, (message,))
+        except FilterNotPassed:
+            return False
+        return True
+    raise AssertionError(f"хендлер {handler_name} не зарегистрирован")
+
+
+async def first_matching_handler(dp, message):
+    """
+    Имя первого хендлера, чьи фильтры пропускают сообщение.
+
+    aiogram останавливается на первом совпадении, поэтому только так видно,
+    кто на самом деле ответит пользователю: сам факт, что фильтры какого-то
+    хендлера проходят, ещё не значит, что до него дойдёт очередь.
+    """
+    for item in dp.message_handlers.handlers:
+        if await handler_accepts(dp, item.handler.__name__, message):
+            return item.handler.__name__
+    return None
