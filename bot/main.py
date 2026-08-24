@@ -1045,9 +1045,60 @@ async def client_order_nav_handler(callback: types.CallbackQuery):
     await _show_client_order_page(bot, callback.from_user.id, index, callback.message.message_id)
 
 
+# Кнопки живут в истории чата годами. После переноса токена @AirBagAD_bot под
+# эту кодовую базу до нас доходят callback'ы от сообщений старой системы — с
+# её номерами заказов, которых в новой базе либо нет, либо они принадлежат
+# другому заказу. Ни падать, ни срабатывать вслепую такие нажатия не должны.
+_STALE_BUTTON_TEXT = "Ця кнопка застаріла 🕗\nВідкрийте меню командою /start."
+
+
+# Callback'ы, которые разбирает callback_admin_panel. Всё остальное до цепочки
+# доходить не должно: aiogram не закрывает callback сам, и Telegram крутит
+# «часики» на кнопке до таймаута.
+_KNOWN_CALLBACK_EXACT = frozenset({
+    "active_order", "show_all_clients", "discount_info", "to_call", "no_paid",
+    "Зв‘язок", "Статус", "edit_discount", "new_discount", "show_client_info",
+    "cancel_abort",
+})
+
+_KNOWN_CALLBACK_FRAGMENTS = (
+    "check_order/", "make_paid/", "deactivate_order/", "to_not_prepayment/",
+    "check_ttn/", "send_payment_photo", "merge_order", "delete_order/",
+    "cancel_order/", "request_cancel/", "cancel_reason/", "admin_cancel_order/",
+    "admin_cancel_reason/", "cancel_approve/", "cancel_reject/", "mark_refunded/",
+    "add_ttn/", "delete_discount/", "add_client_monthpayment/",
+)
+
+
+def is_known_callback(data) -> bool:
+    """Разбирает ли эту кнопку цепочка в callback_admin_panel."""
+    if not data:
+        return False
+    if data in _KNOWN_CALLBACK_EXACT:
+        return True
+    return any(fragment in data for fragment in _KNOWN_CALLBACK_FRAGMENTS)
+
+
+async def resolve_order_or_notify(callback: types.CallbackQuery, order_id):
+    """
+    Заказ по id из callback_data — или None, и пользователю сказано почему.
+
+    Без этой проверки админ, нажавший кнопку под старым сообщением, отмечал
+    оплаченным или закрывал чужой заказ с тем же номером.
+    """
+    order = await get_order_by_id(order_id)
+    if not order:
+        await callback.answer(_STALE_BUTTON_TEXT, show_alert=True)
+        return None
+    return order
+
+
 @dp.callback_query_handler()
 async def callback_admin_panel(callback: types.CallbackQuery, state: FSMContext):
     # try:
+        if not is_known_callback(callback.data):
+            return await callback.answer(_STALE_BUTTON_TEXT, show_alert=True)
+
         goods = await get_all_goods()
         admin_id = callback.from_user.id
 
@@ -1075,6 +1126,8 @@ async def callback_admin_panel(callback: types.CallbackQuery, state: FSMContext)
 
         if "make_paid/" in callback.data:
             order_id = await id_spliter(callback.data)
+            if not await resolve_order_or_notify(callback, order_id):
+                return
             await make_pay_order(int(order_id))
             await callback.answer(f"Замовлення #{order_id} оплачено ✅")
             fresh_order = await get_order_by_id(order_id)
@@ -1089,7 +1142,9 @@ async def callback_admin_panel(callback: types.CallbackQuery, state: FSMContext)
 
         if "deactivate_order/" in callback.data:
             order_id = await id_spliter(callback.data)
-            order = await get_order_by_id(order_id)
+            order = await resolve_order_or_notify(callback, order_id)
+            if not order:
+                return
             response = await finish_order(order_id)
             if not response:
                 return None
@@ -1106,6 +1161,8 @@ async def callback_admin_panel(callback: types.CallbackQuery, state: FSMContext)
 
         if "to_not_prepayment/" in callback.data:
             order_id = await id_spliter(callback.data)
+            if not await resolve_order_or_notify(callback, order_id):
+                return
             await change_to_not_prepayment(order_id)
             await callback.answer(f"Тип замовлення #{order_id} змінено на накладений платіж ✅")
             fresh_order = await get_order_by_id(order_id)
@@ -1119,6 +1176,10 @@ async def callback_admin_panel(callback: types.CallbackQuery, state: FSMContext)
         if "check_ttn/" in callback.data:
             ttn = await id_spliter(callback.data)
             order = await get_order_by_ttn(ttn)
+            if not order:
+                # ТТН из старого сообщения может уже не числиться ни за одним
+                # заказом — раньше здесь падало на order['phone'].
+                return await callback.answer(_STALE_BUTTON_TEXT, show_alert=True)
 
             response = await ttn_tracking(ttn, order['phone'])
             tnn_info_text = await ttn_info_builder(response, order)
@@ -1159,7 +1220,9 @@ async def callback_admin_panel(callback: types.CallbackQuery, state: FSMContext)
             if not check_admin_permission(callback.message):
                 return await callback.answer("Недостатньо прав", show_alert=True)
             order_id = await id_spliter(callback.data)
-            order = await get_order_by_id(order_id)
+            order = await resolve_order_or_notify(callback, order_id)
+            if not order:
+                return
             response = await delete_order(order_id)
             if not response:
                 return await unknown_error_notifications(bot, admin_id)
