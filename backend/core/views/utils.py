@@ -1,6 +1,7 @@
 from django_filters import rest_framework as filters
 from rest_framework.permissions import IsAdminUser
 from django.db import models
+from core.authentication import ApiKeyCredentials
 from core.filters.goods import GoodFilterSet
 
 
@@ -26,6 +27,20 @@ def generate_filterset_for_model(model):
     return type(f"{model.__name__}AutoFilterSet", (filters.FilterSet,), {"Meta": meta})
 
 
+def is_service_request(request):
+    """
+    Запрос пришёл от служебного клиента (бота), а не от человека.
+
+    Бот ходит по общему `X-Api-Key`, выданному staff-аккаунту, и запрашивает
+    чужие данные не «как пользователь», а по поручению того, кто нажал кнопку в
+    чате. Отличаем по маркеру в `request.auth`: у JWT там лежит токен, у
+    api-key — `ApiKeyCredentials`.
+    """
+    if not isinstance(getattr(request, "auth", None), ApiKeyCredentials):
+        return False
+    return bool(getattr(request.user, "is_staff", False))
+
+
 def get_own_queryset(view):
     qs = view.queryset
 
@@ -34,9 +49,18 @@ def get_own_queryset(view):
     # суммы как свои. Форсим скоуп к request.user для action="list" на НЕ
     # админ-эндпоинтах (где нет IsAdminUser). Админ-эндпоинты (IsAdminUser) и
     # точечные действия админа (retrieve/update/merge любого заказа) не трогаем.
+    #
+    # Исключение — бот: он спрашивает `?telegram_id=X` от лица служебного
+    # аккаунта, и под этим скоупом «Статус замовлень 📦» отвечал бы
+    # «У вас немає замовлень» вообще всем. Скоуп бережёт человека от чужих
+    # данных в интерфейсе, а у бота интерфейса нет — есть адресат сообщения.
     permission_classes = getattr(view, "permission_classes", [])
     is_admin_endpoint = IsAdminUser in permission_classes
-    force_own = getattr(view, "action", None) == "list" and not is_admin_endpoint
+    force_own = (
+        getattr(view, "action", None) == "list"
+        and not is_admin_endpoint
+        and not is_service_request(view.request)
+    )
 
     if force_own or not IsAdminUser().has_permission(view.request, view):
         # Check if user is authenticated before filtering

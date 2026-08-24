@@ -9,7 +9,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 from django.utils import timezone
 
-from core.models import CancelReason, Order, OrderEvent, OrderEventType, OrderItem
+from core.models import BONUS_ORDER_MARKER, CancelReason, Order, OrderEvent, OrderEventType, OrderItem
 from core.serializers import (
     OrderCreateSerializer,
     OrderEventSerializer,
@@ -34,7 +34,13 @@ class OrderViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return get_own_queryset(self)
+        qs = get_own_queryset(self)
+        # Бонусное начисление — служебный заказ без состава. В «Моїх
+        # замовленнях» клиент видел его как покупку на несколько тысяч гривен
+        # из ниоткуда, поэтому показываем такие записи только персоналу.
+        if not IsAdminUser().has_permission(self.request, self):
+            qs = qs.exclude(description=BONUS_ORDER_MARKER)
+        return qs
 
     def get_permissions(self):
         # Физическое удаление заказа — только админ. Клиент отменяет заказ

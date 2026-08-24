@@ -290,6 +290,13 @@ class CancelReason:
     ]
 
 
+# Бонусные начисления оформлены служебным заказом (см. ClientViewSet.add_bonus):
+# состава у него нет, он существует только чтобы попасть в сумму месяца, из
+# которой DiscountService считает скидку. По этому маркеру такие заказы
+# прячутся от клиента.
+BONUS_ORDER_MARKER = "BONUS"
+
+
 class Order(models.Model):
     class RemonlineSyncStatus:
         PENDING = "PENDING"

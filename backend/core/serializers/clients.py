@@ -131,10 +131,26 @@ class ClientSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Client
-        exclude = ("password", "last_login")
+        # Поля перечислены явно, а не через exclude: с exclude любое новое поле
+        # модели автоматически попадало в выдачу. Так в ответе оказался api_key —
+        # а он у staff-аккаунта равнозначен полному доступу к API.
+        fields = (
+            "id",
+            "id_remonline",
+            "telegram_id",
+            "name",
+            "last_name",
+            "login",
+            "email",
+            "phone",
+            "nova_post_address",
+            "is_guest",
+            "is_active",
+            "email_confirmed",
+        )
         # AIRBAG: login управляется flow регистрации/telegram; профиль-апдейт из
         # чекаута не должен его переписывать (иначе UNIQUE constraint failed: login).
-        read_only_fields = ("login",)
+        read_only_fields = ("login", "is_active", "email_confirmed")
 
     def validate_email(self, value):
         # Check if email exists but exclude the current instance

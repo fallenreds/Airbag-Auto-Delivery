@@ -34,6 +34,25 @@ class PasswordAwareJWTAuthentication(JWTAuthentication):
         return user
 
 
+class ApiKeyCredentials:
+    """
+    Маркер аутентификации по `X-Api-Key`, кладётся в `request.auth`.
+
+    Нужен, чтобы вьюха могла отличить служебный вызов (бот ходит по общему
+    ключу от лица staff-аккаунта) от сессии живого человека. Раньше здесь был
+    `None` — неотличимый от анонима, и из-за этого бот попадал под скоуп
+    «показывай только свои записи», хотя запрашивал чужие по поручению клиента.
+    """
+
+    __slots__ = ()
+
+    def __repr__(self):  # pragma: no cover - диагностика в логах и отладчике
+        return "<ApiKeyCredentials>"
+
+
+API_KEY_AUTH = ApiKeyCredentials()
+
+
 class ApiKeyAuthentication(BaseAuthentication):
     def authenticate(self, request):
         api_key = request.headers.get('X-Api-Key')
@@ -47,4 +66,4 @@ class ApiKeyAuthentication(BaseAuthentication):
         except Client.DoesNotExist:
             raise AuthenticationFailed('Invalid API Key')
 
-        return (client, None)
+        return (client, API_KEY_AUTH)

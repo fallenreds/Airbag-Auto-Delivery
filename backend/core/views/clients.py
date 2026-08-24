@@ -9,7 +9,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.utils import timezone
 
-from core.models import Client, ClientEvent, Order
+from core.models import BONUS_ORDER_MARKER, Client, ClientEvent, Order
 from core.serializers import (
     ChangePasswordSerializer,
     ClientEventSerializer,
@@ -23,7 +23,7 @@ from core.services.email_confirmation import (
     needs_confirmation,
 )
 
-from .utils import generate_filterset_for_model
+from .utils import generate_filterset_for_model, is_service_request
 
 
 class ClientViewSet(viewsets.ModelViewSet):
@@ -31,6 +31,24 @@ class ClientViewSet(viewsets.ModelViewSet):
     serializer_class = ClientSerializer
     filterset_class = generate_filterset_for_model(Client)
     permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        """
+        Обычный пользователь видит здесь только себя.
+
+        Раньше вьюха отдавала `Client.objects.all()` любому авторизованному —
+        включая гостя, которого заводит `POST /auth/guest/`. То есть вся
+        клиентская база (ФИО, телефоны, telegram_id) выгружалась одним запросом.
+
+        Бот и админ исключены: боту нужен произвольный клиент по `telegram_id`,
+        чтобы ответить тому, кто пишет в чат, админу — админ-панель.
+        """
+        qs = self.queryset
+        if is_service_request(self.request) or IsAdminUser().has_permission(self.request, self):
+            return qs
+        if not self.request.user.is_authenticated:
+            return qs.none()
+        return qs.filter(pk=self.request.user.pk)
 
     @action(detail=True, methods=["get"], url_path="current-month-spending")
     def current_month_spending(self, request, pk=None):
@@ -80,23 +98,27 @@ class ClientViewSet(viewsets.ModelViewSet):
             timezone.datetime(first_day_prev_month.year, first_day_prev_month.month, first_day_prev_month.day)
         )
 
-        Order.objects.create(
+        bonus_order = Order.objects.create(
             client=client,
             telegram_id=client.telegram_id,
-            name=client.name or "BONUS",
-            last_name=client.last_name or "BONUS",
-            phone=client.phone or "BONUS",
-            nova_post_address="BONUS",
+            name=client.name or BONUS_ORDER_MARKER,
+            last_name=client.last_name or BONUS_ORDER_MARKER,
+            phone=client.phone or BONUS_ORDER_MARKER,
+            nova_post_address=BONUS_ORDER_MARKER,
             prepayment=True,
             is_paid=True,
             is_completed=True,
             grand_total_minor=grand_total_minor,
             subtotal_minor=grand_total_minor,
             discount_total_minor=0,
-            description="BONUS",
+            description=BONUS_ORDER_MARKER,
             remonline_sync_status=Order.RemonlineSyncStatus.SYNCED,
-            date=bonus_date,
         )
+        # У Order.date стоит auto_now_add, и переданное в create() значение он
+        # молча перетирает моментом создания. Из-за этого бонус попадал в
+        # текущий месяц вместо прошлого, а скидка включалась месяцем позже, чем
+        # рассчитывал администратор. Историческую дату ставим отдельным UPDATE.
+        Order.objects.filter(pk=bonus_order.pk).update(date=bonus_date)
 
         return Response({"success": True, "client": ClientSerializer(client).data}, status=status.HTTP_200_OK)
 
