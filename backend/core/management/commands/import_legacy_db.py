@@ -21,12 +21,14 @@ import ast
 import re
 import sqlite3
 from collections import Counter
-from datetime import datetime, timezone as dt_timezone
+from datetime import datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from django.utils import timezone as django_timezone
 
+from config.settings import REMONLINE_API_KEY
 from core.models import (
     BotVisitor,
     Cart,
@@ -38,8 +40,30 @@ from core.models import (
     OrderItem,
     Template,
 )
+from core.services.remonline.api import RemonlineInterface
 
 SECTIONS = ["clients", "orders", "carts", "discounts", "templates", "visitors"]
+
+# Сдвиг первичных ключей импортированных заказов.
+#
+# Кнопки под сообщениями старого бота живут в чатах годами и несут в
+# callback_data её номера заказов (`delete_order/13207`). После переноса токена
+# они приходят уже в новый бот. Без сдвига старая кнопка попадала бы в чужой
+# заказ с тем же номером; со сдвигом легаси-номера не пересекаются с
+# диапазоном новой системы, и такое нажатие просто не находит заказ.
+LEGACY_ID_OFFSET = 100_000
+
+# Заказы старше этого возраста не участвуют в расчёте скидки (она считается по
+# прошлому месяцу), а суммы у них восстановлены по сегодняшнему прайсу и
+# недостоверны. Обнуляем агрегат, оставляя позиции и цены в OrderItem —
+# история в интерфейсе не страдает.
+DISCOUNT_RELEVANT_MONTHS = 2
+
+# Маркеры «бонусного» заказа старой системы: не покупка, а ручная выдача
+# скидки администратором (backend/api/discount/api.py в ветке master).
+# Единственная позиция — служебный товар, а `count` в ней равен сумме в гривнах.
+LEGACY_BONUS_MARKER = "BONUS"
+LEGACY_BONUS_GOOD_ID = 34459054
 
 # Порядок обязателен: заказы и корзины ссылаются на клиентов.
 SECTION_ORDER = {name: i for i, name in enumerate(SECTIONS)}
@@ -152,6 +176,24 @@ def parse_goods_list(raw):
     return items
 
 
+def is_legacy_bonus(row, items):
+    """
+    Строка `orders` — не заказ, а ручное начисление скидки.
+
+    В старой системе админ «дарил» клиенту скидку, создавая фиктивный заказ:
+    адрес и комментарий `BONUS`, единственная позиция со служебным товаром, а
+    `count` в ней — сумма подарка в гривнах. Старый фронт этот товар прятал.
+    """
+    marked = LEGACY_BONUS_MARKER in (
+        (row["description"] or ""),
+        (row["nova_post_address"] or ""),
+    )
+    only_bonus_good = bool(items) and all(
+        good_id == LEGACY_BONUS_GOOD_ID for good_id, _ in items
+    )
+    return marked or only_bonus_good
+
+
 def as_bool(value):
     return bool(value) and str(value) not in ("0", "", "None")
 
@@ -189,6 +231,15 @@ class Command(BaseCommand):
             ),
         )
         parser.add_argument(
+            "--no-remonline-check",
+            action="store_true",
+            help=(
+                "не сверять активные заказы с RemOnline (по умолчанию сверяются, "
+                "чтобы уже закрытые там заказы не прислали клиенту повторное "
+                "«Дякуємо за замовлення»)"
+            ),
+        )
+        parser.add_argument(
             "--verbose-skips",
             action="store_true",
             help="печатать каждую пропущенную запись, а не только сводку",
@@ -200,6 +251,7 @@ class Command(BaseCommand):
         self.apply = options["apply"]
         self.verbose_skips = options["verbose_skips"]
         self.with_passwords = options["with_passwords"]
+        self.check_remonline = not options["no_remonline_check"]
 
         sections = [s.strip() for s in options["only"].split(",") if s.strip()]
         unknown = [s for s in sections if s not in SECTIONS]
@@ -449,6 +501,11 @@ class Command(BaseCommand):
         # Товары новой базы по remonline-id: один запрос вместо запроса на
         # каждую позицию каждого заказа.
         goods = {g.id_remonline: g for g in Good.objects.select_related("category")}
+        # Граница «свежести» для агрегатов сумм — см. комментарий ниже по коду.
+        discount_horizon = django_timezone.now() - timedelta(
+            days=31 * DISCOUNT_RELEVANT_MONTHS
+        )
+        created_ids = []
         existing_remonline = set(
             Order.objects.exclude(remonline_order_id=None).values_list(
                 "remonline_order_id", flat=True
@@ -477,6 +534,17 @@ class Command(BaseCommand):
                     self.stdout.write(f"    заказ {row['id']}: {row['goods_list']!r}")
                 continue
 
+            if is_legacy_bonus(row, items):
+                # Не заказ, а ручное начисление скидки. Как покупка он выглядит
+                # дико: «Товар #34459054 × 20010» на 0 грн от 01.02.2023.
+                # Переносить его надо через POST /clients/{id}/add-bonus/.
+                st.skipped("бонусное начисление, а не заказ")
+                st.detail("бонусных начислений", 1)
+                st.detail(
+                    "на сумму, грн", sum(count for _, count in items)
+                )
+                continue
+
             client = self.client_map.get(row["client_id"])
             if client is None:
                 client, _ = self._find_client(
@@ -486,6 +554,7 @@ class Command(BaseCommand):
                 st.note("заказ импортирован без привязки к клиенту")
 
             order = Order(
+                id=LEGACY_ID_OFFSET + int(row["id"]),
                 remonline_order_id=remonline_id,
                 # Заказ уже живёт в RemOnline — повторно синхронизировать его
                 # нельзя, иначе у клиента задвоятся заявки.
@@ -494,7 +563,10 @@ class Command(BaseCommand):
                 telegram_id=self._as_int(row["telegram_id"]),
                 name=(row["name"] or "").strip(),
                 last_name=(row["last_name"] or "").strip(),
-                phone=(row["phone"] or "").strip(),
+                # Тот же нормализатор, что и у клиента: иначе у одного человека
+                # телефон в профиле и в заказе выглядят по-разному, а бот
+                # передаёт его в трекинг Новой Почты.
+                phone=normalize_phone(row["phone"]) or "",
                 nova_post_address=(row["nova_post_address"] or "").strip(),
                 prepayment=as_bool(row["prepayment"]),
                 bank_transfer=False,
@@ -506,7 +578,7 @@ class Command(BaseCommand):
                 branch_remember_count=self._as_int(row["branch_remember_count"]) or 0,
                 in_branch_datetime=parse_dt(row["in_branch_datetime"]),
             )
-            order.save()
+            order.save(force_insert=True)
 
             subtotal = 0
             unresolved = 0
@@ -546,10 +618,18 @@ class Command(BaseCommand):
             # Суммы в старой базе не хранились: восстанавливаем их по текущему
             # прайсу. Скидка не восстанавливается — её старый заказ не помнил,
             # поэтому grand_total равен subtotal.
+            #
+            # У старых заказов агрегат обнуляем. Скидка считается по сумме
+            # прошлого месяца (DiscountService), туда они всё равно не попадают,
+            # а вот исказить статистику могут: цены сегодняшние, скидка
+            # потеряна, товары выбывшие из каталога идут по нулю. Позиции и
+            # цены в OrderItem остаются — история в интерфейсе не страдает.
+            counts_towards_discount = date is None or date >= discount_horizon
+            stored_total = subtotal if counts_towards_discount else 0
             Order.objects.filter(pk=order.pk).update(
-                subtotal_minor=subtotal,
+                subtotal_minor=stored_total,
                 discount_total_minor=0,
-                grand_total_minor=subtotal,
+                grand_total_minor=stored_total,
                 # date у модели auto_now_add, обычным save историческую дату
                 # не выставить — только отдельным UPDATE.
                 **({"date": date} if date else {}),
@@ -559,13 +639,63 @@ class Command(BaseCommand):
 
             if remonline_id:
                 existing_remonline.add(remonline_id)
+            created_ids.append(order.pk)
             st.span("период", date)
-            st.detail("сумма по текущему прайсу, грн", subtotal // 100)
+            if counts_towards_discount:
+                st.detail("попадёт в расчёт скидки, заказов", 1)
+                st.detail("на сумму по текущему прайсу, грн", subtotal // 100)
             if as_bool(row["is_paid"]):
-                st.detail("оплаченных заказов")
+                st.detail("оплаченных заказов", 1)
             st.create += 1
 
+        if created_ids and self.check_remonline:
+            self._reconcile_active_orders(st, created_ids)
+
         self.stats.append(st)
+
+    def _reconcile_active_orders(self, st, created_ids):
+        """
+        Закрывает импортированные заказы, которые в RemOnline уже завершены.
+
+        Дамп старой базы всегда чуть отстаёт от жизни: пока его снимали и
+        переносили, часть заказов успела закрыться. В новой базе они приедут
+        открытыми, и `order_event_handler` на первом же проходе увидит в
+        RemOnline «Закрито», создаст событие FINISHED — и клиент получит
+        «Дякуємо за замовлення» второй раз, потому что старая система уже
+        сказала ему это.
+        """
+        pending = list(
+            Order.objects.filter(
+                id__in=created_ids, is_completed=False, remonline_order_id__isnull=False
+            )
+        )
+        if not pending:
+            return
+
+        try:
+            remote = RemonlineInterface(REMONLINE_API_KEY).get_orders_by_ids(
+                ids=[o.remonline_order_id for o in pending]
+            )
+        except Exception as exc:  # noqa: BLE001 - сеть не должна ронять импорт
+            st.note(f"сверка с RemOnline не удалась ({exc}) — заказы остались открытыми")
+            return
+
+        closed_ids = {
+            ro["id"]
+            for ro in remote
+            if "закрито" in ((ro.get("status") or {}).get("name") or "").lower()
+        }
+        missing_ids = {o.remonline_order_id for o in pending} - {ro["id"] for ro in remote}
+
+        to_close = [o.id for o in pending if o.remonline_order_id in closed_ids]
+        if to_close:
+            Order.objects.filter(id__in=to_close).update(is_completed=True)
+            st.detail("закрыто по данным RemOnline (уже завершены)", len(to_close))
+        if missing_ids:
+            st.note(
+                f"{len(missing_ids)} заказов не найдено в RemOnline — "
+                "поллер пометит их отменёнными"
+            )
 
     # ── carts ────────────────────────────────────────────────────────────────
 
