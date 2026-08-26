@@ -6,6 +6,8 @@ from rest_framework_simplejwt.views import TokenVerifyView
 
 from .jwt_views import CustomTokenRefreshView, MyTokenObtainPairView
 from .views import (
+    AccountClaimPreviewView,
+    AccountClaimView,
     BotVisitorViewSet,
     CartItemViewSet,
     CartViewSet,
@@ -67,6 +69,13 @@ urlpatterns = router.urls + [
         name="email_confirm_resend",
     ),
     path("auth/register/", ClientRegistrationView.as_view(), name="register"),
+    # Забор аккаунта, приехавшего из старой системы: код приходит в Telegram.
+    path(
+        "auth/claim/<str:code>/",
+        AccountClaimPreviewView.as_view(),
+        name="account_claim_preview",
+    ),
+    path("auth/claim/", AccountClaimView.as_view(), name="account_claim"),
     path("auth/guest/", GuestClientCreationView.as_view(), name="create_guest"),
     path("telegram/auth", TelegramAuthView.as_view(), name="telegram_auth"),
     path("telegram/link", TelegramLinkView.as_view(), name="telegram_link"),

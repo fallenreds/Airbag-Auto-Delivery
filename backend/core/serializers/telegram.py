@@ -3,6 +3,7 @@ from django.db import IntegrityError
 from rest_framework import serializers
 
 from core.models import Client
+from core.services.client_merge import is_mergeable_target, merge_clients
 from core.services.telegram import validate_telegram_init_data
 
 
@@ -81,13 +82,21 @@ class TelegramAutoLinkSerializer(TelegramInitDataSerializer):
         if not user or not user.is_authenticated:
             raise serializers.ValidationError("Authentication required")
 
-        # Allow override of guest accounts created by WebApp auto-auth;
-        # only block if the conflict is with a real (non-guest) user.
+        # Гостевые записи, заведённые авто-авторизацией WebApp, просто
+        # перевешиваем. Настоящий конфликт — с не-гостем.
         conflict = Client.objects.exclude(id=user.id).filter(
             telegram_id=telegram_id, is_guest=False
-        ).exists()
-        if conflict:
-            raise serializers.ValidationError("This Telegram account is already linked")
+        ).first()
+        if conflict is not None:
+            # Запись без подтверждённой почты — это, почти наверняка, аккаунт
+            # того же человека, приехавший из старой системы: войти в него
+            # нельзя, а история заказов и скидка в нём. Такие сливаем, а не
+            # отказываем (раньше отказ получали все импортированные клиенты).
+            if not is_mergeable_target(conflict):
+                raise serializers.ValidationError(
+                    "This Telegram account is already linked"
+                )
+            attrs["merge_into"] = conflict
 
         return attrs
 
@@ -96,6 +105,12 @@ class TelegramAutoLinkSerializer(TelegramInitDataSerializer):
         user = request.user
         payload = self.validated_data["telegram_payload"]
         tg_user = payload["telegram_user"]
+
+        merge_into = self.validated_data.get("merge_into")
+        if merge_into is not None:
+            # Возвращаем объединённую запись: токены текущей сессии после этого
+            # мертвы, и вьюха обязана сказать человеку войти заново.
+            return merge_clients(source=user, target=merge_into)
 
         # Unlink from any guest account that was auto-created by WebApp auth
         Client.objects.exclude(id=user.id).filter(

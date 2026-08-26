@@ -1,3 +1,4 @@
+from .account_claim import AccountClaimSerializer
 from .clients import (
     ChangePasswordSerializer,
     ClientRegisterSerializer,
@@ -28,6 +29,7 @@ from .password_reset import (
 from .telegram import TelegramAuthSerializer, TelegramAutoLinkSerializer
 
 __all__ = [
+    'AccountClaimSerializer',
     'ClientRegisterSerializer',
     'ChangePasswordSerializer',
     'ClientSerializer',

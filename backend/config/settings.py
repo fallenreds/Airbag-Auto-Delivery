@@ -156,6 +156,11 @@ REST_FRAMEWORK = {
         "password_reset_confirm": os.getenv("THROTTLE_PASSWORD_RESET_CONFIRM", "10/hour"),
         "email_confirmation_email": os.getenv("THROTTLE_EMAIL_CONFIRMATION_EMAIL", "3/day"),
         "email_confirmation": os.getenv("THROTTLE_EMAIL_CONFIRMATION_IP", "20/day"),
+        # Забор аккаунта из старой системы. Мягче почтовых лимитов: за одним
+        # NAT сидит целый офис, а перебор кодов и без того безнадёжен —
+        # 24 случайных байта. Но совсем без потолка публичный эндпоинт,
+        # отдающий подсказку по телефону, оставлять нельзя.
+        "account_claim": os.getenv("THROTTLE_ACCOUNT_CLAIM_IP", "60/hour"),
     },
 }
 SIMPLE_JWT = {
