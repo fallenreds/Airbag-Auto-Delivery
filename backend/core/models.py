@@ -540,6 +540,60 @@ class Template(models.Model):
     text = models.TextField()
 
 
+class AccountClaimCode(models.Model):
+    """
+    Персональная ссылка, которой старый клиент забирает свой аккаунт.
+
+    Клиенты, приехавшие из старой системы, попадают в базу без почты — там её
+    просто не спрашивали, и взять её неоткуда (проверены и заказы, и RemOnline).
+    А вход на сайт устроен по почте. Получается тупик: войти нечем, сбросить
+    пароль нечем, а регистрация со своим телефоном упирается в «номер занят» —
+    занят его же собственной записью.
+
+    Код разрывает этот круг: бот присылает клиенту ссылку с кодом, клиент
+    задаёт почту и пароль, и они попадают в ту же запись — вместе с историей
+    заказов, накопленной скидкой и связью с RemOnline.
+
+    Кода хватает как доказательства личности: он приходит в личный чат
+    Telegram, привязанный к записи ещё в старой системе.
+    """
+
+    CODE_BYTES = 24
+
+    id = models.BigAutoField(primary_key=True)
+    client = models.OneToOneField(
+        "Client", on_delete=models.CASCADE, related_name="claim_code"
+    )
+    code = models.CharField(max_length=64, unique=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    # Проставляется рассылкой: команда идемпотентна и не шлёт повторно.
+    sent_at = models.DateTimeField(null=True, blank=True)
+
+    @staticmethod
+    def generate_code():
+        return secrets.token_urlsafe(AccountClaimCode.CODE_BYTES)
+
+    def save(self, *args, **kwargs):
+        if not self.code:
+            self.code = self.generate_code()
+        super().save(*args, **kwargs)
+
+    @property
+    def is_spent(self):
+        """
+        Код погашен, когда клиент подтвердил почту.
+
+        Специально не гасим его в момент ввода: человек, опечатавшийся в
+        адресе, иначе остался бы заперт навсегда — письмо ушло в никуда, а
+        ссылка уже сгорела. Пока почта не подтверждена, по ссылке можно
+        вернуться и ввести другую.
+        """
+        return bool(self.client.email and self.client.email_confirmed)
+
+    def __str__(self):
+        return f"claim for {self.client_id}"
+
+
 class BotVisitor(models.Model):
     id = models.BigAutoField(primary_key=True)
     telegram_id = models.BigIntegerField(unique=True)

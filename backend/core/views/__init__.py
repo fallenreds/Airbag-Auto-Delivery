@@ -1,3 +1,4 @@
+from .account_claim import AccountClaimPreviewView, AccountClaimView
 from .bot_visitors import BotVisitorViewSet
 from .carts import CartItemViewSet, CartViewSet
 from .clients import (
@@ -16,6 +17,8 @@ from .templates import TemplateViewSet
 from .telegram import TelegramAuthView, TelegramAutoLinkView, TelegramLinkConsumeView, TelegramLinkView
 
 __all__ = [
+    "AccountClaimPreviewView",
+    "AccountClaimView",
     "ClientViewSet",
     "ClientEventViewSet",
     "MeView",

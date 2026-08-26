@@ -67,3 +67,19 @@ class PasswordResetEmailThrottle(_EmailFieldThrottle):
 
 class EmailConfirmationEmailThrottle(_EmailFieldThrottle):
     scope = "email_confirmation_email"
+
+
+class AccountClaimThrottle(_CacheResilientMixin, SimpleRateThrottle):
+    """
+    Відро по IP для забору акаунта зі старої системи.
+
+    Код у посиланні довгий і випадковий, але ендпоінт публічний і віддає
+    підказку по телефону — без ліміту його можна було б перебирати. Ставка
+    задається в settings (`DEFAULT_THROTTLE_RATES["account_claim"]`).
+    """
+
+    scope = "account_claim"
+    cache_prefix = "throttle_claim"
+
+    def get_cache_key(self, request, view):
+        return f"{self.cache_prefix}_{self.get_ident(request)}"
