@@ -1,106 +1,218 @@
-# Переключение на новую систему: порядок действий
+# Переключение на новую систему: runbook
 
-Старая система (ветка `master`) — бот `@AirBagAD_bot` + FastAPI + Telegram Mini
-App на `bot-old.airbagad.com`. Новая (`v2`) — Django + aiogram + Next.js, уже
-работает на `airbagad.com`, но почти без нагрузки: 6 заказов в неделю против
-~23 у старой.
+Хосты: `airbag` (новая, 178.79.149.193), `airbag_old` (старая, 139.162.205.246).
+Рабочий каталог на обоих — `/root/Airbag-Auto-Delivery`.
+Боевая база старой системы — `/root/Airbag-Auto-Delivery/info.db`.
 
-Публичных URL товаров у старой системы не было, поэтому SEO-рисков от её
-отключения нет. Переключается бэкенд, бот и база.
+Три фазы. Фаза A обратима и не требует простоя. Простой начинается в фазе B.
 
-Полный разбор рисков — в отчёте аудита; здесь только последовательность.
+---
 
-## Перед переключением
+## Фаза A — выкатить код (простоя нет)
 
-1. **Свежий дамп старой базы.** Не переиспользовать вчерашнюю копию: заказы
-   закрываются каждый день, и импорт устаревшего дампа воскрешает уже
-   завершённые. Импортёр это чинит сверкой с RemOnline, но лишний раз
-   полагаться на неё незачем.
+### A1. Обновить репозиторий
 
-2. **Резервная копия новой базы и media:**
-   ```sh
-   scripts/backup.sh
-   ```
+```sh
+ssh airbag
+cd /root/Airbag-Auto-Delivery
+git pull origin v2
+git submodule update --init --recursive
+git log --oneline -1          # ждём b1ab793 или новее
+```
 
-3. **Правки в `backend/.env` на сервере:**
-   ```
-   DJANGO_DEBUG=False
-   ```
-   Отдельно ничего добавлять не нужно: `https://airbagad.com` теперь всегда
-   в `CORS_ALLOWED_ORIGINS` и `CSRF_TRUSTED_ORIGINS`. Раньше выключить DEBUG
-   было нельзя — фронт отваливался по CORS.
+### A2. Выключить DEBUG
 
-   Проверить после рестарта, что трейсбеки больше не отдаются наружу:
-   ```sh
-   curl -s https://api.airbagad.com/api/v2/no-such-endpoint/ | grep -c "DEBUG = True"   # ждём 0
-   ```
+```sh
+sed -i 's/^DJANGO_DEBUG=True$/DJANGO_DEBUG=False/' backend/.env
+grep '^DJANGO_DEBUG=' backend/.env
+```
 
-## Переключение
+Домены `airbagad.com` и `www.airbagad.com` теперь всегда в `CORS_ALLOWED_ORIGINS`,
+поэтому выключение DEBUG фронт не ломает.
 
-4. **Погасить старую систему** (иначе Telegram отдаст `TerminatedByOtherGetUpdates`):
-   ```sh
-   ssh airbag_old 'cd /root/Airbag-Auto-Delivery && docker compose down'
-   ```
+### A3. Пересобрать и поднять
 
-5. **Перенести токен `@AirBagAD_bot`** в `bot/.env` новой системы и синхронно
-   в `backend/.env` (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`). Если эти
-   две переменные разойдутся, HMAC подписи Mini App перестанет сходиться и вход
-   через WebApp отвалится у всех.
+```sh
+docker compose up -d --build
+```
 
-6. **Импорт данных:**
-   ```sh
-   docker compose exec backend python manage.py import_legacy_db /path/AirbagDatabase.db
-   docker compose exec backend python manage.py import_legacy_db /path/AirbagDatabase.db --apply
-   ```
-   Сначала превью — оно считается настоящей записью внутри транзакции с
-   откатом, поэтому цифры совпадут с боевым прогоном.
+Пересборка обязательна для всех сервисов: `entrypoint.sh` backend лежит в образе
+(вне маунта `/app`), код бота — тоже в образе, фронтенд собирается на этапе build.
+Миграции (`0013_accountclaimcode`) накатятся сами из entrypoint.
 
-7. **Пересобрать бота** — его код лежит в образе, а не в маунте, поэтому
-   `git pull` без пересборки ничего не изменит:
-   ```sh
-   docker compose up -d --build bot backend celery frontend
-   ```
+### A4. Проверить
 
-8. **Проверить:**
-   ```sh
-   docker compose logs bot --tail 20            # поллинг без ошибок
-   curl -s -o /dev/null -w '%{http_code}\n' https://airbagad.com/uk/
-   ```
-   И вручную в боте, **не с админского аккаунта**: «Статус замовлень 📦»
-   должно показать заказы, а не «У вас немає замовлень».
+```sh
+docker compose ps                                   # все up
+docker compose logs backend --tail 20 | grep entrypoint
+curl -s -o /dev/null -w '%{http_code}\n' https://airbagad.com/uk/           # 200
+curl -s -o /dev/null -w '%{http_code}\n' https://api.airbagad.com/api/v2/goods/   # 200
+curl -s https://api.airbagad.com/api/v2/no-such/ | grep -c 'DEBUG = True'   # 0
+curl -s -o /dev/null -w '%{http_code}\n' --max-time 5 http://178.79.149.193:8000/admin/login/  # 000
+```
 
-## После переключения
+Последние две строки — то, ради чего фаза A: наружу больше не уходят ни
+трейсбеки, ни форма входа в админку по открытому HTTP.
 
-9. **Разослать персональные приглашения** — только теперь, когда бот работает
-   под старым токеном. До первого `/start` Telegram запрещает боту писать
-   человеку, поэтому с нового бота эти сообщения не дошли бы:
-   ```sh
-   docker compose exec backend python manage.py send_claim_invites
-   docker compose exec backend python manage.py send_claim_invites --apply
-   ```
-   Команда идемпотентна: повторный запуск не шлёт дважды. `403` от Telegram
-   (бот заблокирован или диалог не начат) считается не ошибкой, а отдельной
-   строкой отчёта.
+**Откат фазы A:** `git checkout 4a2ea82 && docker compose up -d --build`,
+`DJANGO_DEBUG=True` вернуть.
 
-10. **Поставить бэкап в cron:**
-    ```
-    0 4 * * * /root/Airbag-Auto-Delivery/scripts/backup.sh >> /var/log/airbag-backup.log 2>&1
-    ```
+---
 
-11. **Перенести бонусные начисления.** Импортёр показывает их отдельной строкой
-    («бонусных начислений: 6 на сумму 80 010 грн») и в заказы не тащит.
-    Переносятся через `POST /clients/{id}/add-bonus/` или кнопкой в админ-панели
-    бота.
+## Фаза B — переключение (простой ~15 минут)
 
-## Что осталось за кадром
+### B1. Резервная копия новой системы
 
-- **Данные лежат в рабочей копии репозитория** (`backend/db.sqlite3`,
-  `backend/media/`), а не в docker-volume, и оба пути в `.gitignore`.
-  `git clean -xdf` на сервере сотрёт базу и платёжные документы клиентов.
-  Бэкап это смягчает, но переезд в volume стоит сделать отдельной задачей —
-  он требует остановки и переноса файлов.
-- **APScheduler стартует в каждом воркере gunicorn** (`core/apps.py`), так что
-  при нескольких воркерах фоновые задачи пойдут параллельно по общей SQLite.
-- **Реквизиты для оплаты** в старой и новой системах разные. Актуальна карта
-  новой системы (подтверждено владельцем), но клиенты увидят другой номер —
-  это стоит упомянуть в рассылке.
+```sh
+ssh airbag 'cd /root/Airbag-Auto-Delivery && scripts/backup.sh'
+```
+
+### B2. Остановить старую систему
+
+Обязательно до переноса токена: два процесса на одном токене дают
+`TerminatedByOtherGetUpdates`.
+
+```sh
+ssh airbag_old 'cd /root/Airbag-Auto-Delivery && docker compose down'
+ssh airbag_old 'docker compose ps'      # пусто
+```
+
+### B3. Снять свежий дамп старой базы
+
+Снимать **после** остановки: дамп обязан быть финальным, иначе часть заказов
+приедет в устаревшем состоянии.
+
+```sh
+ssh airbag_old 'sqlite3 /root/Airbag-Auto-Delivery/info.db ".backup /tmp/legacy.db"'
+scp airbag_old:/tmp/legacy.db /tmp/legacy.db
+scp /tmp/legacy.db airbag:/root/legacy.db
+ssh airbag_old 'rm -f /tmp/legacy.db'
+```
+
+### B4. Перенести токен
+
+Взять `BOT_TOKEN` из `airbag_old:/root/Airbag-Auto-Delivery/bot/.env` и записать
+на `airbag` в **два** файла:
+
+```sh
+# airbag:/root/Airbag-Auto-Delivery/bot/.env
+BOT_TOKEN=<токен @AirBagAD_bot>
+
+# airbag:/root/Airbag-Auto-Delivery/backend/.env
+TELEGRAM_BOT_TOKEN=<тот же токен>
+TELEGRAM_BOT_USERNAME=@AirBagAD_bot
+```
+
+Расхождение между этими двумя переменными ломает HMAC подписи `initData` —
+вход через Mini App отваливается у всех.
+
+### B5. Импорт
+
+```sh
+ssh airbag
+cd /root/Airbag-Auto-Delivery
+
+# превью: считается настоящей записью в транзакции с откатом
+docker compose exec -T backend python manage.py import_legacy_db /root/legacy.db
+
+# запись
+docker compose exec -T backend python manage.py import_legacy_db /root/legacy.db --apply
+```
+
+В отчёте проверить:
+
+- `clients … создать ~171`
+- `orders … создать ~3940`, пропущено 6 — «бонусное начисление, а не заказ»
+- `закрыто по данным RemOnline` — на свежем дампе должно быть **0**;
+  ненулевое значение означает, что дамп успел устареть
+
+### B6. Перезапустить бота с новым токеном
+
+```sh
+docker compose up -d --build bot
+docker compose logs bot --tail 20        # поллинг, без TerminatedByOtherGetUpdates
+```
+
+### B7. Проверить вручную, с НЕ админского аккаунта
+
+В чате `@AirBagAD_bot`:
+
+1. `/start` — приходит меню.
+2. «Статус замовлень 📦» — у клиента с активным заказом показывает карточку,
+   у остальных «У вас немає замовлень». **Если «У вас немає замовлень» у всех —
+   не выкачен фикс скоупа списков, откатывать импорт.**
+3. «Знижки 💎» — показывает процент и сумму за месяц.
+4. Нажать любую старую кнопку под сообщением трёхлетней давности — должно
+   прийти «Ця кнопка застаріла», а не тишина и не действие по чужому заказу.
+
+Со стороны сервера:
+
+```sh
+docker compose exec -T backend python manage.py shell -c "
+from core.models import Client, Order, OrderEvent
+print('клиентов:', Client.objects.count())
+print('заказов:', Order.objects.count())
+print('очередь событий:', OrderEvent.objects.count())"
+```
+
+Очередь событий должна быть близка к нулю. Сотни событий означают, что дамп был
+устаревшим — см. B5.
+
+**Откат фазы B:** вернуть базу из копии `scripts/backup.sh`, вернуть
+`BOT_TOKEN` старому боту, поднять `airbag_old`.
+
+---
+
+## Фаза C — после переключения
+
+### C1. Рассылка персональных ссылок
+
+Только после B6: до первого `/start` Telegram запрещает боту писать человеку.
+
+```sh
+docker compose exec -T backend python manage.py send_claim_invites            # превью
+docker compose exec -T backend python manage.py send_claim_invites --apply
+```
+
+Ожидаемо ~170 получателей, по одному сообщению. Идемпотентна: повторный запуск
+не шлёт дважды. `403` (бот заблокирован или диалог не начат) — отдельная строка
+отчёта, не ошибка.
+
+### C2. Перенести бонусные начисления
+
+Шесть штук, суммы — в отчёте импорта строкой «бонусных начислений».
+
+```sh
+curl -X POST https://api.airbagad.com/api/v2/clients/<id>/add-bonus/ \
+  -H 'X-Api-Key: <ключ staff-аккаунта>' \
+  -H 'Content-Type: application/json' -d '{"count": 10000}'
+```
+
+### C3. Закрыть висяки
+
+Три заказа июня–июля без ТТН и без номера в RemOnline. В обработчик они не
+попадают (тот требует `remonline_order_id`), уведомлений не породят, но и сами
+не закроются.
+
+### C4. Поставить бэкап в cron
+
+```sh
+crontab -e
+0 4 * * * /root/Airbag-Auto-Delivery/scripts/backup.sh >> /var/log/airbag-backup.log 2>&1
+```
+
+### C5. Отключить старый хост
+
+Не раньше чем через несколько дней: `airbag_old` — это откат. Когда решите
+гасить — снять финальную копию `info.db` в архив.
+
+---
+
+## Что осталось техдолгом
+
+- База и `media/` лежат в рабочей копии репозитория, а не в docker-volume, и оба
+  пути в `.gitignore`: `git clean -xdf` на сервере уничтожит данные. Бэкап
+  смягчает, переезд в volume требует простоя.
+- `MONOBANK_TOKEN_TEST` / `_PROD` не разведены, работает общий `MONOBANK_TOKEN`.
+- gunicorn запущен с одним воркером, поэтому APScheduler не задваивается. При
+  добавлении воркеров фоновые задачи пойдут параллельно по общей SQLite.
