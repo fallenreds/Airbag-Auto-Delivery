@@ -297,23 +297,36 @@ LOGGING = {
 }
 
 # CORS settings
-CORS_ALLOWED_ORIGINS = [
+# Список хардкодился и не содержал самого сайта — держалось всё на
+# CORS_ALLOW_ALL_ORIGINS = DEBUG ниже. Выключить DEBUG на бою было нельзя:
+# фронт немедленно отваливался по CORS. Теперь боевой домен в списке всегда, а
+# дополнительные (ngrok при отладке) добавляются через CORS_EXTRA_ORIGINS.
+def _origins_from_env(name):
+    raw = os.getenv(name, "")
+    return [item.strip().rstrip("/") for item in raw.split(",") if item.strip()]
+
+
+_SITE_ORIGINS = [
+    "https://airbagad.com",
+    "https://www.airbagad.com",
+    "https://api.airbagad.com",
+]
+_DEV_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "https://api.airbagad.com",
-    "https://minimally-consensual-aurore.ngrok-free.dev",
 ]
+
+CORS_ALLOWED_ORIGINS = _SITE_ORIGINS + _DEV_ORIGINS + _origins_from_env(
+    "CORS_EXTRA_ORIGINS"
+)
 
 # Trusted origins for CSRF
-CSRF_TRUSTED_ORIGINS = [
-    "https://api.airbagad.com",
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "https://minimally-consensual-aurore.ngrok-free.dev",
-]
+CSRF_TRUSTED_ORIGINS = list(CORS_ALLOWED_ORIGINS)
 
 CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOW_ALL_ORIGINS = DEBUG  # Only allow all origins in debug mode
+# Открыто всем только при DEBUG. На бою DEBUG обязан быть False — и теперь это
+# ничего не ломает, потому что airbagad.com есть в CORS_ALLOWED_ORIGINS.
+CORS_ALLOW_ALL_ORIGINS = DEBUG
 
 # Allow specific headers that might be needed for your API
 CORS_ALLOW_HEADERS = [
