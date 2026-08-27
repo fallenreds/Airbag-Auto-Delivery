@@ -1,0 +1,9 @@
+services:
+  frontend:
+    ports: !override
+    - 172.17.0.1:31001:3000
+  backend:
+    ports: !override
+    - 172.17.0.1:31002:8000
+  bot:
+    ports: !override []
