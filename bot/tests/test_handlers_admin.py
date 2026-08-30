@@ -265,8 +265,12 @@ class TestAdminCancelFlow:
         assert "вже відправлено" in text
         assert "кошти буде повернуто" in text.lower()
 
-    async def test_admin_cancel_notifies_client_and_drops_from_cache(self, bot_module, fake_bot,
-                                                                     order_factory):
+    async def test_admin_cancel_drops_from_cache_and_stays_silent(self, bot_module, fake_bot,
+                                                                   order_factory):
+        """
+        Обработчик больше не рассылает: и админам, и клиенту напишет поллер по
+        событию CANCELED. Раньше писали оба — отсюда и брались дубли.
+        """
         order = order_factory(id=5, telegram_id=CLIENT_ID)
         bot_module._page_cache[ADMIN_ID] = [order, order_factory(id=6)]
 
@@ -277,7 +281,8 @@ class TestAdminCancelFlow:
 
         assert [o["id"] for o in bot_module._page_cache[ADMIN_ID]] == [6]
         recipients = [c.args[0] for c in fake_bot.send_message.await_args_list]
-        assert ADMIN_ID in recipients and CLIENT_ID in recipients
+        assert CLIENT_ID not in recipients
+        assert ADMIN_ID not in recipients
 
     async def test_failed_admin_cancel_reports_detail(self, bot_module, fake_bot, order_factory):
         order = order_factory(id=5, telegram_id=CLIENT_ID)
@@ -289,7 +294,8 @@ class TestAdminCancelFlow:
 
         assert "нельзя" in fake_bot.send_message.await_args.args[1]
 
-    async def test_approve_notifies_client(self, bot_module, fake_bot, order_factory):
+    async def test_approve_stays_silent(self, bot_module, fake_bot, order_factory):
+        """Уведомления придут по событиям REFUNDED и CANCELED, из поллера."""
         order = order_factory(id=5, telegram_id=CLIENT_ID, cancel_state="requested")
 
         await self._call(
@@ -297,11 +303,12 @@ class TestAdminCancelFlow:
             approve_cancel_order=AsyncMock(return_value=(True, {"refund_state": "pending"})),
         )
 
-        client_msgs = [c for c in fake_bot.send_message.await_args_list if c.args[0] == CLIENT_ID]
-        assert client_msgs, "клиент должен получить уведомление"
-        assert "скасовано" in client_msgs[0].args[1]
+        recipients = [c.args[0] for c in fake_bot.send_message.await_args_list]
+        assert CLIENT_ID not in recipients
+        assert ADMIN_ID not in recipients
 
-    async def test_reject_notifies_client(self, bot_module, fake_bot, order_factory):
+    async def test_reject_stays_silent(self, bot_module, fake_bot, order_factory):
+        """Уведомление придёт по событию CANCEL_REJECTED, из поллера."""
         order = order_factory(id=5, telegram_id=CLIENT_ID, cancel_state="requested")
 
         await self._call(
@@ -309,9 +316,8 @@ class TestAdminCancelFlow:
             reject_cancel_order=AsyncMock(return_value=(True, {})),
         )
 
-        client_msgs = [c for c in fake_bot.send_message.await_args_list if c.args[0] == CLIENT_ID]
-        assert client_msgs
-        assert "відхилено" in client_msgs[0].args[1]
+        recipients = [c.args[0] for c in fake_bot.send_message.await_args_list]
+        assert CLIENT_ID not in recipients
 
 
 class TestRefundTexts:
@@ -321,16 +327,18 @@ class TestRefundTexts:
         ("manual", "поверніть кошти вручну"),
         ("failed", "Помилка повернення"),
     ])
-    def test_admin_result_text(self, bot_module, refund_state, expected):
-        text = bot_module._admin_cancel_result_text(5, {"refund_state": refund_state})
+    def test_admin_result_text(self, refund_state, expected):
+        import notifications
+        text = notifications.admin_cancel_result_text({"id": 5, "refund_state": refund_state})
         assert "№5 скасовано" in text
         assert expected in text
 
     @pytest.mark.parametrize("refund_state,has_button", [
         ("manual", True), ("failed", True), ("done", False), ("pending", False), ("", False),
     ])
-    def test_manual_refund_button_visibility(self, bot_module, refund_state, has_button):
-        kb = bot_module._refund_hint_kb(5, {"refund_state": refund_state})
+    def test_manual_refund_button_visibility(self, refund_state, has_button):
+        import notifications
+        kb = notifications.refund_hint_kb({"id": 5, "refund_state": refund_state})
         assert (kb is not None) is has_button
 
 
@@ -355,8 +363,11 @@ class TestPaymentActions:
         pay.assert_awaited_once_with(5)
         assert bot_module._page_cache[ADMIN_ID][0]["is_paid"] is True
         show.assert_awaited_once()
+        cb.answer.assert_awaited_once()
+        # Клиенту напишет поллер по событию PAYMENT_CONFIRMED, которое бэкенд
+        # теперь создаёт и на ручную отметку оплаты.
         client_msgs = [c for c in fake_bot.send_message.await_args_list if c.args[0] == CLIENT_ID]
-        assert client_msgs and "оплатили замовлення" in client_msgs[0].args[1]
+        assert not client_msgs
 
     async def test_deactivate_removes_from_cache_and_thanks_client(self, bot_module, fake_bot,
                                                                    order_factory):
@@ -373,5 +384,7 @@ class TestPaymentActions:
 
         finish.assert_awaited_once_with(5)
         assert [o["id"] for o in bot_module._page_cache[ADMIN_ID]] == [6]
+        cb.answer.assert_awaited_once()
+        # Клиенту напишет поллер по событию FINISHED.
         client_msgs = [c for c in fake_bot.send_message.await_args_list if c.args[0] == CLIENT_ID]
-        assert client_msgs and "Дякуємо за замовлення" in client_msgs[0].args[1]
+        assert not client_msgs

@@ -133,15 +133,18 @@ class TestNoSilentMessages:
         assert "/start" in text
 
 
-# ── дубль уведомления об отмене ──────────────────────────────────────────────
+# ── один канал уведомлений ───────────────────────────────────────────────────
 
-class TestCancelNotificationIsNotDuplicated:
-    @pytest.fixture(autouse=True)
-    def _clean_dedup(self):
-        from utils import cancel_dedup
-        cancel_dedup.reset()
-        yield
-        cancel_dedup.reset()
+class TestSingleNotificationChannel:
+    """
+    Одно событие — одно сообщение каждой стороне.
+
+    Раньше уведомления шли двумя путями сразу: обработчик кнопки писал
+    немедленно, а поллер — по событию от бэкенда. На одну отмену приходило
+    2–3 сообщения и админу, и клиенту. Подавление дублей
+    (`utils/cancel_dedup.py`) закрывало ровно один сценарий из шести и было
+    удалено вместе с причиной: рассылает теперь только поллер.
+    """
 
     async def _cancel_via_bot(self, bot_module, fake_bot, order):
         state = AsyncMock()
@@ -152,7 +155,7 @@ class TestCancelNotificationIsNotDuplicated:
              patch.object(bot_module, "cancel_order_request", AsyncMock(return_value=(True, {}))), \
              patch.object(bot_module, "request_cancel_order", AsyncMock(return_value=(True, {}))):
             await bot_module.callback_admin_panel(cb, state)
-        return [c for c in fake_bot.send_message.await_args_list if c.args[0] == CLIENT_ID]
+        return cb, fake_bot.send_message.await_args_list
 
     async def _poller_event(self, order):
         import updates
@@ -160,54 +163,45 @@ class TestCancelNotificationIsNotDuplicated:
         await updates.canceled_notifications(
             poller_bot, dict(order, cancel_state="canceled"), None, [ADMIN_ID]
         )
-        return [c for c in poller_bot.send_message.await_args_list if c.args[0] == CLIENT_ID]
+        return poller_bot.send_message.await_args_list
 
-    async def test_cancel_from_bot_notifies_client_once(self, bot_module, fake_bot, order_factory):
+    async def test_handler_answers_but_does_not_broadcast(self, bot_module, fake_bot, order_factory):
         order = order_factory(id=5, telegram_id=CLIENT_ID, is_paid=False)
 
-        from_handler = await self._cancel_via_bot(bot_module, fake_bot, order)
-        from_poller = await self._poller_event(order)
+        cb, sent = await self._cancel_via_bot(bot_module, fake_bot, order)
 
-        assert len(from_handler) == 1, "хендлер отвечает сразу, без ожидания поллера"
-        assert len(from_poller) == 0, "поллер не дублирует сообщение хендлера"
+        cb.answer.assert_awaited_once()
+        assert not sent, "рассылает только поллер"
 
-    async def test_cancel_from_site_still_notifies_client(self, order_factory):
-        """Отмена с сайта проходит только через поллер — сообщение обязано быть."""
-        order = order_factory(id=6, telegram_id=CLIENT_ID, is_paid=False)
-
-        from_poller = await self._poller_event(order)
-
-        assert len(from_poller) == 1
-
-    async def test_admins_are_notified_in_both_cases(self, order_factory):
-        # canceled_notifications живёт в notifications.py и зовёт
-        # send_messages_to_admins по своему импорту — патчим именно там
+    async def test_poller_notifies_both_sides_exactly_once(self, order_factory):
         import notifications
-        order = order_factory(id=7, telegram_id=CLIENT_ID)
+        order = order_factory(id=6, telegram_id=CLIENT_ID, is_paid=False)
         poller_bot = AsyncMock()
 
         with patch.object(notifications, "send_messages_to_admins", AsyncMock()) as to_admins:
-            await notifications.canceled_notifications(poller_bot, order, None, [ADMIN_ID])
+            await notifications.canceled_notifications(
+                poller_bot, dict(order, cancel_state="canceled"), None, [ADMIN_ID]
+            )
 
         to_admins.assert_awaited_once()
+        to_client = [c for c in poller_bot.send_message.await_args_list if c.args[0] == CLIENT_ID]
+        assert len(to_client) == 1
 
-    async def test_mark_is_consumed_once(self, order_factory):
-        """Повторная отмена того же заказа снова должна доходить до клиента."""
-        from utils.cancel_dedup import mark_client_notified
+    async def test_repeated_cancel_reaches_the_client_again(self, order_factory):
+        """
+        Одноразовых пометок больше нет: каждое событие доходит само по себе.
+        Раньше повторная отмена того же заказа могла быть проглочена.
+        """
         order = order_factory(id=8, telegram_id=CLIENT_ID)
 
-        mark_client_notified(8)
-        assert len(await self._poller_event(order)) == 0, "первое событие погашено пометкой"
-        assert len(await self._poller_event(order)) == 1, "пометка одноразовая"
+        first = await self._poller_event(order)
+        second = await self._poller_event(order)
 
-    async def test_request_cancel_does_not_set_mark(self, bot_module, fake_bot, order_factory):
-        """
-        Запрос на отмену оплаченного заказа — не отмена: клиент ещё получит
-        отдельное сообщение, когда админ подтвердит.
-        """
-        order = order_factory(id=9, telegram_id=CLIENT_ID, is_paid=True)
+        assert len([c for c in first if c.args[0] == CLIENT_ID]) == 1
+        assert len([c for c in second if c.args[0] == CLIENT_ID]) == 1
 
-        await self._cancel_via_bot(bot_module, fake_bot, order)
-        from_poller = await self._poller_event(order)
-
-        assert len(from_poller) == 1
+    def test_dedup_module_is_gone(self):
+        """Модуль существовал только чтобы прикрывать дублирование."""
+        import importlib
+        with pytest.raises(ModuleNotFoundError):
+            importlib.import_module("utils.cancel_dedup")

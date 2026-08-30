@@ -155,9 +155,10 @@ class TestLiveOrdersStillWork:
 
         pay.assert_awaited_once_with(47)
 
-    async def test_deactivate_works_and_thanks_the_client(
+    async def test_deactivate_works_and_stays_silent(
         self, bot_module, fake_bot, cb_factory, order_factory
     ):
+        """Заказ закрывается, а «дякуємо» клиенту шлёт поллер по FINISHED."""
         order = order_factory(id=47, telegram_id=CLIENT_ID)
         cb = cb_factory("deactivate_order/47")
 
@@ -167,9 +168,9 @@ class TestLiveOrdersStillWork:
             await bot_module.callback_admin_panel(cb, AsyncMock())
 
         finish.assert_awaited_once()
+        cb.answer.assert_awaited()
         to_client = [c for c in fake_bot.send_message.await_args_list if c.args[0] == CLIENT_ID]
-        assert len(to_client) == 1
-        assert "Дякуємо за замовлення" in to_client[0].args[1]
+        assert not to_client
 
     async def test_contacts_button_still_answers(self, bot_module, fake_bot, cb_factory):
         cb = cb_factory("to_call", user_id=CLIENT_ID)

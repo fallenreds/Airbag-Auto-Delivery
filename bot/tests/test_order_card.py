@@ -55,11 +55,30 @@ class TestAdminNotificationButton:
 
         await notifications.cancel_requested_notifications(fake_bot, order, [ADMIN_ID])
 
-        markup = fake_bot.send_message.await_args.kwargs["reply_markup"]
+        to_admin = [c for c in fake_bot.send_message.await_args_list if c.args[0] == ADMIN_ID]
+        assert len(to_admin) == 1
+        markup = to_admin[0].kwargs["reply_markup"]
         data = [b.callback_data for row in markup.inline_keyboard for b in row]
         assert f"cancel_approve/{order['id']}" in data
         assert f"cancel_reject/{order['id']}" in data
         assert f"order_card/{order['id']}" in data
+
+    async def test_cancel_request_also_confirms_to_the_client(self, sample_order):
+        """
+        Раньше «Запит надіслано ⏳» слал обработчик кнопки. Рассылку у него
+        забрали, поэтому подтверждение переехало в само уведомление — иначе
+        клиент, попросивший отмену, не получал бы ничего.
+        """
+        import notifications
+        fake_bot = AsyncMock()
+        order = dict(sample_order, cancel_state="requested")
+
+        await notifications.cancel_requested_notifications(fake_bot, order, [ADMIN_ID])
+
+        to_client = [c for c in fake_bot.send_message.await_args_list
+                     if c.args[0] == order["telegram_id"]]
+        assert len(to_client) == 1
+        assert "надіслано" in to_client[0].args[1]
 
 
 class TestOrderCard:
