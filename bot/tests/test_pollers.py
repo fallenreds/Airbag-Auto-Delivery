@@ -171,6 +171,35 @@ class TestUnpaidReminders:
 
         fake_bot.send_message.assert_not_awaited()
 
+    async def test_no_summary_when_nothing_is_unpaid(self, one_iteration):
+        """
+        Пустая сводка раз в час — шум. Она приучает пропускать эти сообщения
+        мимо глаз, и тогда не заметят ту, в которой есть о чём беспокоиться.
+        """
+        import updates
+        fake_bot = AsyncMock()
+
+        with patch.object(updates, "unpaid_overdue", AsyncMock(return_value=[])), \
+             patch.object(updates, "update_no_paid_remember_count", AsyncMock()), \
+             patch.object(updates, "send_messages_to_admins", AsyncMock()) as to_admins:
+            await one_iteration(lambda: updates.get_no_paid_orders(fake_bot, [ADMIN_ID]))
+
+        to_admins.assert_not_awaited()
+        fake_bot.send_message.assert_not_awaited()
+
+    async def test_summary_still_goes_when_there_is_something(self, one_iteration, sample_order):
+        """Обратная сторона: непустую сводку по-прежнему шлём."""
+        import updates
+        orders = [dict(sample_order, id=1, telegram_id=CLIENT_ID, remember_count=9)]
+        fake_bot = AsyncMock()
+
+        with patch.object(updates, "unpaid_overdue", AsyncMock(return_value=orders)), \
+             patch.object(updates, "update_no_paid_remember_count", AsyncMock()), \
+             patch.object(updates, "send_messages_to_admins", AsyncMock()) as to_admins:
+            await one_iteration(lambda: updates.get_no_paid_orders(fake_bot, [ADMIN_ID]))
+
+        to_admins.assert_awaited_once()
+
     async def test_admins_get_summary(self, one_iteration, sample_order):
         import updates
         orders = [dict(sample_order, id=i, telegram_id=CLIENT_ID, remember_count=9)

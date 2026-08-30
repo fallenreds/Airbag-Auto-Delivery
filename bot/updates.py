@@ -107,9 +107,13 @@ async def get_no_paid_orders(bot, admin_list):
                 if telegram_id:
                     await bot.send_message(telegram_id, text=client_notification, reply_markup=markup_i_client)
                     
-            await send_messages_to_admins(bot=bot, admin_ids=admin_list,
-                                                  text=f"Наразі є несплачені замовлення у кількості {count_no_paid_order}",
-                                                  reply_markup=markup_i_admin) #TODO разобраться к кнопкой
+            # Сводку админам шлём, только если есть о чём. Раз в час писать
+            # «несплачені замовлення у кількості 0» — шум, который приучает
+            # пропускать эти сообщения мимо глаз, и тогда не заметят настоящее.
+            if count_no_paid_order:
+                await send_messages_to_admins(bot=bot, admin_ids=admin_list,
+                                              text=f"Наразі є несплачені замовлення у кількості {count_no_paid_order}",
+                                              reply_markup=markup_i_admin)
 
         except Exception as error:
             logger.error("Error with no paid orders", error=error)
