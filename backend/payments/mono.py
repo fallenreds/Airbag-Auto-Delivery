@@ -3,7 +3,7 @@ from django.db import transaction
 from django.utils import timezone
 from core.models import CancelReason, Order
 from core.models import OrderEvent, OrderEventType
-from core.services.order_sync import sync_order_to_remonline
+from core.services import order_status
 from payments.models import MonobankInvoiceEvent, Payment
 from payments.services.monobank.api import MonobankAPI, MonobankError, MonobankOrderInProgress, MonobankInvoiceAlreadyUsed
 from rest_framework.exceptions import ValidationError
@@ -418,17 +418,9 @@ class MonobankPaymentService:
         order.is_paid = True
         order.save(update_fields=["is_paid"])
 
-        OrderEvent.objects.create(
-            type=OrderEventType.PAYMENT_CONFIRMED,
-            order=order,
-            details="Order payment confirmed",
-        )
-
-        if order.prepayment:
-            # Только после коммита: sync_order_to_remonline ходит по сети и умеет
-            # бросать ValueError (нет ключа/филиала). Внутри транзакции вебхука
-            # это откатывало бы is_paid при уже списанных деньгах.
-            transaction.on_commit(lambda: sync_order_to_remonline(order))
+        # Последствия оплаты одни и те же, кем бы она ни была подтверждена —
+        # вебхуком или админом кнопкой в боте.
+        order_status.payment_confirmed(order)
         
     
   

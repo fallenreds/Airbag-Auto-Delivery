@@ -16,7 +16,7 @@ from core.serializers import (
     OrderItemSerializer,
     OrderSerializer,
 )
-from core.services import order_cancel
+from core.services import order_cancel, order_status
 from core.services.order_sync import sync_order_to_remonline
 from core.views.utils import get_own_queryset
 
@@ -244,11 +244,10 @@ class OrderViewSet(viewsets.ModelViewSet):
             return
 
         if not before["is_paid"] and validated_data.get("is_paid") is True:
-            OrderEvent.objects.create(
-                type=OrderEventType.PAYMENT_CONFIRMED,
-                order=order,
-                details="Marked as paid by staff",
-            )
+            # Не только событие: предоплатный заказ, оплаченный наличными или
+            # за реквизитами, тоже обязан уехать в RemOnline — раньше это
+            # делал лишь вебхук monobank, и такие заказы туда не попадали.
+            order_status.payment_confirmed(order, details="Marked as paid by staff")
 
         if "ttn" in validated_data:
             new_ttn = self._normalized_ttn(validated_data.get("ttn"))

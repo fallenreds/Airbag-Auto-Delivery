@@ -58,7 +58,7 @@ class GooglePayEndpointTests(TestCase):
         self.assertEqual(resp.status_code, 400)
         self.assertIn("order_id", resp.data)
 
-    @patch("payments.mono.sync_order_to_remonline")
+    @patch("core.services.order_status.sync_order_to_remonline")
     @patch("payments.services.monobank.api.MonobankAPI.wallet_payment")
     def test_payment_with_order_id_succeeds_and_marks_order_paid(
         self, wallet_payment_mock, _sync_mock

@@ -11,6 +11,8 @@
 
 Здесь зафиксировано, что статусные поля принимаются только от персонала.
 """
+from unittest.mock import patch
+
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
@@ -225,3 +227,91 @@ class ManualStatusEventsTests(TestCase):
         self.api.patch(self.url, {"remember_count": 1}, format="json")
 
         self.assertEqual(self.types(), [])
+
+
+@override_settings(CACHES=LOCMEM)
+class ManualPaymentSyncsRemonlineTests(TestCase):
+    """
+    Ручная отметка оплаты уводит предоплатный заказ в RemOnline.
+
+    Предоплатный заказ уезжает в RemOnline только после оплаты. Синхронизацию
+    делал единственный путь — вебхук monobank, поэтому заказ, оплаченный
+    наличными или за реквизитами и отмеченный админом кнопкой, не попадал туда
+    никогда. По интерфейсу при этом всё выглядело благополучно.
+    """
+
+    def setUp(self):
+        self.bot_account = make_client("bot@airbag.local", is_staff=True, telegram_id=111)
+        self.customer = make_client("customer@airbag.local", telegram_id=222)
+        self.api = APIClient()
+        self.api.credentials(HTTP_X_API_KEY=self.bot_account.api_key)
+
+    def make_order(self, **overrides):
+        fields = dict(
+            client=self.customer,
+            telegram_id=self.customer.telegram_id,
+            name="N",
+            last_name="L",
+            phone="+380000000000",
+            nova_post_address="Addr",
+            prepayment=True,
+            grand_total_minor=240100,
+        )
+        fields.update(overrides)
+        return Order.objects.create(**fields)
+
+    def test_prepayment_order_is_sent_to_remonline(self):
+        order = self.make_order(prepayment=True)
+
+        # captureOnCommitCallbacks: тест идёт в транзакции, которая не
+        # коммитится, поэтому on_commit сам по себе не сработал бы. На бою
+        # ATOMIC_REQUESTS выключен, и Django выполняет callback сразу.
+        with patch("core.services.order_status.sync_order_to_remonline") as sync:
+            with self.captureOnCommitCallbacks(execute=True):
+                self.api.patch(f"/api/v2/orders/{order.pk}/", {"is_paid": True}, format="json")
+
+        sync.assert_called_once_with(order)
+
+    def test_postpayment_order_is_not_sent_again(self):
+        """Постоплатный уехал в RemOnline ещё при оформлении."""
+        order = self.make_order(prepayment=False)
+
+        with patch("core.services.order_status.sync_order_to_remonline") as sync:
+            with self.captureOnCommitCallbacks(execute=True):
+                self.api.patch(f"/api/v2/orders/{order.pk}/", {"is_paid": True}, format="json")
+
+        sync.assert_not_called()
+
+    def test_repeated_mark_does_not_sync_twice(self):
+        order = self.make_order(prepayment=True)
+
+        with patch("core.services.order_status.sync_order_to_remonline") as sync:
+            with self.captureOnCommitCallbacks(execute=True):
+                self.api.patch(f"/api/v2/orders/{order.pk}/", {"is_paid": True}, format="json")
+                self.api.patch(f"/api/v2/orders/{order.pk}/", {"is_paid": True}, format="json")
+
+        sync.assert_called_once()
+
+    def test_remonline_failure_does_not_break_the_patch(self):
+        """
+        Деньги уже приняты. Отдавать админу ошибку из-за недоступной RemOnline
+        нельзя — несинхронизированную заявку видно по remonline_sync_status.
+        """
+        order = self.make_order(prepayment=True)
+
+        with patch("core.services.order_status.sync_order_to_remonline",
+                   side_effect=ValueError("Order has no client")):
+            with self.captureOnCommitCallbacks(execute=True):
+                response = self.api.patch(
+                    f"/api/v2/orders/{order.pk}/", {"is_paid": True}, format="json"
+                )
+
+        self.assertEqual(response.status_code, 200)
+        order.refresh_from_db()
+        self.assertTrue(order.is_paid)
+        self.assertTrue(
+            OrderEvent.objects.filter(
+                order=order, type=OrderEventType.PAYMENT_CONFIRMED
+            ).exists(),
+            "событие для уведомлений должно остаться",
+        )
