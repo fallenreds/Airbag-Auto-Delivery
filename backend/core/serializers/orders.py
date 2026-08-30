@@ -319,6 +319,26 @@ class OrderSerializer(serializers.ModelSerializer):
             "refund_state",
         ]
 
+    # Поля, которыми распоряжается только персонал. Клиент — владелец заказа, и
+    # get_own_queryset пускает его к своей записи на PATCH, поэтому без этого
+    # списка браузер мог объявить заказ оплаченным и выполненным сам. Так и
+    # случилось: модалка оплаты слала `is_completed: true` сразу после monobank,
+    # заказ пропадал из «Активних замовлень» у админа ещё до сборки.
+    # Факт оплаты подтверждает вебхук, выполнение — RemOnline, админ или статус
+    # Новой Почты; ТТН приходит из RemOnline.
+    STAFF_ONLY_FIELDS = ("is_paid", "is_completed", "ttn")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if getattr(user, "is_staff", False):
+            return
+        # Запроса нет — сериализатор используется для вывода (merge, create),
+        # запись через него никто не делает, так что закрываем и этот случай.
+        for name in self.STAFF_ONLY_FIELDS:
+            self.fields[name].read_only = True
+
     def _actor(self):
         request = self.context.get("request")
         user = getattr(request, "user", None)
