@@ -16,14 +16,109 @@ from utils.cancel_dedup import consume_client_notified
 
 
 async def check_status_notification(bot, telegram_id, order):
+    """Карточка заказа клиенту — тем же видом, что и в «Статус замовлень 📦»."""
     try:
-        client = await get_client_by_id(order['client_id'])
+        # API отдаёт id клиента в поле `client`. Поле `client_id` осталось от
+        # старой системы, и на нём эта функция падала с KeyError — а вместе с
+        # ней и подтверждение заказа, ради которого её и звали.
+        client = await get_client_by_id(order['client'])
         await make_order(bot, telegram_id, order["items"], None, order, client)
-    except TypeError as error:
+    except Exception as error:
         await send_error_log(bot, 516842877, error)
 
+def _payment_type_label(order) -> str:
+    """Как назвать тип оплаты в сообщении админам."""
+    if order.get('prepayment'):
+        return "передплата"
+    if order.get('bank_transfer'):
+        return "оплата за реквізитами"
+    if not (order.get('nova_post_address') or '').strip():
+        return "оплата в магазині"
+    return "накладений платіж"
+
+
 async def new_order_notification(bot, order, admin_list):
-    await send_messages_to_admins(bot, admin_list, "Нове замовлення в remonline успішно створено!")
+    """Заказ оформлен — карточка админам."""
+    try:
+        text = (
+            f"🆕 <b>Нове замовлення №{order['id']}</b>\n"
+            f"Клієнт: {order.get('name', '')} {order.get('last_name', '')}\n"
+            f"Телефон: {order.get('phone') or '—'}\n"
+            f"Тип оплати: {_payment_type_label(order)}\n"
+            f"Сума: {to_major(order.get('grand_total_minor') or 0)} грн"
+        )
+        await send_messages_to_admins(bot, admin_list, text)
+    except Exception as error:
+        await send_error_log(bot, 516842877, error)
+
+
+async def remonline_created_notification(bot, order, admin_list):
+    """Заказ заведён в RemOnline — админам, чтобы видели, что синхронизация прошла."""
+    try:
+        await send_messages_to_admins(
+            bot, admin_list,
+            f"Замовлення №{order['id']} заведено в RemOnline "
+            f"(№{order.get('remonline_order_id') or '—'}) ✅",
+        )
+    except Exception as error:
+        await send_error_log(bot, 516842877, error)
+
+
+async def payment_confirmed_notification(bot, order, admin_list):
+    """Деньги пришли: вебхук Monobank подтвердил оплату."""
+    try:
+        await send_messages_to_admins(
+            bot, admin_list,
+            f"💰 <b>Замовлення №{order['id']} оплачено</b>\n"
+            f"Сума: {to_major(order.get('grand_total_minor') or 0)} грн",
+        )
+        if not order.get('telegram_id'):
+            return
+        await bot.send_message(
+            order['telegram_id'],
+            f"<b>Оплату замовлення №{order['id']} підтверджено ✅</b>\n"
+            f"Дякуємо! Ми беремо його в роботу.",
+        )
+    except Exception as error:
+        await send_error_log(bot, 516842877, error)
+
+
+async def payment_type_changed_notification(bot, order, admin_list):
+    """Админ перевёл заказ с предоплаты на постоплату."""
+    try:
+        await send_messages_to_admins(
+            bot, admin_list,
+            f"Тип оплати замовлення №{order['id']} змінено на "
+            f"{_payment_type_label(order)}",
+        )
+        if not order.get('telegram_id'):
+            return
+        await bot.send_message(
+            order['telegram_id'],
+            f"Тип замовлення №{order['id']} змінено на "
+            f"{_payment_type_label(order)}",
+        )
+    except Exception as error:
+        await send_error_log(bot, 516842877, error)
+
+
+async def cancel_rejected_notification(bot, order, details: str | None, admin_list):
+    """Админ отклонил запрос клиента на отмену."""
+    try:
+        await send_messages_to_admins(
+            bot, admin_list,
+            f"Запит на скасування замовлення №{order['id']} відхилено",
+        )
+        if not order.get('telegram_id'):
+            return
+        client_text = (
+            f"<b>Запит на скасування замовлення №{order['id']} відхилено.</b>\n"
+            f"{details or ''}"
+        ).strip()
+        markup_i = types.InlineKeyboardMarkup().add(get_our_contact_button())
+        await bot.send_message(order['telegram_id'], client_text, reply_markup=markup_i)
+    except Exception as error:
+        await send_error_log(bot, 516842877, error)
 
 
 IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.heic', '.heif'}
