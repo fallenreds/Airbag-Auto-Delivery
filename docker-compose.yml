@@ -3,6 +3,12 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        # Адрес API вшивается в приложение на этапе сборки. Значение задаётся
+        # здесь, а не берётся из frontend/.env.local: тот приезжает в образ
+        # вместе с исходниками, и собранный на чужой машине образ уносил на
+        # прод её локальный адрес. Переопределяется переменной окружения.
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-https://api.airbagad.com/api/v2}
     ports:
       - "127.0.0.1:3000:3000"
     restart: unless-stopped
