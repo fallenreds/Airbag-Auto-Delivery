@@ -143,7 +143,9 @@ async def get_all_clients(limit: Optional[int] = None) -> list:
 
 async def get_active_orders(limit: Optional[int] = None) -> list:
     """Get active orders, with an optional limit."""
-    data = await _fetch_paginated('api/v2/orders?is_completed=0', limit=limit)
+    # ordering=-date: админ смотрит список сверху вниз, и свежий заказ должен
+    # быть первым, а не последним на N-й странице.
+    data = await _fetch_paginated('api/v2/orders?is_completed=0&ordering=-date', limit=limit)
     return data
 
 async def get_active_orders_by_telegram_id(telegram_id:int) -> list:

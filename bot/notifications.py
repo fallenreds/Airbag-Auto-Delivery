@@ -8,7 +8,7 @@ from aiogram import types
 
 import config
 from api import update_branch_remember_count, get_order_by_id, get_client_by_id, ttn_tracking, headers
-from buttons import get_check_ttn_button, get_our_contact_button, get_show_discount_info_button, get_status_button, \
+from buttons import get_check_ttn_button, get_our_contact_button, get_show_discount_info_button, get_show_order_button, get_status_button, \
     get_make_paid_button, get_to_not_prepayment_button, get_cancel_request_decision_keyboard
 from engine import send_messages_to_admins, send_error_log, make_order
 from utils.utils import to_major
@@ -25,6 +25,21 @@ async def check_status_notification(bot, telegram_id, order):
         await make_order(bot, telegram_id, order["items"], None, order, client)
     except Exception as error:
         await send_error_log(bot, 516842877, error)
+
+def admin_order_kb(order, extra_rows=None) -> types.InlineKeyboardMarkup:
+    """
+    Клавиатура админского сообщения о заказе.
+
+    Кнопка «Показати замовлення» стоит под каждым таким сообщением: из
+    уведомления должно быть видно, о чём речь, и можно было сразу управлять
+    заказом, не разыскивая его в списке активных.
+    """
+    kb = types.InlineKeyboardMarkup(row_width=1)
+    for row in (extra_rows or []):
+        kb.row(*row)
+    kb.add(get_show_order_button(order['id']))
+    return kb
+
 
 def _payment_type_label(order) -> str:
     """Как назвать тип оплаты в сообщении админам."""
@@ -47,7 +62,7 @@ async def new_order_notification(bot, order, admin_list):
             f"Тип оплати: {_payment_type_label(order)}\n"
             f"Сума: {to_major(order.get('grand_total_minor') or 0)} грн"
         )
-        await send_messages_to_admins(bot, admin_list, text)
+        await send_messages_to_admins(bot, admin_list, text, admin_order_kb(order))
     except Exception as error:
         await send_error_log(bot, 516842877, error)
 
@@ -59,6 +74,7 @@ async def remonline_created_notification(bot, order, admin_list):
             bot, admin_list,
             f"Замовлення №{order['id']} заведено в RemOnline "
             f"(№{order.get('remonline_order_id') or '—'}) ✅",
+            admin_order_kb(order),
         )
     except Exception as error:
         await send_error_log(bot, 516842877, error)
@@ -71,6 +87,7 @@ async def payment_confirmed_notification(bot, order, admin_list):
             bot, admin_list,
             f"💰 <b>Замовлення №{order['id']} оплачено</b>\n"
             f"Сума: {to_major(order.get('grand_total_minor') or 0)} грн",
+            admin_order_kb(order),
         )
         if not order.get('telegram_id'):
             return
@@ -90,6 +107,7 @@ async def payment_type_changed_notification(bot, order, admin_list):
             bot, admin_list,
             f"Тип оплати замовлення №{order['id']} змінено на "
             f"{_payment_type_label(order)}",
+            admin_order_kb(order),
         )
         if not order.get('telegram_id'):
             return
@@ -108,6 +126,7 @@ async def cancel_rejected_notification(bot, order, details: str | None, admin_li
         await send_messages_to_admins(
             bot, admin_list,
             f"Запит на скасування замовлення №{order['id']} відхилено",
+            admin_order_kb(order),
         )
         if not order.get('telegram_id'):
             return
@@ -164,6 +183,7 @@ async def payment_doc_uploaded_notification(bot, order, admin_list):
     markup_i = types.InlineKeyboardMarkup(row_width=1)
     markup_i.add(get_make_paid_button(order['id']))
     markup_i.add(get_to_not_prepayment_button(order['id']))
+    markup_i.add(get_show_order_button(order['id']))
 
     doc_url = order.get('payment_document')
     data, filename = await _download_payment_document(doc_url)
@@ -249,7 +269,7 @@ async def order_in_branch_notifications(bot, order):
 async def deactivated_notifications(bot, order, admin_list):
     try:
         admin_text = f"Вітаю, замовлення №{order['id']} успішно завершенo."
-        await send_messages_to_admins(bot, admin_list, admin_text)
+        await send_messages_to_admins(bot, admin_list, admin_text, admin_order_kb(order))
         if not order.get('telegram_id'):
             return
         client_text = f'Дякуємо за замовлення <b>№{order["id"]}</b>!\nДо нових зустрічей у AirBag "AutoDelivery” 💛💙'
@@ -284,7 +304,8 @@ async def canceled_notifications(bot, order, details: str | None, admin_list):
     """Заказ отменён — уведомляем клиента и админов."""
     try:
         await send_messages_to_admins(
-            bot, admin_list, f"Замовлення №{order['id']} скасовано ❌"
+            bot, admin_list, f"Замовлення №{order['id']} скасовано ❌",
+            admin_order_kb(order),
         )
         if not order.get('telegram_id'):
             return
@@ -319,7 +340,8 @@ async def cancel_requested_notifications(bot, order, admin_list):
         if comment:
             text += f"\nКоментар: {comment}"
 
-        markup = get_cancel_request_decision_keyboard(order['id'])
+        decision_kb = get_cancel_request_decision_keyboard(order['id'])
+        markup = admin_order_kb(order, extra_rows=decision_kb.inline_keyboard)
         for admin in admin_list:
             await bot.send_message(admin, text, reply_markup=markup)
     except Exception as error:
@@ -330,7 +352,8 @@ async def refunded_notifications(bot, order, admin_list):
     """Возврат средств подтверждён Monobank."""
     try:
         await send_messages_to_admins(
-            bot, admin_list, f"Кошти за замовлення №{order['id']} повернуто клієнту 💵"
+            bot, admin_list, f"Кошти за замовлення №{order['id']} повернуто клієнту 💵",
+            admin_order_kb(order),
         )
         if not order.get('telegram_id'):
             return
