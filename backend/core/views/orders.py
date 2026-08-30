@@ -452,7 +452,10 @@ class OrderItemViewSet(viewsets.ModelViewSet):
 class OrderEventViewSet(viewsets.ModelViewSet):
     serializer_class = OrderEventSerializer
     filterset_class = generate_filterset_for_model(OrderEvent)
-    queryset = OrderEvent.objects.all()
+    # Бот шлёт сообщения в том порядке, в каком получил события: «замовлення
+    # оформлено» должно прийти раньше «оплату підтверджено». Без явной
+    # сортировки порядок определяет СУБД.
+    queryset = OrderEvent.objects.order_by("id")
     permission_classes = [IsAuthenticated, IsAdminUser]
 
     def get_queryset(self):

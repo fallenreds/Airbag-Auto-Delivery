@@ -9,7 +9,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.utils import timezone
 
-from core.models import BONUS_ORDER_MARKER, Client, ClientEvent, Order
+from core.models import BONUS_ORDER_MARKER, Client, ClientEvent, ClientEventType, Order
 from core.serializers import (
     ChangePasswordSerializer,
     ClientEventSerializer,
@@ -140,7 +140,9 @@ class ClientViewSet(viewsets.ModelViewSet):
 
 
 class ClientEventViewSet(viewsets.ModelViewSet):
-    queryset = ClientEvent.objects.all()
+    # Бот шлёт сообщения в том порядке, в каком получил события. Без явной
+    # сортировки порядок определяет СУБД.
+    queryset = ClientEvent.objects.order_by("id")
     serializer_class = ClientEventSerializer
     filterset_class = generate_filterset_for_model(ClientEvent)
     permission_classes = [IsAuthenticated]
@@ -183,6 +185,13 @@ class ClientRegistrationView(APIView):
             locale = request.data.get("locale")
             if needs_confirmation(client):
                 dispatch_confirmation_email(client, locale)
+
+            # Админам в бот: «зареєстрований новий користувач». Обработчик в
+            # боте есть с самого начала, но событие не создавал никто, поэтому
+            # регистрации проходили молча.
+            ClientEvent.objects.create(
+                type=ClientEventType.CREATED, client=client
+            )
 
             return Response(
                 {
