@@ -371,8 +371,9 @@ def build_document():
             ["order_updates(bot, admin_list)",
              "кожні 10 секунд",
              "Опитує endpoint /api/v2/order-events/ на наявність нових подій замовлень. "
-             "Обробляє типи: DELETED, MERGED, CREATED_ADMIN_MESSAGE, CREATED_CLIENT_MESSAGE, "
-             "FINISHED, TTN_UPDATED, IN_BRANCH, remonline timeout. "
+             "Маршрутизація — словник updates.ORDER_EVENT_HANDLERS, ключі якого збігаються "
+             "з OrderEventType в backend/core/models.py (стежить tests/test_event_contract.py). "
+             "Невідомий код пишеться в лог, а не зникає мовчки. "
              "Після обробки видаляє запис події."],
             ["get_no_paid_orders(bot, admin_list)",
              "кожну годину (3600 с)",
@@ -609,7 +610,7 @@ def build_document():
         [
             ["check_status_notification(bot, telegram_id, order)",
              "Показує деталі замовлення клієнту (аналог команди «статус»).",
-             "Використовує застарілі поля order['goods_list'] і order['client_id'] — може не працювати."],
+             "Бере id клієнта з поля order['client'] та позиції з order['items']."],
             ["new_order_notification(bot, order, admin_list)",
              "Сповіщає адмінів про нове замовлення в remonline.",
              "—"],
@@ -735,9 +736,6 @@ def build_document():
             ["merge_order_notification()",
              "Відсутній перший аргумент у bot.send_message() — не переданий telegram_id клієнта. "
              "Повідомлення ніколи не надсилається."],
-            ["check_status_notification()",
-             "Використовує застарілі поля order['goods_list'] та order['client_id'], "
-             "яких немає в новій моделі Order. Функція завжди завершується з TypeError."],
             ["deleted_notifications()",
              "Викликає delete_order() повторно після того як бекенд вже видалив замовлення — "
              "призведе до 404 (тепер delete_order повертає True/None замість dict)."],

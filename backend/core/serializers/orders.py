@@ -2,7 +2,7 @@ from typing import TypedDict
 
 from rest_framework import serializers
 
-from core.models import Client, Good, Order, OrderEvent, OrderItem
+from core.models import Client, Good, Order, OrderEvent, OrderEventType, OrderItem
 from core.services import order_cancel
 from core.services.discount_service import DiscountService
 from core.services.order_sync import get_payment_type_label, sync_order_to_remonline
@@ -232,6 +232,21 @@ class OrderCreateSerializer(serializers.ModelSerializer):
                 "discount_total_minor",
                 "grand_total_minor",
             ]
+        )
+
+        # Заказ оформлен — об этом надо сказать обоим сторонам. Событий два, а
+        # не одно: адресаты разные, и бот шлёт их разными сообщениями. Раньше
+        # их не создавал никто, поэтому админ не видел новых заказов, а клиент
+        # не получал подтверждения — обработчики в боте просто простаивали.
+        OrderEvent.objects.create(
+            type=OrderEventType.CREATED_ADMIN_MESSAGE,
+            order=order,
+            details=f"Order created: {get_payment_type_label(order)}",
+        )
+        OrderEvent.objects.create(
+            type=OrderEventType.CREATED_CLIENT_MESSAGE,
+            order=order,
+            details="Order created",
         )
 
         # Postpayment syncs immediately; prepayment waits for payment success.

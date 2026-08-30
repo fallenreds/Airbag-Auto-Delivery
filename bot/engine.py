@@ -227,4 +227,6 @@ async def send_messages_to_admins(bot, admin_ids: list, text, reply_markup=None)
             pass
 
 async def send_error_log(bot, admin_id, error):
-    await bot.send_message(admin_id, text=error)
+    # Именно text=str(...): aiogram ждёт строку, и на объекте исключения
+    # падал сам логгер ошибок — заглушая то, о чём хотел сообщить.
+    await bot.send_message(admin_id, text=f"{type(error).__name__}: {error}")

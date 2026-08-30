@@ -47,11 +47,16 @@ class TestOrderUpdates:
     EVENT_TO_NOTIFICATION = [
         ("MERGED", "merge_order_notification"),
         ("CREATED_ADMIN_MESSAGE", "new_order_notification"),
+        ("CREATED_CLIENT_MESSAGE", "new_order_client_notification"),
+        ("REMONLINE_CREATED", "remonline_created_notification"),
+        ("PAYMENT_CONFIRMED", "payment_confirmed_notification"),
+        ("PAYMENT_TYPE_CHANGED", "payment_type_changed_notification"),
         ("FINISHED", "deactivated_notifications"),
         ("TTN_UPDATED", "ttn_update_notification"),
         ("PAYMENT_DOC_UPLOADED", "payment_doc_uploaded_notification"),
         ("CANCEL_REQUESTED", "cancel_requested_notifications"),
         ("CANCELED", "canceled_notifications"),
+        ("CANCEL_REJECTED", "cancel_rejected_notification"),
         ("REFUNDED", "refunded_notifications"),
     ]
 
@@ -92,22 +97,61 @@ class TestOrderUpdates:
         ({"prepayment": 0, "nova_post_address": ""}, "оплата в магазині"),
         ({"prepayment": 0, "nova_post_address": "Київ"}, "накладений платіж"),
     ])
-    async def test_new_order_admin_label_by_payment_type(self, one_iteration, sample_order,
+    async def test_new_order_admin_label_by_payment_type(self, sample_order,
                                                          order_overrides, expected_label):
-        import updates
+        """Тип оплаты — часть карточки нового заказа, которую видит админ."""
+        import notifications
         order = dict(sample_order, bank_transfer=False)
         order.update(order_overrides)
-        record = {"id": 1, "order": order["id"], "type": "CREATED_CLIENT_MESSAGE"}
+        fake_bot = AsyncMock()
+
+        with patch.object(notifications, "send_messages_to_admins", AsyncMock()) as to_admins:
+            await notifications.new_order_notification(fake_bot, order, [ADMIN_ID])
+
+        assert expected_label in to_admins.await_args.args[2]
+
+    async def test_client_event_does_not_message_admins(self, one_iteration, sample_order):
+        """
+        CREATED_CLIENT_MESSAGE — только клиенту.
+
+        Раньше внутри этой ветки админам уходило «Створено нове замовлення…»,
+        то есть админское сообщение висело на клиентском событии. Теперь у
+        админов своё событие CREATED_ADMIN_MESSAGE, и дублировать не нужно.
+        """
+        import updates
+        record = {"id": 1, "order": sample_order["id"], "type": "CREATED_CLIENT_MESSAGE"}
         fake_bot = AsyncMock()
 
         with patch.object(updates, "get_order_updates", AsyncMock(return_value=[record])), \
-             patch.object(updates, "get_order_by_id", AsyncMock(return_value=order)), \
+             patch.object(updates, "get_order_by_id", AsyncMock(return_value=sample_order)), \
              patch.object(updates, "delete_order_updates", AsyncMock()), \
-             patch.object(updates, "new_order_client_notification", AsyncMock()), \
+             patch.object(updates, "new_order_client_notification", AsyncMock()) as to_client, \
              patch.object(updates, "send_messages_to_admins", AsyncMock()) as to_admins:
             await one_iteration(lambda: updates.order_updates(fake_bot, [ADMIN_ID]))
 
-        assert expected_label in to_admins.await_args.args[2]
+        to_client.assert_awaited_once()
+        to_admins.assert_not_awaited()
+
+    async def test_unknown_event_is_logged_and_dropped(self, one_iteration, sample_order):
+        """
+        Неизвестный код не должен исчезать бесследно.
+
+        Молчаливое выбрасывание — ровно то, из-за чего годами терялись
+        CREATED_* и PAYMENT_CONFIRMED: событие удалялось из очереди, и понять,
+        что оно было, было неоткуда.
+        """
+        import updates
+        record = {"id": 7, "order": sample_order["id"], "type": "NO_SUCH_EVENT"}
+        fake_bot = AsyncMock()
+
+        with patch.object(updates, "get_order_updates", AsyncMock(return_value=[record])), \
+             patch.object(updates, "get_order_by_id", AsyncMock(return_value=sample_order)), \
+             patch.object(updates, "delete_order_updates", AsyncMock()) as delete, \
+             patch.object(updates.logger, "error") as log:
+            await one_iteration(lambda: updates.order_updates(fake_bot, [ADMIN_ID]))
+
+        log.assert_called_once()
+        delete.assert_awaited_once_with(7)
 
     async def test_in_branch_notification_respects_reminder_limit(self, one_iteration, sample_order):
         """IN_BRANCH шлётся, только пока branch_remember_count <= 1."""

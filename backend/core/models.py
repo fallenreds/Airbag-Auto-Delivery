@@ -135,6 +135,22 @@ class Client(AbstractBaseUser, PermissionsMixin):
         return f"Guest{email_part}" if self.is_guest else "Client"
 
 
+class ClientEventType:
+    """
+    Коды событий клиента.
+
+    Тот же контракт, что и у `OrderEventType`: строка из этого списка уезжает
+    в очередь, бот разбирает её по точному совпадению. Менять значения нельзя
+    — только добавлять, и одновременно с веткой в `bot/updates.py`.
+    """
+
+    CREATED = "CREATED"
+
+    CHOICES = [
+        (CREATED, "Created"),
+    ]
+
+
 class ClientEvent(models.Model):
     id = models.BigAutoField(primary_key=True)
     type = models.CharField(max_length=32)
