@@ -95,7 +95,7 @@ class MonobankWebhookTests(TestCase):
 
     # --- подпись -----------------------------------------------------------
 
-    @patch("payments.mono.sync_order_to_remonline")
+    @patch("core.services.order_status.sync_order_to_remonline")
     def test_valid_signature_is_accepted(self, _sync):
         resp = self._post(self._event(Payment.STATUS_SUCCESS))
 
@@ -145,7 +145,7 @@ class MonobankWebhookTests(TestCase):
 
     # --- обработка статусов ------------------------------------------------
 
-    @patch("payments.mono.sync_order_to_remonline")
+    @patch("core.services.order_status.sync_order_to_remonline")
     def test_success_marks_order_paid_and_emits_event(self, sync_mock):
         # Синк в RemOnline отложен до коммита транзакции — в TestCase его нужно
         # выполнить явно.
@@ -247,7 +247,7 @@ class MonobankWebhookTests(TestCase):
 
     # --- идемпотентность и порядок ----------------------------------------
 
-    @patch("payments.mono.sync_order_to_remonline")
+    @patch("core.services.order_status.sync_order_to_remonline")
     def test_redelivery_is_idempotent(self, sync_mock):
         """Monobank ретраит вебхуки — повтор не должен дублировать эффекты."""
         event = self._event(Payment.STATUS_SUCCESS)
@@ -267,7 +267,7 @@ class MonobankWebhookTests(TestCase):
         )
         sync_mock.assert_called_once_with(self.order)
 
-    @patch("payments.mono.sync_order_to_remonline")
+    @patch("core.services.order_status.sync_order_to_remonline")
     def test_stale_event_does_not_roll_back_status(self, _sync):
         """Порядок доставки Monobank не гарантирует: pending после success
         не должен возвращать платёж в неоплаченный вид."""
@@ -283,7 +283,7 @@ class MonobankWebhookTests(TestCase):
 
     # --- сумма -------------------------------------------------------------
 
-    @patch("payments.mono.sync_order_to_remonline")
+    @patch("core.services.order_status.sync_order_to_remonline")
     def test_amount_mismatch_does_not_mark_order_paid(self, _sync):
         resp = self._post(self._event(Payment.STATUS_SUCCESS, amount=1))
 
@@ -294,7 +294,7 @@ class MonobankWebhookTests(TestCase):
     # --- устойчивость к падению RemOnline ---------------------------------
 
     @patch(
-        "payments.mono.sync_order_to_remonline",
+        "core.services.order_status.sync_order_to_remonline",
         side_effect=ValueError("REMONLINE_API_KEY is not set"),
     )
     def test_remonline_failure_does_not_roll_back_payment(self, _sync):
