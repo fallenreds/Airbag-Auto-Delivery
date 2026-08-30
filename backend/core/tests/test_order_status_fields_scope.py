@@ -14,7 +14,7 @@
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
-from core.models import Client, Order
+from core.models import Client, Order, OrderEvent, OrderEventType
 
 LOCMEM = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 
@@ -63,6 +63,9 @@ class OrderStatusFieldsScopeTests(TestCase):
         self.order.refresh_from_db()
         self.assertFalse(self.order.is_completed)
         self.assertFalse(self.order.is_paid)
+        # STAFF_ONLY_FIELDS заодно защищает и от событий: не попав в
+        # validated_data, поля не дадут ни PAYMENT_CONFIRMED, ни FINISHED.
+        self.assertFalse(OrderEvent.objects.filter(order=self.order).exists())
 
     def test_client_cannot_set_ttn(self):
         self.api.force_authenticate(user=self.customer)
@@ -71,6 +74,7 @@ class OrderStatusFieldsScopeTests(TestCase):
 
         self.order.refresh_from_db()
         self.assertIsNone(self.order.ttn)
+        self.assertFalse(OrderEvent.objects.filter(order=self.order).exists())
 
     def test_client_can_still_edit_their_own_delivery_details(self):
         """Замок только на статусных полях — обычный PATCH работать обязан."""
@@ -115,3 +119,109 @@ class OrderStatusFieldsScopeTests(TestCase):
 
         self.order.refresh_from_db()
         self.assertTrue(self.order.is_completed)
+
+
+@override_settings(CACHES=LOCMEM)
+class ManualStatusEventsTests(TestCase):
+    """
+    События на ручные действия персонала.
+
+    Оплату, закрытие и ТТН система фиксирует сама — вебхуком monobank и кроном.
+    Ровно те же изменения делает админ кнопкой в боте, и раньше событий при
+    этом не возникало: бот писал клиенту сам. Отсюда два канала уведомлений и
+    дубли. Теперь путь один — событие.
+    """
+
+    def setUp(self):
+        self.bot_account = make_client("bot@airbag.local", is_staff=True, telegram_id=111)
+        self.customer = make_client("customer@airbag.local", telegram_id=222)
+        self.order = Order.objects.create(
+            client=self.customer,
+            telegram_id=self.customer.telegram_id,
+            name="N",
+            last_name="L",
+            phone="+380000000000",
+            nova_post_address="Addr",
+            prepayment=True,
+            grand_total_minor=240100,
+        )
+        self.url = f"/api/v2/orders/{self.order.id}/"
+        self.api = APIClient()
+        self.api.credentials(HTTP_X_API_KEY=self.bot_account.api_key)
+
+    def types(self):
+        return list(
+            OrderEvent.objects.filter(order=self.order)
+            .order_by("id")
+            .values_list("type", flat=True)
+        )
+
+    def test_marking_paid_creates_the_event(self):
+        self.api.patch(self.url, {"is_paid": True}, format="json")
+
+        self.assertEqual(self.types(), [OrderEventType.PAYMENT_CONFIRMED])
+
+    def test_closing_the_order_creates_the_event(self):
+        self.api.patch(self.url, {"is_completed": True}, format="json")
+
+        self.assertEqual(self.types(), [OrderEventType.FINISHED])
+
+    def test_setting_ttn_creates_the_event(self):
+        self.api.patch(self.url, {"ttn": "59001259868043"}, format="json")
+
+        self.assertEqual(self.types(), [OrderEventType.TTN_UPDATED])
+
+    def test_repeated_patch_does_not_create_a_second_event(self):
+        """
+        Кнопка «Зробити сплаченим» под старой карточкой в чате нажимается и на
+        уже оплаченном заказе. Смотрим на переход, а не на наличие поля.
+        """
+        self.api.patch(self.url, {"is_paid": True}, format="json")
+        self.api.patch(self.url, {"is_paid": True}, format="json")
+
+        self.assertEqual(self.types(), [OrderEventType.PAYMENT_CONFIRMED])
+
+    def test_same_ttn_again_is_not_an_update(self):
+        self.api.patch(self.url, {"ttn": "59001259868043"}, format="json")
+        self.api.patch(self.url, {"ttn": " 59001259868043 "}, format="json")
+
+        self.assertEqual(self.types(), [OrderEventType.TTN_UPDATED])
+
+    def test_clearing_ttn_is_not_an_update(self):
+        """Иначе клиент получил бы «Ваш ТТН .» с кнопкой отслеживания в пустоту."""
+        self.api.patch(self.url, {"ttn": "59001259868043"}, format="json")
+        self.api.patch(self.url, {"ttn": ""}, format="json")
+
+        self.assertEqual(self.types(), [OrderEventType.TTN_UPDATED])
+
+    def test_canceled_order_produces_nothing(self):
+        """После «замовлення скасовано» слать «дякуємо за замовлення» незачем."""
+        self.order.cancel_state = Order.CancelState.CANCELED
+        self.order.save(update_fields=["cancel_state"])
+
+        self.api.patch(self.url, {"is_completed": True}, format="json")
+
+        self.assertEqual(self.types(), [])
+
+    def test_one_patch_with_several_fields_keeps_the_order(self):
+        """Бот шлёт сообщения строго по возрастанию id событий."""
+        self.api.patch(
+            self.url,
+            {"is_paid": True, "ttn": "59001259868043", "is_completed": True},
+            format="json",
+        )
+
+        self.assertEqual(
+            self.types(),
+            [
+                OrderEventType.PAYMENT_CONFIRMED,
+                OrderEventType.TTN_UPDATED,
+                OrderEventType.FINISHED,
+            ],
+        )
+
+    def test_unrelated_patch_is_silent(self):
+        """Счётчики напоминаний бот шлёт тем же PATCH — событий быть не должно."""
+        self.api.patch(self.url, {"remember_count": 1}, format="json")
+
+        self.assertEqual(self.types(), [])
