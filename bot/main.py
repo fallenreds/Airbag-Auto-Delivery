@@ -469,6 +469,31 @@ async def _show_order_page(bot, admin_id: int, chat_id: int, index: int, message
         await bot.send_message(chat_id, text, reply_markup=final_kb, parse_mode="HTML")
 
 
+async def show_order_card(bot, chat_id: int, order: dict, message_id: int | None = None):
+    """
+    Одна карточка заказа — та же, что в списке активных, но без листалки.
+
+    Открывается кнопкой «Показати замовлення» под уведомлением о событии:
+    админ видит, о каком заказе речь, и управляет им прямо оттуда, не
+    разыскивая его в списке.
+    """
+    notes_info = await manager_notes_builder(order, None)
+
+    kb = types.InlineKeyboardMarkup(row_width=1)
+    for row in _build_order_action_kb(order).inline_keyboard:
+        kb.row(*row)
+    kb.row(types.InlineKeyboardButton("🔙 Панель", callback_data="back_to_admin"))
+
+    text = notes_info["text"]
+    if message_id:
+        try:
+            await bot.edit_message_text(text, chat_id, message_id, reply_markup=kb, parse_mode="HTML")
+            return
+        except Exception:
+            pass
+    await bot.send_message(chat_id, text, reply_markup=kb, parse_mode="HTML")
+
+
 async def order_list_builder(bot, orders, admin_id, goods, message_id=None):
     if not orders:
         await bot.send_message(admin_id, "Немає замовлень для відображення")
@@ -1062,7 +1087,7 @@ _KNOWN_CALLBACK_EXACT = frozenset({
 })
 
 _KNOWN_CALLBACK_FRAGMENTS = (
-    "check_order/", "make_paid/", "deactivate_order/", "to_not_prepayment/",
+    "order_card/", "check_order/", "make_paid/", "deactivate_order/", "to_not_prepayment/",
     "check_ttn/", "send_payment_photo", "merge_order", "delete_order/",
     "cancel_order/", "request_cancel/", "cancel_reason/", "admin_cancel_order/",
     "admin_cancel_reason/", "cancel_approve/", "cancel_reject/", "mark_refunded/",
@@ -1116,10 +1141,18 @@ async def callback_admin_panel(callback: types.CallbackQuery, state: FSMContext)
             _client_list_cache[admin_id] = all_clients
             await _show_client_list_page(bot, admin_id, callback.message.chat.id, 0, callback.message.message_id)
 
-        if "check_order/" in callback.data:
+        if "order_card/" in callback.data or "check_order/" in callback.data:
+            # Карточка показывает телефон клиента и кнопки управления заказом —
+            # в цепочке callback_admin_panel проверки прав нет, поэтому здесь
+            # она своя.
+            if admin_id not in admin_list:
+                return await callback.answer(_STALE_BUTTON_TEXT, show_alert=True)
             order_id = await id_spliter(callback.data)
-            order = [await get_order_by_id(order_id)]
-            await order_list_builder(bot, order, callback.message.chat.id, goods, callback.message.message_id)
+            order = await resolve_order_or_notify(callback, order_id)
+            if not order:
+                return
+            # Отдельным сообщением: уведомление о событии должно остаться в чате.
+            await show_order_card(bot, callback.message.chat.id, order)
 
         if callback.data == "discount_info":
             await check_discount(callback.message)

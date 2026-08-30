@@ -100,8 +100,13 @@ def get_make_post():
     return types.InlineKeyboardButton("Створити оголошення 🖼", callback_data=f"make_post")
 
 
+def get_show_order_button(order_id):
+    """Открывает карточку заказа отдельным сообщением, без листалки."""
+    return types.InlineKeyboardButton("Показати замовлення 🔍", callback_data=f"order_card/{order_id}")
+
+
 def get_order_info_button(order_id):
-    return types.InlineKeyboardButton("Переглянути замовлення 🔍", callback_data=f"check_order/{order_id}")
+    return get_show_order_button(order_id)
 
 
 def get_send_payment_photo_button(order_id):

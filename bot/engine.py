@@ -8,7 +8,7 @@ from buttons import get_cancel_order_button, get_props_info_button, \
 from config import PRICE_ID_PROD
 from utils.cancel_rules import client_can_cancel, client_can_request_cancel, is_canceled, \
     is_cancel_requested
-from utils.utils import to_major
+from utils.utils import fmt_dt, to_major
 
 
 def find_good(goods:list[dict], good_id:int):
@@ -95,7 +95,6 @@ async def make_order(bot, telegram_id, order_items, goods, order, client, messag
     return await bot.send_message(telegram_id, text=text, reply_markup=markup_i)
 
 async def base_client_info_builder(client):
-    print(client)
     base_client_name = f"{client['name']} {client['last_name']}"
     base_client_phone = f"{client['phone']}"
     return f"<b>Данные клиента remonline:</b>\nФИО:{base_client_name}\nТелефон:{base_client_phone}\n\n"
@@ -105,7 +104,6 @@ async def build_order_suma(order: dict):
     goods = order["items"]
     suma = 0
     for good in goods:
-        print(good)
         suma += good['original_price_minor'] * good['quantity']
     return suma
 
@@ -157,9 +155,32 @@ async def manager_notes_builder(order, goods) -> dict:
     if ttn := order['ttn']:
         goods_info += f"\nНомер ТТН: {ttn}"
 
+    goods_info += order_dates_block(order)
     goods_info += show_order_goods(order)
 
     return {"text": goods_info, "client": base_client}
+
+
+def order_dates_block(order: dict) -> str:
+    """
+    Даты заказа — для админа.
+
+    «Створено» показываем всегда, остальное — только когда событие было:
+    пустые строки «—» в карточке лишь мешают выхватить взглядом нужное.
+    """
+    rows = [("Створено", order.get('date'))]
+    for label, key in (
+        ("Прибуло у відділення", 'in_branch_datetime'),
+        ("Запит на скасування", 'cancel_requested_at'),
+        ("Скасовано", 'canceled_at'),
+    ):
+        if order.get(key):
+            rows.append((label, order[key]))
+
+    text = "\n\n<b>🕒 Дати:</b>"
+    for label, value in rows:
+        text += f"\n{label}: {fmt_dt(value)}"
+    return text
 
 
 def show_order_goods(order:dict):
@@ -183,7 +204,6 @@ async def ttn_info_builder(response: dict, order):
     if response["success"]:
         data = response['data'][0]
         text = f"<b>📮Інформація про посилку за номером: {data['Number']}</b>\n\n"
-        print(response)
         text += f"<b>Cтатус: </b> {data['Status']}\n"
         text += f"<b>Фактична вага: </b> {data['FactualWeight']}\n"
 

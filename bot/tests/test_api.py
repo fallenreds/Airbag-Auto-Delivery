@@ -114,11 +114,21 @@ class TestOrders:
 
     async def test_get_active_orders_uses_pagination(self, mocked):
         mocked.get(
-            f"{BASE_URL}api/v2/orders?is_completed=0&limit=100&offset=0",
+            f"{BASE_URL}api/v2/orders?is_completed=0&ordering=-date&limit=100&offset=0",
             payload=paged([ORDER]),
         )
         result = await api.get_active_orders()
         assert result == [ORDER]
+
+    async def test_active_orders_are_requested_newest_first(self, mocked):
+        """Админ смотрит список сверху вниз — свежий заказ должен быть первым."""
+        mocked.get(
+            f"{BASE_URL}api/v2/orders?is_completed=0&ordering=-date&limit=100&offset=0",
+            payload=paged([ORDER]),
+        )
+        await api.get_active_orders()
+        requested = [str(key[1]) for key in mocked.requests]
+        assert any("ordering=-date" in url for url in requested), requested
 
     async def test_get_active_orders_by_telegram_id_returns_list(self, mocked):
         mocked.get(
