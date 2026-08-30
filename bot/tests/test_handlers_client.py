@@ -311,7 +311,11 @@ class TestClientCancelFlow:
 
         cancel.assert_awaited_once_with(5, "changed_mind")
         request.assert_not_awaited()
-        assert "скасовано" in fake_bot.send_message.await_args.args[1]
+        # Подтверждение — всплывашкой; полное сообщение придёт по событию
+        # CANCELED из поллера, чтобы канал уведомлений остался один.
+        assert "скасовано" in cb.answer.await_args.args[0]
+        recipients = [c.args[0] for c in fake_bot.send_message.await_args_list]
+        assert CLIENT_ID not in recipients
 
     async def test_reason_on_paid_order_creates_request(self, bot_module, fake_bot, order_factory):
         order = order_factory(id=7, telegram_id=CLIENT_ID, is_paid=True)
@@ -328,7 +332,9 @@ class TestClientCancelFlow:
 
         request.assert_awaited_once_with(7, "changed_mind")
         cancel.assert_not_awaited()
-        assert "надіслано" in fake_bot.send_message.await_args.args[1]
+        assert "надіслано" in cb.answer.await_args.args[0]
+        recipients = [c.args[0] for c in fake_bot.send_message.await_args_list]
+        assert CLIENT_ID not in recipients
 
     async def test_backend_failure_is_reported_to_user(self, bot_module, fake_bot, order_factory):
         order = order_factory(id=5, telegram_id=CLIENT_ID, is_paid=False)
@@ -375,5 +381,7 @@ class TestCancelTexts:
         ("", ""),
         (None, ""),
     ])
-    def test_client_refund_text(self, bot_module, refund_state, expected):
-        assert expected in bot_module._client_refund_text({"refund_state": refund_state})
+    def test_client_refund_text(self, refund_state, expected):
+        """Приписка про возврат переехала в уведомление вместе с рассылкой."""
+        import notifications
+        assert expected in notifications._refund_suffix({"refund_state": refund_state})

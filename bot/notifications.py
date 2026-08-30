@@ -8,11 +8,10 @@ from aiogram import types
 
 import config
 from api import update_branch_remember_count, get_order_by_id, get_client_by_id, ttn_tracking, headers
-from buttons import get_check_ttn_button, get_our_contact_button, get_show_discount_info_button, get_show_order_button, get_status_button, \
+from buttons import get_check_ttn_button, get_mark_refunded_button, get_our_contact_button, get_show_discount_info_button, get_show_order_button, get_status_button, \
     get_make_paid_button, get_to_not_prepayment_button, get_cancel_request_decision_keyboard
 from engine import send_messages_to_admins, send_error_log, make_order
 from utils.utils import to_major
-from utils.cancel_dedup import consume_client_notified
 
 
 async def check_status_notification(bot, telegram_id, order):
@@ -25,6 +24,21 @@ async def check_status_notification(bot, telegram_id, order):
         await make_order(bot, telegram_id, order["items"], None, order, client)
     except Exception as error:
         await send_error_log(bot, 516842877, error)
+
+# Обращение в первой строке каждого сообщения о событии. Один и тот же человек
+# бывает и админом, и клиентом — на своём заказе он получает обе половины, и без
+# обращения они сливаются в один непонятный поток.
+ADMIN_SALUTATION = "<b>Шановний адміністратор!</b>"
+CLIENT_SALUTATION = "<b>Шановний клієнт!</b>"
+
+
+def for_admin(body: str) -> str:
+    return f"{ADMIN_SALUTATION}\n{body}"
+
+
+def for_client(body: str) -> str:
+    return f"{CLIENT_SALUTATION}\n{body}"
+
 
 def admin_order_kb(order, extra_rows=None) -> types.InlineKeyboardMarkup:
     """
@@ -55,7 +69,7 @@ def _payment_type_label(order) -> str:
 async def new_order_notification(bot, order, admin_list):
     """Заказ оформлен — карточка админам."""
     try:
-        text = (
+        text = for_admin(
             f"🆕 <b>Нове замовлення №{order['id']}</b>\n"
             f"Клієнт: {order.get('name', '')} {order.get('last_name', '')}\n"
             f"Телефон: {order.get('phone') or '—'}\n"
@@ -72,8 +86,10 @@ async def remonline_created_notification(bot, order, admin_list):
     try:
         await send_messages_to_admins(
             bot, admin_list,
-            f"Замовлення №{order['id']} заведено в RemOnline "
-            f"(№{order.get('remonline_order_id') or '—'}) ✅",
+            for_admin(
+                f"Замовлення №{order['id']} заведено в RemOnline "
+                f"(№{order.get('remonline_order_id') or '—'}) ✅"
+            ),
             admin_order_kb(order),
         )
     except Exception as error:
@@ -85,16 +101,20 @@ async def payment_confirmed_notification(bot, order, admin_list):
     try:
         await send_messages_to_admins(
             bot, admin_list,
-            f"💰 <b>Замовлення №{order['id']} оплачено</b>\n"
-            f"Сума: {to_major(order.get('grand_total_minor') or 0)} грн",
+            for_admin(
+                f"💰 <b>Замовлення №{order['id']} оплачено</b>\n"
+                f"Сума: {to_major(order.get('grand_total_minor') or 0)} грн"
+            ),
             admin_order_kb(order),
         )
         if not order.get('telegram_id'):
             return
         await bot.send_message(
             order['telegram_id'],
-            f"<b>Оплату замовлення №{order['id']} підтверджено ✅</b>\n"
-            f"Дякуємо! Ми беремо його в роботу.",
+            for_client(
+                f"<b>Оплату замовлення №{order['id']} підтверджено ✅</b>\n"
+                f"Дякуємо! Ми беремо його в роботу."
+            ),
         )
     except Exception as error:
         await send_error_log(bot, 516842877, error)
@@ -105,16 +125,20 @@ async def payment_type_changed_notification(bot, order, admin_list):
     try:
         await send_messages_to_admins(
             bot, admin_list,
-            f"Тип оплати замовлення №{order['id']} змінено на "
-            f"{_payment_type_label(order)}",
+            for_admin(
+                f"Тип оплати замовлення №{order['id']} змінено на "
+                f"{_payment_type_label(order)}"
+            ),
             admin_order_kb(order),
         )
         if not order.get('telegram_id'):
             return
         await bot.send_message(
             order['telegram_id'],
-            f"Тип замовлення №{order['id']} змінено на "
-            f"{_payment_type_label(order)}",
+            for_client(
+                f"Тип замовлення №{order['id']} змінено на "
+                f"{_payment_type_label(order)}"
+            ),
         )
     except Exception as error:
         await send_error_log(bot, 516842877, error)
@@ -125,15 +149,17 @@ async def cancel_rejected_notification(bot, order, details: str | None, admin_li
     try:
         await send_messages_to_admins(
             bot, admin_list,
-            f"Запит на скасування замовлення №{order['id']} відхилено",
+            for_admin(f"Запит на скасування замовлення №{order['id']} відхилено"),
             admin_order_kb(order),
         )
         if not order.get('telegram_id'):
             return
-        client_text = (
-            f"<b>Запит на скасування замовлення №{order['id']} відхилено.</b>\n"
-            f"{details or ''}"
-        ).strip()
+        client_text = for_client(
+            (
+                f"<b>Запит на скасування замовлення №{order['id']} відхилено.</b>\n"
+                f"{details or ''}"
+            ).strip()
+        )
         markup_i = types.InlineKeyboardMarkup().add(get_our_contact_button())
         await bot.send_message(order['telegram_id'], client_text, reply_markup=markup_i)
     except Exception as error:
@@ -172,7 +198,7 @@ async def payment_doc_uploaded_notification(bot, order, admin_list):
     if not order:
         return
 
-    caption = (
+    caption = for_admin(
         f"💰 <b>Надійшла оплата за реквізитами</b>\n\n"
         f"Замовлення №{order['id']}\n"
         f"Клієнт: {order.get('name', '')} {order.get('last_name', '')}\n"
@@ -211,14 +237,19 @@ async def payment_doc_uploaded_notification(bot, order, admin_list):
 async def merge_order_notification(bot, oder:dict):
     if not oder.get('telegram_id'):
         return
-    await bot.send_message(oder['telegram_id'], f"Декілька ваших замовлень були об'єднані в замовлення {oder['id']}.")
+    await bot.send_message(
+        oder['telegram_id'],
+        for_client(f"Декілька ваших замовлень були об'єднані в замовлення {oder['id']}."),
+    )
 
 async def ttn_update_notification(bot, order):
     if not order or not order.get('telegram_id'):
         return
-    message_text = f"<b>Дякуємо! Ваше замовлення📦 №{order['id']} відправлено🚛.</b>" \
-                   f"\n\nВаш ТТН {order['ttn']}. " \
-                   f"Ви можете переглянути статус посилки натиснувши на кнопку нижче👇"
+    message_text = for_client(
+        f"<b>Дякуємо! Ваше замовлення📦 №{order['id']} відправлено🚛.</b>"
+        f"\n\nВаш ТТН {order['ttn']}. "
+        f"Ви можете переглянути статус посилки натиснувши на кнопку нижче👇"
+    )
 
     markup_i = types.InlineKeyboardMarkup()
     markup_i.add(get_check_ttn_button(order['ttn']))
@@ -257,7 +288,9 @@ async def order_in_branch_notifications(bot, order):
     if not order.get('telegram_id'):
         return
     try:
-        message_text = f"Ваше замовлення №{order['id']} від <b>Airbag \"Autodelivery\"</b> прибуло у відділення."
+        message_text = for_client(
+            f"Ваше замовлення №{order['id']} від <b>Airbag \"Autodelivery\"</b> прибуло у відділення."
+        )
         markup_i = types.InlineKeyboardMarkup()
         markup_i.add(get_check_ttn_button(order['ttn']))
         await update_branch_remember_count(order['id'])
@@ -268,27 +301,76 @@ async def order_in_branch_notifications(bot, order):
 
 async def deactivated_notifications(bot, order, admin_list):
     try:
-        admin_text = f"Вітаю, замовлення №{order['id']} успішно завершенo."
+        admin_text = for_admin(f"Замовлення №{order['id']} успішно завершено ✅")
         await send_messages_to_admins(bot, admin_list, admin_text, admin_order_kb(order))
         if not order.get('telegram_id'):
             return
-        client_text = f'Дякуємо за замовлення <b>№{order["id"]}</b>!\nДо нових зустрічей у AirBag "AutoDelivery” 💛💙'
+        client_text = for_client(
+            f'Дякуємо за замовлення <b>№{order["id"]}</b>!\n'
+            f'До нових зустрічей у AirBag "AutoDelivery" 💛💙'
+        )
         await bot.send_message(order['telegram_id'], client_text)
     except Exception as error:
         await send_error_log(bot, 516842877, error)
 
 
-async def deleted_notifications(bot, order, reason:str|None, admin_list):
+async def deleted_notifications(bot, order, reason: str | None, admin_list):
+    """
+    Заказ удалён физически.
+
+    Единственное уведомление, которое не идёт через событие: заказа в базе
+    больше нет, а `OrderEvent.order` — SET_NULL, поэтому поллер такую запись
+    молча выбросит. Тексты держим здесь, рядом с остальными.
+    """
     try:
-        admin_text = f"Шановний адміністратов, замовлення №{order['id']} успішно видалено."
-        await send_messages_to_admins(bot, admin_list, admin_text)
+        await send_messages_to_admins(
+            bot, admin_list,
+            for_admin(
+                f"Замовлення №{order['id']} успішно видалено 🗑\n"
+                f"Якщо тип замовлення накладений платіж, не забудьте видалити "
+                f"його з RemOnline!"
+            ),
+        )
         if not order.get('telegram_id'):
             return
-        client_text = f"<b>Ваше замовлення №{order['id']} було видалено адміністратором🗑.</b>\n{reason if reason else ''}"
+        client_text = for_client(
+            f"<b>На жаль, ми не дочекалися підтвердження Вашого замовлення "
+            f"№{order['id']} 😟</b>\n"
+            f"Замовлення видалено, чекаємо на Ваше повернення! 😀"
+            + (f"\n{reason}" if reason else "")
+        )
         markup_i = types.InlineKeyboardMarkup().add(get_our_contact_button())
         await bot.send_message(order['telegram_id'], client_text, reply_markup=markup_i)
     except Exception as error:
         await send_error_log(bot, 516842877, error)
+
+
+def admin_cancel_result_text(order) -> str:
+    """Текст админам об отмене — со сведениями о возврате средств."""
+    text = f"Замовлення №{order['id']} скасовано ❌"
+    refund_state = (order or {}).get('refund_state')
+    if refund_state == 'done':
+        text += "\nКошти повернуто через Monobank 💵"
+    elif refund_state == 'pending':
+        text += "\nПовернення коштів надіслано в Monobank, очікуємо підтвердження ⏳"
+    elif refund_state == 'manual':
+        text += "\n⚠️ Автоматичне повернення неможливе — поверніть кошти вручну."
+    elif refund_state == 'failed':
+        text += "\n⚠️ Помилка повернення коштів — поверніть кошти вручну."
+    return text
+
+
+def refund_hint_kb(order):
+    """Кнопка ручного возврата — когда Monobank вернуть не смог."""
+    if (order or {}).get('refund_state') in ('manual', 'failed'):
+        return types.InlineKeyboardMarkup().add(get_mark_refunded_button(order['id']))
+    return None
+
+
+def _refund_rows(order):
+    """Строки клавиатуры с ручным возвратом — или пусто."""
+    kb = refund_hint_kb(order)
+    return kb.inline_keyboard if kb else []
 
 
 def _refund_suffix(order) -> str:
@@ -304,16 +386,12 @@ async def canceled_notifications(bot, order, details: str | None, admin_list):
     """Заказ отменён — уведомляем клиента и админов."""
     try:
         await send_messages_to_admins(
-            bot, admin_list, f"Замовлення №{order['id']} скасовано ❌",
-            admin_order_kb(order),
+            bot, admin_list, for_admin(admin_cancel_result_text(order)),
+            admin_order_kb(order, extra_rows=_refund_rows(order)),
         )
         if not order.get('telegram_id'):
             return
-        if consume_client_notified(order.get('id')):
-            # Отмену запустил сам клиент кнопкой в боте — хендлер ему уже
-            # ответил, второе сообщение было бы дублем.
-            return
-        client_text = (
+        client_text = for_client(
             f"<b>Ваше замовлення №{order['id']} скасовано ❌</b>"
             f"{_refund_suffix(order)}"
         )
@@ -331,7 +409,7 @@ async def cancel_requested_notifications(bot, order, admin_list):
     try:
         reason = order.get('cancel_reason') or '—'
         comment = order.get('cancel_comment') or ''
-        text = (
+        text = for_admin(
             f"🔄 <b>Запит на скасування замовлення №{order['id']}</b>\n"
             f"Клієнт: {order.get('name', '')} {order.get('last_name', '')}\n"
             f"Сума: {to_major(order.get('grand_total_minor') or 0)} грн\n"
@@ -344,6 +422,17 @@ async def cancel_requested_notifications(bot, order, admin_list):
         markup = admin_order_kb(order, extra_rows=decision_kb.inline_keyboard)
         for admin in admin_list:
             await bot.send_message(admin, text, reply_markup=markup)
+
+        if not order.get('telegram_id'):
+            return
+        await bot.send_message(
+            order['telegram_id'],
+            for_client(
+                f"Запит на скасування замовлення №{order['id']} надіслано ⏳\n"
+                f"Адміністратор розгляне його найближчим часом."
+            ),
+            reply_markup=types.InlineKeyboardMarkup().add(get_our_contact_button()),
+        )
     except Exception as error:
         await send_error_log(bot, 516842877, error)
 
@@ -352,15 +441,17 @@ async def refunded_notifications(bot, order, admin_list):
     """Возврат средств подтверждён Monobank."""
     try:
         await send_messages_to_admins(
-            bot, admin_list, f"Кошти за замовлення №{order['id']} повернуто клієнту 💵",
+            bot, admin_list, for_admin(f"Кошти за замовлення №{order['id']} повернуто клієнту 💵"),
             admin_order_kb(order),
         )
         if not order.get('telegram_id'):
             return
         await bot.send_message(
             order['telegram_id'],
-            f"Кошти за замовлення №{order['id']} повернуто 💵\n"
-            f"Вони надійдуть на картку протягом кількох банківських днів.",
+            for_client(
+                f"Кошти за замовлення №{order['id']} повернуто 💵\n"
+                f"Вони надійдуть на картку протягом кількох банківських днів."
+            ),
         )
     except Exception as error:
         await send_error_log(bot, 516842877, error)
@@ -368,8 +459,10 @@ async def refunded_notifications(bot, order, admin_list):
 
 async def client_added_bonus_notifications(bot, client_id):
     # try:
-    client_text = "Шановний клієнт, вітаємо, вам нарахована нова знижка🎉\n" \
-                  "Для того, щоб преглянути більш детальну інформацію натисніть на <b>Знижки💎</b>"
+    client_text = for_client(
+        "Вітаємо, вам нарахована нова знижка 🎉\n"
+        "Щоб переглянути детальну інформацію, натисніть на <b>Знижки💎</b>"
+    )
     client = await get_client_by_id(client_id)
     markup_i = types.InlineKeyboardMarkup().add(get_show_discount_info_button())
     await bot.send_message(client['telegram_id'], client_text, reply_markup=markup_i)
@@ -380,6 +473,3 @@ async def client_added_bonus_notifications(bot, client_id):
 async def unknown_error_notifications(bot, telegram_id):
     await bot.send_message(telegram_id, text="Упс. Відбулась невідома помилка. Спробуйте трішки пізніше")
 
-
-async def change_to_not_prepayment_notifications(bot, order_id, telegram_id):
-    await bot.send_message(telegram_id, text=f"Тип замовлення №{order_id} змінено на накладений платіж")

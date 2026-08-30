@@ -218,12 +218,70 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         return Response(OrderSerializer(new_order).data, status=status.HTTP_200_OK)
 
+    @staticmethod
+    def _normalized_ttn(value):
+        """ТТН как строка без обрамляющих пробелов; пустое значение → ''."""
+        return (value or "").strip()
+
+    def _emit_manual_status_events(self, order, validated_data, before):
+        """
+        События на ручные действия персонала.
+
+        Оплату, закрытие заказа и ТТН система умеет фиксировать сама: вебхук
+        monobank пишет PAYMENT_CONFIRMED, крон — FINISHED и TTN_UPDATED. Но
+        ровно те же изменения делает админ кнопкой в боте, и раньше событий при
+        этом не возникало: бот писал клиенту сам, из обработчика кнопки. Отсюда
+        два канала уведомлений и дубли. Теперь путь один — событие.
+
+        Смотрим на ПЕРЕХОД значения, а не на присутствие ключа в payload: иначе
+        повторное нажатие кнопки со старой карточки в чате прислало бы клиенту
+        второе «оплату підтверджено».
+
+        Порядок создания фиксирован: бот шлёт сообщения строго по возрастанию id.
+        """
+        if order.cancel_state == Order.CancelState.CANCELED:
+            # После «замовлення скасовано» слать «дякуємо за замовлення» незачем.
+            return
+
+        if not before["is_paid"] and validated_data.get("is_paid") is True:
+            OrderEvent.objects.create(
+                type=OrderEventType.PAYMENT_CONFIRMED,
+                order=order,
+                details="Marked as paid by staff",
+            )
+
+        if "ttn" in validated_data:
+            new_ttn = self._normalized_ttn(validated_data.get("ttn"))
+            # Событие только на появление или смену номера. Очистка ТТН прислала
+            # бы клиенту «Ваш ТТН .» с кнопкой отслеживания по пустой строке.
+            if new_ttn and new_ttn != before["ttn"]:
+                OrderEvent.objects.create(
+                    type=OrderEventType.TTN_UPDATED,
+                    order=order,
+                    details=f"TTN updated to {new_ttn}",
+                )
+
+        if not before["is_completed"] and validated_data.get("is_completed") is True:
+            OrderEvent.objects.create(
+                type=OrderEventType.FINISHED,
+                order=order,
+                details="Marked as completed by staff",
+            )
+
     def perform_update(self, serializer):
         order = serializer.instance
         validated_data = serializer.validated_data
         prepayment_in_payload = "prepayment" in validated_data
         current_prepayment = order.prepayment
         target_prepayment = validated_data.get("prepayment", current_prepayment)
+
+        # Снимок до save: ModelSerializer.update() мутирует тот же объект, на
+        # который смотрит `order`, — после сохранения сравнивать будет не с чем.
+        before = {
+            "is_paid": order.is_paid,
+            "is_completed": order.is_completed,
+            "ttn": self._normalized_ttn(order.ttn),
+        }
 
         if prepayment_in_payload and target_prepayment != current_prepayment:
             if not IsAdminUser().has_permission(self.request, self):
@@ -236,6 +294,8 @@ class OrderViewSet(viewsets.ModelViewSet):
                 raise ValidationError("Payment type can only be changed to postpayment")
 
         serializer.save()
+
+        self._emit_manual_status_events(order, validated_data, before)
 
         if prepayment_in_payload and current_prepayment and (not target_prepayment):
             OrderEvent.objects.create(

@@ -39,7 +39,7 @@ from handlers.client_handler import make_client
 from labels import AdminLabels
 from notifications import (
     ttn_update_notification, unknown_error_notifications, no_connection_with_server_notification,
-    client_added_bonus_notifications, change_to_not_prepayment_notifications,
+    client_added_bonus_notifications, for_admin,
     check_status_notification, new_order_notification, merge_order_notification,
     order_in_branch_reminder_notifications, new_order_client_notification,
     order_in_branch_notifications, deactivated_notifications, deleted_notifications,
@@ -51,7 +51,6 @@ from utils.cancel_rules import (
     is_cancel_requested, is_order_owner,
 )
 from utils.utils import to_major
-from utils.cancel_dedup import mark_client_notified
 admin_list = [516842877, 5783466675]
 
 # admin_id → list of orders for paginated card view
@@ -362,37 +361,6 @@ def _cancel_block_text(order: dict) -> str:
     if order.get("ttn"):
         return _CANCEL_BLOCK_TEXTS["order_shipped"]
     return _CANCEL_BLOCK_TEXTS["order_paid"]
-
-
-def _client_refund_text(order_data: dict) -> str:
-    """Приписка клиенту про состояние возврата средств."""
-    refund_state = (order_data or {}).get("refund_state")
-    if refund_state in ("done", "manual"):
-        return "\nКошти повернуто 💵"
-    if refund_state == "pending":
-        return "\nПовернення коштів в обробці — кошти надійдуть протягом кількох днів ⏳"
-    return ""
-
-
-def _admin_cancel_result_text(order_id: int, order_data: dict) -> str:
-    refund_state = (order_data or {}).get("refund_state")
-    text = f"Замовлення №{order_id} скасовано ❌"
-    if refund_state == "done":
-        text += "\nКошти повернуто через Monobank 💵"
-    elif refund_state == "pending":
-        text += "\nПовернення коштів надіслано в Monobank, очікуємо підтвердження ⏳"
-    elif refund_state == "manual":
-        text += "\n⚠️ Автоматичне повернення неможливе — поверніть кошти вручну."
-    elif refund_state == "failed":
-        text += "\n⚠️ Помилка повернення коштів — поверніть кошти вручну."
-    return text
-
-
-def _refund_hint_kb(order_id: int, order_data: dict):
-    """Кнопка ручного возврата — когда Monobank вернуть не смог."""
-    if (order_data or {}).get("refund_state") in ("manual", "failed"):
-        return types.InlineKeyboardMarkup().add(get_mark_refunded_button(order_id))
-    return None
 
 
 def _build_order_action_kb(order: dict) -> types.InlineKeyboardMarkup:
@@ -788,7 +756,9 @@ async def new_payment_photo_state(message: types.Message, state: FSMContext):
 
     markup_i = types.InlineKeyboardMarkup()
     markup_i.add(get_order_info_button(data['order_id']))
-    admin_text = f"Шановний адміністратор, створена оплата за замовлення №{data['order_id']}, показати його?"
+    admin_text = for_admin(
+        f"Створена оплата за замовлення №{data['order_id']}, показати його?"
+    )
     for admin in admin_list:
         await bot.send_photo(admin, photo=data['photo'], caption=admin_text, reply_markup=markup_i)
     await bot.send_message(message.chat.id, "Дякую. Очікуйте повідомлення про підтвердження замовлення")
@@ -1163,9 +1133,10 @@ async def callback_admin_panel(callback: types.CallbackQuery, state: FSMContext)
                 return
             await make_pay_order(int(order_id))
             await callback.answer(f"Замовлення #{order_id} оплачено ✅")
+            # Клиенту и админам напишет поллер по событию PAYMENT_CONFIRMED —
+            # тому, кто нажал, хватает всплывашки. Раньше сообщение уходило
+            # отсюда, и путей уведомления было два.
             fresh_order = await get_order_by_id(order_id)
-            if fresh_order and fresh_order.get('telegram_id'):
-                await bot.send_message(fresh_order['telegram_id'], f"Дякую, ви успішно оплатили замовлення №{order_id}!")
             cached = _page_cache.get(admin_id, [])
             idx = next((i for i, o in enumerate(cached) if o['id'] == order_id), None)
             if idx is not None and fresh_order:
@@ -1187,10 +1158,8 @@ async def callback_admin_panel(callback: types.CallbackQuery, state: FSMContext)
                 pass
             cached = _page_cache.get(admin_id, [])
             _page_cache[admin_id] = [o for o in cached if o['id'] != order_id]
+            # Уведомления — по событию FINISHED, из поллера.
             await callback.answer("Замовлення закрито ✅")
-            if order and order.get('telegram_id'):
-                client_text = f'Дякуємо за замовлення <b>№{order["id"]}</b>!\nДо нових зустрічей у AirBag "AutoDelivery" 💛💙'
-                await bot.send_message(order['telegram_id'], client_text)
 
         if "to_not_prepayment/" in callback.data:
             order_id = await id_spliter(callback.data)
@@ -1198,9 +1167,8 @@ async def callback_admin_panel(callback: types.CallbackQuery, state: FSMContext)
                 return
             await change_to_not_prepayment(order_id)
             await callback.answer(f"Тип замовлення #{order_id} змінено на накладений платіж ✅")
+            # Уведомления — по событию PAYMENT_TYPE_CHANGED, из поллера.
             fresh_order = await get_order_by_id(order_id)
-            if fresh_order and fresh_order.get('telegram_id'):
-                await change_to_not_prepayment_notifications(bot, order_id, fresh_order['telegram_id'])
             cached = _page_cache.get(admin_id, [])
             idx = next((i for i, o in enumerate(cached) if o['id'] == order_id), None)
             if idx is not None and fresh_order:
@@ -1266,12 +1234,7 @@ async def callback_admin_panel(callback: types.CallbackQuery, state: FSMContext)
             # remove from cache so navigation skips deleted order
             cached = _page_cache.get(admin_id, [])
             _page_cache[admin_id] = [o for o in cached if o['id'] != order_id]
-            markup_i = types.InlineKeyboardMarkup().add(get_our_contact_button())
-            client_text = f"<b>На жаль, ми не дочекалися підтвердження Вашого замовлення №{order_id} 😟</b>" \
-                          f"\nЗамовлення видалено, чекаємо на Ваше повернення! 😀"
-            await bot.send_message(admin_id, text=f"Замовлення №{order_id} успішно видалено. Якщо тип замовлення накладений платіж, будь ласка, не забудьте видалити його з remonline!")
-            if order and order.get('telegram_id'):
-                await bot.send_message(order['telegram_id'], client_text, reply_markup=markup_i)
+            await deleted_notifications(bot, order, None, admin_list)
 
         # ===== Скасування замовлення: клієнт =====
 
@@ -1337,15 +1300,10 @@ async def callback_admin_panel(callback: types.CallbackQuery, state: FSMContext)
             except Exception:
                 pass
             if ok:
-                # Клиенту отвечаем сразу, не дожидаясь поллера. Чтобы событие
-                # CANCELED не принесло ему второе такое же сообщение, помечаем
-                # заказ как уже озвученный.
-                if client_can_cancel(order):
-                    mark_client_notified(order_id)
-                return await bot.send_message(
-                    callback.message.chat.id, success_text,
-                    reply_markup=types.InlineKeyboardMarkup().add(get_our_contact_button()),
-                )
+                # Подтверждение нажатия — всплывашкой. Полное сообщение придёт
+                # по событию (CANCELED или CANCEL_REQUESTED) из поллера: канал
+                # уведомлений один и для бота, и для сайта.
+                return await callback.answer(success_text, show_alert=True)
             return await bot.send_message(
                 callback.message.chat.id,
                 "Не вдалося скасувати замовлення. Зверніться, будь ласка, до підтримки.",
@@ -1389,15 +1347,8 @@ async def callback_admin_panel(callback: types.CallbackQuery, state: FSMContext)
             _page_cache[admin_id] = [
                 o for o in _page_cache.get(admin_id, []) if o['id'] != order_id
             ]
-            await bot.send_message(admin_id, _admin_cancel_result_text(order_id, data),
-                                   reply_markup=_refund_hint_kb(order_id, data))
-            if order and order.get('telegram_id'):
-                await bot.send_message(
-                    order['telegram_id'],
-                    f"<b>Ваше замовлення №{order_id} було скасовано адміністратором ❌</b>"
-                    + _client_refund_text(data),
-                    reply_markup=types.InlineKeyboardMarkup().add(get_our_contact_button()),
-                )
+            # Уведомления обеим сторонам — по событию CANCELED, из поллера.
+            await callback.answer(f"Замовлення №{order_id} скасовано ❌")
 
         if "cancel_approve/" in callback.data:
             if not check_admin_permission(callback.message):
@@ -1414,15 +1365,7 @@ async def callback_admin_panel(callback: types.CallbackQuery, state: FSMContext)
             _page_cache[admin_id] = [
                 o for o in _page_cache.get(admin_id, []) if o['id'] != order_id
             ]
-            await bot.send_message(admin_id, _admin_cancel_result_text(order_id, data),
-                                   reply_markup=_refund_hint_kb(order_id, data))
-            if order and order.get('telegram_id'):
-                await bot.send_message(
-                    order['telegram_id'],
-                    f"<b>Ваше замовлення №{order_id} скасовано ❌</b>"
-                    + _client_refund_text(data),
-                    reply_markup=types.InlineKeyboardMarkup().add(get_our_contact_button()),
-                )
+            # Уведомления — по событиям REFUNDED и CANCELED, из поллера.
 
         if "cancel_reject/" in callback.data:
             if not check_admin_permission(callback.message):
@@ -1435,14 +1378,8 @@ async def callback_admin_panel(callback: types.CallbackQuery, state: FSMContext)
                     admin_id,
                     f"Не вдалося відхилити запит №{order_id}: {data.get('detail') or data}",
                 )
+            # Уведомления — по событию CANCEL_REJECTED, из поллера.
             await callback.answer("Запит відхилено")
-            if order and order.get('telegram_id'):
-                await bot.send_message(
-                    order['telegram_id'],
-                    f"Запит на скасування замовлення №{order_id} відхилено. "
-                    f"Звʼяжіться з нами, щоб уточнити деталі.",
-                    reply_markup=types.InlineKeyboardMarkup().add(get_our_contact_button()),
-                )
 
         if "mark_refunded/" in callback.data:
             if not check_admin_permission(callback.message):
@@ -1462,14 +1399,6 @@ async def callback_admin_panel(callback: types.CallbackQuery, state: FSMContext)
 
         if callback.data == "Зв‘язок":
             await show_info(callback)
-
-        if "add_ttn/" in callback.data:
-            order_id = await id_spliter(callback.data)
-            ttn_message = await bot.send_message(callback.message.chat.id,
-                                                 f"Добре, уведіть зараз id замовлення.\n\n<b>Id цього "
-                                                 f"замовлення {order_id}.</b>")
-
-            await NewTTN.order_id.set()
 
         if callback.data == "Статус":
             await check_status(callback)
