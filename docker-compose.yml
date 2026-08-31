@@ -1,5 +1,10 @@
 services: 
   frontend:
+    # Имя образа задано явно. Без него compose называет образ по каталогу
+    # проекта (airbag-auto-delivery-frontend), и выкат через
+    # `docker save | ssh docker load` под другим тегом молча не доезжал:
+    # образ загружался, контейнер пересоздавался — и поднимался на старом.
+    image: airbagad-frontend:latest
     build:
       context: ./frontend
       dockerfile: Dockerfile
