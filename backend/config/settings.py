@@ -19,6 +19,13 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+# За nginx приложение видит обычный http, поэтому абсолютные URL (в том числе
+# картинки категорий в выдаче API) строились как http://api.airbagad.com/…
+# На HTTPS-странице это смешанный контент, а next/image в конфиге фронта
+# разрешает только https и отвечает 400. Заголовок ставит nginx, а порт 8000
+# слушает только 127.0.0.1 — подделать его снаружи нельзя.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 load_dotenv(dotenv_path=BASE_DIR / ".env")
 
 

@@ -30,6 +30,12 @@ services:
       - "127.0.0.1:8000:8000"
     volumes:
       - ./backend:/app
+      # Загруженные файлы — вне рабочей копии репозитория. Внутри неё они
+      # неотличимы от мусора для git: `git clean -xdf` снёс бы и картинки
+      # категорий, и подтверждения оплаты клиентов. Плюс nginx отдаёт
+      # /media/categories/ напрямую, а до /root он не дотягивается: каталог
+      # закрыт на drwx------, и www-data получал бы 403.
+      - ${AIRBAG_MEDIA_DIR:-/var/lib/airbag/media}:/app/media
     restart: unless-stopped
     env_file:
       - backend/.env 
