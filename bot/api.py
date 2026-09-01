@@ -3,6 +3,8 @@ import config
 from logger import logger
 from typing import Any, Optional, Tuple
 
+from utils.cancel_rules import is_canceled
+
 base_url = config.BASE_URL
 headers = {"x-api-key": config.BACKEND_API_KEY}
 
@@ -141,15 +143,30 @@ async def get_all_clients(limit: Optional[int] = None) -> list:
     return await _fetch_paginated('api/v2/clients/', limit=limit)
 
 
+def drop_canceled(orders: list) -> list:
+    """
+    Убрать отменённые заказы из списка активных.
+
+    Отмена не завершает заказ: `cancel_state` меняется, а `is_completed`
+    остаётся False — и это правильно, завершённый значит «работа выполнена».
+    Но «активный» из-за этого получался как «не завершённый», и отменённые
+    висели в списке наравне с живыми. Фильтр по «не равно» универсальная
+    фильтрация API не умеет, поэтому отсекаем здесь.
+    """
+    return [order for order in (orders or []) if not is_canceled(order)]
+
+
 async def get_active_orders(limit: Optional[int] = None) -> list:
     """Get active orders, with an optional limit."""
     # ordering=-date: админ смотрит список сверху вниз, и свежий заказ должен
     # быть первым, а не последним на N-й странице.
     data = await _fetch_paginated('api/v2/orders?is_completed=0&ordering=-date', limit=limit)
-    return data
+    return drop_canceled(data)
 
 async def get_active_orders_by_telegram_id(telegram_id:int) -> list:
-    return await _fetch_paginated(f'api/v2/orders?is_completed=0&telegram_id={telegram_id}')
+    return drop_canceled(
+        await _fetch_paginated(f'api/v2/orders?is_completed=0&telegram_id={telegram_id}')
+    )
 
 async def get_order_updates(limit: Optional[int] = None) -> list:
     """Get order updates, with an optional limit."""

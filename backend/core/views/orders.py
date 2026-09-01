@@ -81,9 +81,16 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         one_hour_ago = timezone.now() - timezone.timedelta(hours=1)
 
-        queryset = Order.objects.filter(
-            is_completed=False, is_paid=False, prepayment=True, date__lt=one_hour_ago
-        ).order_by("date")
+        # Отменённые исключены: напоминать об оплате заказа, который клиент
+        # уже отменил, незачем. Отмена не выставляет is_completed, поэтому под
+        # прежний фильтр такие заказы попадали.
+        queryset = (
+            Order.objects.filter(
+                is_completed=False, is_paid=False, prepayment=True, date__lt=one_hour_ago
+            )
+            .exclude(cancel_state=Order.CancelState.CANCELED)
+            .order_by("date")
+        )
 
         # Apply pagination
         page = self.paginate_queryset(queryset)

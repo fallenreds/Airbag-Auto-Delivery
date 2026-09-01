@@ -12,7 +12,7 @@ from updates import order_updates, get_no_paid_orders, client_updates
 from api import (
     add_new_visitor, get_orders_by_tg_id, get_all_goods, get_discounts_info, get_discount_percentage, get_client_by_tg_id,
     get_money_spend_cur_month, post_discount, get_order_by_id, delete_order,
-    get_active_orders, get_active_orders_by_telegram_id, add_bonus_client_discount, get_visitors, delete_visitor,
+    get_active_orders, get_active_orders_by_telegram_id, drop_canceled, add_bonus_client_discount, get_visitors, delete_visitor,
     make_pay_order, merge_order, get_templates, create_template,
     get_template, update_ttn, unpaid_overdue, get_order_by_ttn,
     finish_order, ttn_tracking, change_to_not_prepayment, get_discount, delete_discount, get_all_clients,
@@ -167,7 +167,11 @@ async def check_status(message):
         client = client_result["results"][0]
 
         orders = await get_orders_by_tg_id(telegram_id)
-        active_orders = list(filter(lambda x: x["is_completed"] == False, orders))
+        # Отменённые сюда не попадают: в боте это список того, что в работе.
+        # На сайте они клиенту по-прежнему видны — там полная история заказов.
+        active_orders = drop_canceled(
+            [x for x in orders if x["is_completed"] == False]
+        )
 
         if len(active_orders) == 0:
             return await bot.send_message(telegram_id, "У вас немає замовлень")
