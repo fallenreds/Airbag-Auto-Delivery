@@ -25,7 +25,7 @@ class TestAdminPanel:
 
         kwargs = fake_bot.send_message.await_args.kwargs
         cbs = kb_callbacks(kwargs["reply_markup"])
-        for expected in ("active_order", "no_paid", "edit_discount",
+        for expected in ("active_order", "edit_discount",
                          "show_all_clients", "make_post", "change_props",
                          "get_props_info", "payment_mode"):
             assert expected in cbs, f"в панели нет пункта {expected}"

@@ -20,7 +20,7 @@ from django.db import transaction
 
 from core.models import Order, OrderEvent, OrderEventType
 from core.services import remonline_status
-from core.services.order_sync import sync_order_to_remonline
+from core.services.order_sync import get_payment_type_label, sync_order_to_remonline
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +46,30 @@ def payment_confirmed(order: Order, *, details: str = "Order payment confirmed")
     # оплаты при уже списанных деньгах. Вне транзакции (PATCH из бота) Django
     # выполняет callback сразу — поведение то, что нужно, в обоих случаях.
     transaction.on_commit(lambda: _sync_quietly(order))
+
+
+def promote_draft(order: Order) -> None:
+    """
+    Черновик становится обычным заказом: деньги за него получены.
+
+    До этого момента заказ не видел никто — ни клиент в кабинете, ни админ в
+    боте, ни менеджер в CRM. Поэтому уведомления «нове замовлення» создаются
+    здесь, а не при оформлении: сообщать о заказе, которого для всех ещё не
+    существует, незачем, а брошенный чекаут не должен поднимать админа.
+    """
+    order.is_draft = False
+    order.save(update_fields=["is_draft"])
+
+    OrderEvent.objects.create(
+        type=OrderEventType.CREATED_ADMIN_MESSAGE,
+        order=order,
+        details=f"Order created: {get_payment_type_label(order)}",
+    )
+    OrderEvent.objects.create(
+        type=OrderEventType.CREATED_CLIENT_MESSAGE,
+        order=order,
+        details="Order created",
+    )
 
 
 def finished(order: Order, *, details: str = "Order finished") -> None:

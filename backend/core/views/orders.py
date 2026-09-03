@@ -20,7 +20,7 @@ from core.serializers import (
     OrderItemSerializer,
     OrderSerializer,
 )
-from core.services import order_cancel, order_status, remonline_status
+from core.services import draft_orders, order_cancel, order_status, remonline_status
 from core.services.order_sync import sync_order_to_remonline
 from core.views.utils import get_own_queryset
 
@@ -44,6 +44,12 @@ class OrderViewSet(viewsets.ModelViewSet):
         # из ниоткуда, поэтому показываем такие записи только персоналу.
         if not IsAdminUser().has_permission(self.request, self):
             qs = qs.exclude(description=BONUS_ORDER_MARKER)
+
+        # Черновики (оплата картой до платежа) не показываем в списках никому.
+        # Получение по id оставляем открытым: на нём держится страница оплаты,
+        # ради которой черновик и существует.
+        if self.action == "list":
+            qs = draft_orders.visible(qs)
         return qs
 
     def get_permissions(self):
@@ -65,45 +71,6 @@ class OrderViewSet(viewsets.ModelViewSet):
         else:
             # For anonymous users, don't set the user field
             serializer.save()
-
-    @action(
-        detail=False,
-        methods=["get"],
-        permission_classes=[IsAdminUser],
-        url_path="unpaid-overdue",
-    )
-    def unpaid_overdue(self, request):
-        """
-        Get orders that are unpaid, not completed, have prepayment,
-        and were created more than 1 hour ago.
-        Only accessible by admin users.
-        
-        Query Parameters:
-            limit: Number of results to return per page (default: 100, max: 100)
-            offset: The initial index from which to return the results (default: 0)
-        """
-
-        one_hour_ago = timezone.now() - timezone.timedelta(hours=1)
-
-        # Отменённые исключены: напоминать об оплате заказа, который клиент
-        # уже отменил, незачем. Отмена не выставляет is_completed, поэтому под
-        # прежний фильтр такие заказы попадали.
-        queryset = (
-            Order.objects.filter(
-                is_completed=False, is_paid=False, prepayment=True, date__lt=one_hour_ago
-            )
-            .exclude(cancel_state=Order.CancelState.CANCELED)
-            .order_by("date")
-        )
-
-        # Apply pagination
-        page = self.paginate_queryset(queryset)
-        if page is not None:
-            serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
-
-        serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)
 
     @swagger_auto_schema(
         request_body=OrderCreateSerializer,
@@ -158,6 +125,10 @@ class OrderViewSet(viewsets.ModelViewSet):
             return "Orders belong to different clients."
 
         for order in (source_order, target_order):
+            if order.is_draft:
+                # Черновика для админа не существует: он его не видит и выбрать
+                # не может. Проверка на случай прямого запроса к API.
+                return f"Order {order.pk} is not placed yet."
             if order.cancel_state == Order.CancelState.CANCELED:
                 return f"Order {order.pk} is canceled."
             if order.is_completed:

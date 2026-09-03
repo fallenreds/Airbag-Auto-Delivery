@@ -376,6 +376,15 @@ class Order(models.Model):
     bank_transfer = models.BooleanField(default=False)
     payment_document = models.FileField(upload_to='payment_docs/', null=True, blank=True)
     is_paid = models.BooleanField(default=False)
+    # Черновик — заказ с оплатой картой, который ещё не оплачен. Он не виден
+    # нигде: ни в кабинете клиента, ни в списках бота, ни при выборе заказа для
+    # объединения, ни в CRM. Обычным заказом становится по вебхуку об успешной
+    # оплате.
+    #
+    # Отдельное поле, а не вычисление «предоплата и не оплачен»: заказ,
+    # оплаченный и потом отменённый, под такое вычисление снова попал бы в
+    # черновики.
+    is_draft = models.BooleanField(default=False, db_index=True)
     ttn = models.TextField(blank=True, null=True)
     is_completed = models.BooleanField(default=False)
 

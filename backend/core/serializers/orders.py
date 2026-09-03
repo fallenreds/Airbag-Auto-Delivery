@@ -1,10 +1,13 @@
+from functools import partial
 from typing import TypedDict
 
+from django.db import transaction
 from rest_framework import serializers
 
 from core.models import Client, Good, Order, OrderEvent, OrderEventType, OrderItem
 from core.services import order_cancel
 from core.services.discount_service import DiscountService
+from core.services.draft_orders import deactivate_draft_payments
 from core.services.order_sync import get_payment_type_label, sync_order_to_remonline
 
 from .common import validate_currency, validate_nonneg_int
@@ -248,20 +251,36 @@ class OrderCreateSerializer(serializers.ModelSerializer):
             ]
         )
 
-        # Заказ оформлен — об этом надо сказать обоим сторонам. Событий два, а
-        # не одно: адресаты разные, и бот шлёт их разными сообщениями. Раньше
-        # их не создавал никто, поэтому админ не видел новых заказов, а клиент
-        # не получал подтверждения — обработчики в боте просто простаивали.
-        OrderEvent.objects.create(
-            type=OrderEventType.CREATED_ADMIN_MESSAGE,
-            order=order,
-            details=f"Order created: {get_payment_type_label(order)}",
-        )
-        OrderEvent.objects.create(
-            type=OrderEventType.CREATED_CLIENT_MESSAGE,
-            order=order,
-            details="Order created",
-        )
+        if order.is_online_payment:
+            # Оплата картой: пока деньги не пришли, заказа для всех остальных
+            # не существует. Ни уведомлений, ни карточки в CRM, ни строки в
+            # списках — брошенный чекаут не должен оставлять следов, которые
+            # потом кто-то разбирает вручную. Всё это произойдёт разом, когда
+            # вебхук подтвердит оплату (`order_status.promote_draft`).
+            order.is_draft = True
+            order.save(update_fields=["is_draft"])
+        else:
+            # Заказ оформлен — об этом надо сказать обоим сторонам. Событий
+            # два, а не одно: адресаты разные, и бот шлёт их разными
+            # сообщениями. Раньше их не создавал никто, поэтому админ не видел
+            # новых заказов, а клиент не получал подтверждения — обработчики в
+            # боте просто простаивали.
+            OrderEvent.objects.create(
+                type=OrderEventType.CREATED_ADMIN_MESSAGE,
+                order=order,
+                details=f"Order created: {get_payment_type_label(order)}",
+            )
+            OrderEvent.objects.create(
+                type=OrderEventType.CREATED_CLIENT_MESSAGE,
+                order=order,
+                details="Order created",
+            )
+
+            # Клиент дошёл до оформления другим способом — прежние черновики
+            # ему больше не нужны. Гасим их счета, иначе он может вернуться во
+            # вкладку монобанка и оплатить брошенный: черновик развернётся в
+            # полноценный заказ, и получится два оплаченных вместо одного.
+            transaction.on_commit(partial(deactivate_draft_payments, order))
 
         # В CRM сразу уезжает всё, кроме оплаты картой: наложка, самовывоз и
         # оплата по реквизитам. Онлайн-заказ ждёт подтверждения платежа —

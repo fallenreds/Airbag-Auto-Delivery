@@ -28,7 +28,7 @@ def cb_factory():
 class TestKnownCallbackVocabulary:
     @pytest.mark.parametrize("data", [
         "active_order", "show_all_clients", "discount_info", "to_call",
-        "no_paid", "Зв‘язок", "Статус", "edit_discount", "new_discount",
+        "Зв‘язок", "Статус", "edit_discount", "new_discount",
         "show_client_info", "cancel_abort",
         "check_order/12", "make_paid/12", "deactivate_order/12",
         "to_not_prepayment/12", "check_ttn/59001747923405",

@@ -7,14 +7,14 @@ from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
 from aiogram.utils.callback_data import CallbackData
 import api
-from updates import order_updates, get_no_paid_orders, client_updates
+from updates import order_updates, client_updates
 
 from api import (
     add_new_visitor, get_orders_by_tg_id, get_all_goods, get_discounts_info, get_discount_percentage, get_client_by_tg_id,
     get_money_spend_cur_month, post_discount, get_order_by_id, delete_order,
     get_active_orders, get_active_orders_by_telegram_id, drop_canceled, add_bonus_client_discount, get_visitors, delete_visitor,
     make_pay_order, merge_order, get_templates, create_template,
-    get_template, update_ttn, unpaid_overdue, get_order_by_ttn,
+    get_template, update_ttn, get_order_by_ttn,
     finish_order, ttn_tracking, change_to_not_prepayment, get_discount, delete_discount, get_all_clients,
     get_bank_details, update_bank_details, get_payment_mode, set_payment_mode,
     cancel_order as cancel_order_request, request_cancel_order, approve_cancel_order,
@@ -23,7 +23,7 @@ from api import (
 from aiogram import Bot, Dispatcher, executor, filters, types
 
 from buttons import (
-    get_active_orders_button, get_not_paid_along_time_button, get_edit_discount_button, get_all_clients_button,
+    get_active_orders_button, get_edit_discount_button, get_all_clients_button,
     get_make_post, get_set_props, get_props_info_button, get_deactive_order_button, get_delete_order_button,
     get_merge_order_button, get_check_ttn_button, get_to_not_prepayment_button, get_make_paid_button,
     get_order_info_button, get_our_contact_button, get_add_month_payment_button,
@@ -125,7 +125,6 @@ def _build_admin_panel_markup() -> types.InlineKeyboardMarkup:
     markup_i = types.InlineKeyboardMarkup(row_width=1)
     markup_i.add(
         get_active_orders_button(),
-        get_not_paid_along_time_button(),
         get_edit_discount_button(),
         get_all_clients_button(),
         get_make_post(),
@@ -973,7 +972,6 @@ async def on_startup(dp):
         types.BotCommand("admin", "Панель адміна"),
     ])
     asyncio.create_task(order_updates(bot, admin_list))
-    asyncio.create_task(get_no_paid_orders(bot, admin_list))
     asyncio.create_task(client_updates(bot, admin_list))
 
 
@@ -1035,7 +1033,7 @@ _STALE_BUTTON_TEXT = "Ця кнопка застаріла 🕗\nВідкрий�
 # доходить не должно: aiogram не закрывает callback сам, и Telegram крутит
 # «часики» на кнопке до таймаута.
 _KNOWN_CALLBACK_EXACT = frozenset({
-    "active_order", "show_all_clients", "discount_info", "to_call", "no_paid",
+    "active_order", "show_all_clients", "discount_info", "to_call",
     "Зв‘язок", "Статус", "edit_discount", "new_discount", "show_client_info",
     "cancel_abort",
 })
@@ -1376,12 +1374,6 @@ async def callback_admin_panel(callback: types.CallbackQuery, state: FSMContext)
                 show_alert=not ok,
             )
 
-        if callback.data == "no_paid":
-            orders = await unpaid_overdue()
-            if not orders:
-                return await bot.send_message(admin_id, text="Наразі немає несплачених замовлень, з передплатою")
-            await order_list_builder(bot, orders, admin_id, goods, callback.message.message_id)
-
         if callback.data == "Зв‘язок":
             await show_info(callback)
 
@@ -1438,7 +1430,6 @@ async def callback_admin_panel(callback: types.CallbackQuery, state: FSMContext)
 
 
 async def update(_):
-    asyncio.create_task(get_no_paid_orders(bot, admin_list))
     asyncio.create_task(order_updates(bot, admin_list))
     asyncio.create_task(client_updates(bot, admin_list))
 

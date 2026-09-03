@@ -15,9 +15,11 @@ logger = logging.getLogger(__name__)
 
 def order_event_handler():
     # Get active orders with valid remonline_order_id
+    # Черновики сюда не попадают и по `remonline_order_id`: их в CRM нет.
+    # Условие всё равно указано явно — чтобы связь была видна на месте.
     active_local_orders = list(
         Order.objects.filter(
-            is_completed=False, remonline_order_id__isnull=False
+            is_completed=False, is_draft=False, remonline_order_id__isnull=False
         ).exclude(cancel_state=Order.CancelState.CANCELED)
     )
     if not active_local_orders:
