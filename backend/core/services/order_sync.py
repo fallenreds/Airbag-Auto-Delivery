@@ -3,9 +3,14 @@ from config.settings import (
     REMONLINE_BRANCH_PROD_ID,
     REMONLINE_ORDER_TYPE_ID,
 )
+import logging
+
 from core.models import Client, Good, Order, OrderEvent, OrderEventType
 from core.models import OrderItem
+from core.services import client_merge
 from core.services.remonline import RemonlineInterface
+
+logger = logging.getLogger(__name__)
 
 
 def get_payment_type_label(order: Order) -> str:
@@ -56,6 +61,58 @@ def build_manager_notes(order: Order, user: Client) -> str:
     return goods_info
 
 
+def ensure_client_in_remonline(order: Order):
+    """
+    Гарантирует, что у клиента заказа есть контрагент в RemOnline.
+
+    Контрагента заводили только в момент создания записи клиента, и один из
+    путей — авто-логин Telegram WebApp — телефона не имеет: Telegram его в
+    `init_data` не передаёт. Такой клиент оставался без `id_remonline`
+    навсегда, и каждый его заказ отваливался с «Client has no remonline id».
+    На 03.09.2026 таких записей было 20 из 20 Telegram-гостей.
+
+    Телефон впервые появляется в заказе — он обязательное поле формы. По нему
+    и заводим контрагента.
+
+    Возвращает клиента с проставленным `id_remonline`.
+    """
+    client = order.client
+    if client.id_remonline is not None:
+        return client
+
+    phone = (order.phone or client.phone or "").strip()
+    if not phone:
+        raise ValueError("Client has no remonline id and order has no phone")
+
+    # Телефон уже принадлежит другому клиенту — значит это тот же человек,
+    # просто зашедший через Telegram и получивший вторую, пустую запись.
+    # Второго контрагента в CRM заводить нельзя, а дописать телефон гостю
+    # мешает UNIQUE на поле. Сливаем записи в старую — ту, где заказы и
+    # id_remonline (ADR-0003 про то же слияние при конфликте Telegram).
+    twin = Client.objects.filter(phone=phone).exclude(pk=client.pk).first()
+    if twin is not None:
+        client = client_merge.absorb_guest(client, twin)
+        order.client = client
+        order.refresh_from_db(fields=["client"])
+        if client.id_remonline is not None:
+            return client
+
+    remonline = RemonlineInterface(REMONLINE_API_KEY)
+    created = remonline.find_or_create_client(
+        phone=phone,
+        first_name=order.name or client.name or "",
+        last_name=order.last_name or client.last_name or "",
+        address=order.nova_post_address or "",
+    )
+    client.id_remonline = created["id"]
+    client.save(update_fields=["id_remonline"])
+    logger.info(
+        "Created RemOnline client %s for local client %s by order %s phone",
+        client.id_remonline, client.pk, order.pk,
+    )
+    return client
+
+
 def sync_order_to_remonline(order: Order) -> bool:
     """
     Idempotent sync of a local order to RemOnline.
@@ -75,12 +132,10 @@ def sync_order_to_remonline(order: Order) -> bool:
     if not order.client:
         raise ValueError("Order has no client")
 
-    client = order.client
-    if client.id_remonline is None:
-        raise ValueError("Client has no remonline id")
-
     if REMONLINE_BRANCH_PROD_ID is None or REMONLINE_ORDER_TYPE_ID is None:
         raise ValueError("Remonline order settings are not configured")
+
+    client = ensure_client_in_remonline(order)
 
     remonline = RemonlineInterface(REMONLINE_API_KEY)
     manager_notes = build_manager_notes(order=order, user=client)
@@ -102,3 +157,58 @@ def sync_order_to_remonline(order: Order) -> bool:
         details=f"RemOnline order created: {order.remonline_order_id}",
     )
     return True
+
+
+def sync_order_to_remonline_safely(order: Order) -> bool:
+    """
+    Синхронизация, которая не роняет вызвавшего и не теряет след ошибки.
+
+    Заказ к моменту вызова уже сохранён, и возвращать клиенту 500 из-за
+    недоступности чужого сервиса нельзя: на экране появится ошибка, человек
+    оформит заказ повторно, и получится дубль. Поэтому ошибка идёт в лог, а
+    заказу проставляется FAILED — по нему видно, что вмешаться надо, и его
+    подберёт крон.
+
+    Возвращает True, если заказ теперь в CRM.
+    """
+    try:
+        sync_order_to_remonline(order)
+    except Exception:
+        logger.exception("Failed to sync order %s to RemOnline", order.pk)
+        if order.remonline_sync_status != Order.RemonlineSyncStatus.FAILED:
+            order.remonline_sync_status = Order.RemonlineSyncStatus.FAILED
+            order.save(update_fields=["remonline_sync_status"])
+        return False
+
+    return True
+
+
+def retry_failed_syncs(limit: int = 50) -> int:
+    """
+    Дотягивает заказы, которые не попали в CRM из-за сбоя.
+
+    Крутится в планировщике: временная недоступность RemOnline чинится сама, и
+    заказ не остаётся вне CRM навсегда — раньше он молча висел в PENDING, и об
+    этом никто не узнавал (так случилось с №113268).
+
+    Повтор безопасен: `sync_order_to_remonline` выходит сразу, если
+    `remonline_order_id` уже заполнен.
+    """
+    stuck = (
+        Order.objects.filter(
+            remonline_sync_status=Order.RemonlineSyncStatus.FAILED,
+            remonline_order_id__isnull=True,
+            is_draft=False,
+        )
+        .exclude(cancel_state=Order.CancelState.CANCELED)
+        .order_by("id")[:limit]
+    )
+
+    recovered = 0
+    for order in stuck:
+        if sync_order_to_remonline_safely(order):
+            recovered += 1
+
+    if recovered:
+        logger.info("Recovered %s order(s) stuck in FAILED", recovered)
+    return recovered

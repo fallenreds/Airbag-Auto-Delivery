@@ -69,7 +69,7 @@ class PaymentKindPropertiesTests(TestCase):
 
 
 @override_settings(CACHES=LOCMEM)
-@patch("core.serializers.orders.sync_order_to_remonline")
+@patch("core.serializers.orders.sync_order_to_remonline_safely")
 class OrderCreationTests(TestCase):
     def setUp(self):
         self.customer = make_client("flag-customer@example.com")
@@ -174,7 +174,7 @@ class SwitchToPostpaidTests(TestCase):
         self.api = APIClient()
         self.api.force_authenticate(self.staff)
 
-    @patch("core.views.orders.sync_order_to_remonline")
+    @patch("core.views.orders.sync_order_to_remonline_safely")
     def test_bank_transfer_is_cleared_too(self, sync):
         """Иначе заказ остался бы «по реквізитами, але без передоплати»."""
         response = self.api.patch(

@@ -70,7 +70,7 @@ def make_order(owner, **fields):
     REMONLINE_API_KEY="rem-key",
     REMONLINE_STATUS_DELETE=DELETE_STATUS,
 )
-@patch("core.views.orders.sync_order_to_remonline")
+@patch("core.views.orders.sync_order_to_remonline_safely")
 @patch("core.services.remonline_status.RemonlineInterface")
 class OrderMergeTests(TestCase):
     def setUp(self):

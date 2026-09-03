@@ -8,7 +8,10 @@ from core.models import Client, Good, Order, OrderEvent, OrderEventType, OrderIt
 from core.services import order_cancel
 from core.services.discount_service import DiscountService
 from core.services.draft_orders import deactivate_draft_payments
-from core.services.order_sync import get_payment_type_label, sync_order_to_remonline
+from core.services.order_sync import (
+    get_payment_type_label,
+    sync_order_to_remonline_safely,
+)
 
 from .common import validate_currency, validate_nonneg_int
 
@@ -288,7 +291,7 @@ class OrderCreateSerializer(serializers.ModelSerializer):
         # нет. Условие смотрит на способ оплаты, а не на голый флаг: у оплаты
         # по реквизитам `prepayment` тоже True.
         if not order.is_online_payment:
-            sync_order_to_remonline(order)
+            sync_order_to_remonline_safely(order)
 
         return order
 

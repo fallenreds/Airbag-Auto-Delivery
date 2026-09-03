@@ -19,6 +19,7 @@ def start_scheduler() -> BackgroundScheduler:
 
     from core.goods_sync import sync_goods_and_categories
     from core.order_event_handler import order_event_handler
+    from core.services.order_sync import retry_failed_syncs
 
     logger.info("Starting APScheduler background scheduler")
 
@@ -27,9 +28,33 @@ def start_scheduler() -> BackgroundScheduler:
 
     _scheduler = BackgroundScheduler(job_defaults=job_defaults)
 
+    def sync_goods_quietly():
+        """
+        Синхронизация каталога, не сыплющая трейсбеками.
+
+        Задача крутится каждую минуту, и при недоступности RemOnline в лог
+        каждую минуту падал полный стек. Данные при этом не портятся —
+        исключение прилетает из `get_goods()` до записи в базу, — так что
+        достаточно одной строки, а на следующей минуте попытка повторится.
+        """
+        try:
+            sync_goods_and_categories()
+        except Exception as exc:
+            logger.warning("sync_goods skipped: %s", exc)
+
     # Run sync_goods every minute
     _scheduler.add_job(
-        sync_goods_and_categories, "cron", minute="*", name="sync_goods", max_instances=1
+        sync_goods_quietly, "cron", minute="*", name="sync_goods", max_instances=1
+    )
+
+    # Дотягиваем заказы, не уехавшие в CRM из-за сбоя. Раз в пять минут:
+    # чаще незачем, а временный сбой так чинится сам, без ручного прогона.
+    _scheduler.add_job(
+        retry_failed_syncs,
+        "interval",
+        minutes=5,
+        name="retry_failed_syncs",
+        max_instances=1,
     )
 
     # Run order_event_handler every minute with sequential execution

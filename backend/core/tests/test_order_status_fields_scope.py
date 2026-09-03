@@ -268,7 +268,7 @@ class ManualPaymentSyncsRemonlineTests(TestCase):
         # captureOnCommitCallbacks: тест идёт в транзакции, которая не
         # коммитится, поэтому on_commit сам по себе не сработал бы. На бою
         # ATOMIC_REQUESTS выключен, и Django выполняет callback сразу.
-        with patch("core.services.order_status.sync_order_to_remonline") as sync:
+        with patch("core.services.order_status.sync_order_to_remonline_safely") as sync:
             with self.captureOnCommitCallbacks(execute=True):
                 self.api.patch(f"/api/v2/orders/{order.pk}/", {"is_paid": True}, format="json")
 
@@ -278,7 +278,7 @@ class ManualPaymentSyncsRemonlineTests(TestCase):
         """Постоплатный уехал в RemOnline ещё при оформлении."""
         order = self.make_order(prepayment=False)
 
-        with patch("core.services.order_status.sync_order_to_remonline") as sync:
+        with patch("core.services.order_status.sync_order_to_remonline_safely") as sync:
             with self.captureOnCommitCallbacks(execute=True):
                 self.api.patch(f"/api/v2/orders/{order.pk}/", {"is_paid": True}, format="json")
 
@@ -287,7 +287,7 @@ class ManualPaymentSyncsRemonlineTests(TestCase):
     def test_repeated_mark_does_not_sync_twice(self):
         order = self.make_order(prepayment=True)
 
-        with patch("core.services.order_status.sync_order_to_remonline") as sync:
+        with patch("core.services.order_status.sync_order_to_remonline_safely") as sync:
             with self.captureOnCommitCallbacks(execute=True):
                 self.api.patch(f"/api/v2/orders/{order.pk}/", {"is_paid": True}, format="json")
                 self.api.patch(f"/api/v2/orders/{order.pk}/", {"is_paid": True}, format="json")
@@ -301,7 +301,10 @@ class ManualPaymentSyncsRemonlineTests(TestCase):
         """
         order = self.make_order(prepayment=True)
 
-        with patch("core.services.order_status.sync_order_to_remonline",
+        # Сбой должен возникнуть ВНУТРИ синхронизации — её обёртка и обязана
+        # его поглотить, записав заказу FAILED. Патчить саму обёртку бессмысленно:
+        # тогда проверялась бы заглушка, а не поведение.
+        with patch("core.services.order_sync.sync_order_to_remonline",
                    side_effect=ValueError("Order has no client")):
             with self.captureOnCommitCallbacks(execute=True):
                 response = self.api.patch(

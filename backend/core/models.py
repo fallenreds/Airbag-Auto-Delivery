@@ -319,10 +319,16 @@ class Order(models.Model):
     class RemonlineSyncStatus:
         PENDING = "PENDING"
         SYNCED = "SYNCED"
+        # Запись в CRM сорвалась: сеть, 401, 502. Отдельно от PENDING, потому
+        # что по одному «ещё не синхронизирован» нельзя было отличить заказ,
+        # честно ждущий оплаты, от заказа, который в CRM уже не попадёт
+        # никогда. Такие заказы дотягивает крон и показывает фильтр в админке.
+        FAILED = "FAILED"
 
         CHOICES = [
             (PENDING, "Pending"),
             (SYNCED, "Synced"),
+            (FAILED, "Failed"),
         ]
 
     class CancelState:

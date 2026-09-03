@@ -20,7 +20,10 @@ from django.db import transaction
 
 from core.models import Order, OrderEvent, OrderEventType
 from core.services import remonline_status
-from core.services.order_sync import get_payment_type_label, sync_order_to_remonline
+from core.services.order_sync import (
+    get_payment_type_label,
+    sync_order_to_remonline_safely,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -102,14 +105,8 @@ def _sync_quietly(order: Order) -> None:
     """
     Синхронизация, которая не роняет вызвавшего.
 
-    `sync_order_to_remonline` ходит по сети и бросает ValueError, если у заказа
-    нет клиента или не настроен RemOnline. Для оплаты это не повод вернуть
-    ошибку тому, кто нажал кнопку: деньги уже приняты, заказ в базе есть, а
-    несинхронизированную заявку видно по `remonline_sync_status`.
+    Для оплаты сбой CRM — не повод вернуть ошибку тому, кто нажал кнопку:
+    деньги уже приняты, заказ в базе есть. Ошибку фиксирует сама обёртка —
+    пишет в лог и ставит заказу FAILED, чтобы его подобрал крон.
     """
-    try:
-        sync_order_to_remonline(order)
-    except Exception:
-        logger.exception(
-            "Failed to sync order %s to RemOnline after payment", order.pk
-        )
+    sync_order_to_remonline_safely(order)

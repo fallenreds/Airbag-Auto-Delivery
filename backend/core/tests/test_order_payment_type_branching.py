@@ -50,7 +50,7 @@ class OrderPaymentTypeBranchingTests(TestCase):
             "items": [{"good": self.good.id, "quantity": 1}],
         }
 
-    @patch("core.serializers.orders.sync_order_to_remonline")
+    @patch("core.serializers.orders.sync_order_to_remonline_safely")
     def test_prepayment_is_not_synced_immediately(self, sync_mock):
         view = OrderViewSet.as_view({"post": "create"})
         request = self.factory.post("/api/v2/orders/", self._payload(True), format="json")
@@ -64,7 +64,7 @@ class OrderPaymentTypeBranchingTests(TestCase):
         self.assertIsNone(order.remonline_order_id)
         sync_mock.assert_not_called()
 
-    @patch("core.serializers.orders.sync_order_to_remonline")
+    @patch("core.serializers.orders.sync_order_to_remonline_safely")
     def test_postpayment_is_synced_immediately(self, sync_mock):
         view = OrderViewSet.as_view({"post": "create"})
         request = self.factory.post("/api/v2/orders/", self._payload(False), format="json")
@@ -75,7 +75,7 @@ class OrderPaymentTypeBranchingTests(TestCase):
         self.assertEqual(response.status_code, 201)
         sync_mock.assert_called_once()
 
-    @patch("core.views.orders.sync_order_to_remonline")
+    @patch("core.views.orders.sync_order_to_remonline_safely")
     def test_admin_patch_switches_to_postpayment_and_emits_event(self, sync_mock):
         order = Order.objects.create(
             client=self.user,
@@ -106,7 +106,7 @@ class OrderPaymentTypeBranchingTests(TestCase):
             ).exists()
         )
 
-    @patch("core.views.orders.sync_order_to_remonline")
+    @patch("core.views.orders.sync_order_to_remonline_safely")
     def test_non_admin_cannot_change_payment_type(self, sync_mock):
         order = Order.objects.create(
             client=self.user,

@@ -24,7 +24,7 @@ from core.serializers import (
     OrderSerializer,
 )
 from core.services import draft_orders, order_cancel, order_status, remonline_status
-from core.services.order_sync import sync_order_to_remonline
+from core.services.order_sync import sync_order_to_remonline_safely
 from core.views.utils import get_own_queryset
 
 from .utils import generate_filterset_for_model
@@ -277,7 +277,7 @@ class OrderViewSet(viewsets.ModelViewSet):
     def _sync_merged_order(order):
         """Заводит объединённый заказ в RemOnline, не роняя сам merge."""
         try:
-            sync_order_to_remonline(order)
+            sync_order_to_remonline_safely(order)
         except Exception:
             logger.exception(
                 "Failed to sync merged order %s to RemOnline", order.pk
@@ -372,7 +372,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                 order=order,
                 details="Payment type changed to postpayment",
             )
-            sync_order_to_remonline(order)
+            sync_order_to_remonline_safely(order)
 
 
     @action(detail=True, methods=["GET"], permission_classes=[IsAdminUser],

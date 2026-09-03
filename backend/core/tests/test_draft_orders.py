@@ -36,7 +36,7 @@ def make_client(email, *, is_staff=False, telegram_id=None):
 
 
 @override_settings(CACHES=LOCMEM)
-@patch("core.serializers.orders.sync_order_to_remonline")
+@patch("core.serializers.orders.sync_order_to_remonline_safely")
 class DraftVisibilityTests(TestCase):
     def setUp(self):
         self.customer = make_client("draft-customer@example.com", telegram_id=222)
@@ -119,7 +119,7 @@ class PromoteDraftTests(TestCase):
             is_draft=True,
         )
 
-    @patch("core.services.order_status.sync_order_to_remonline")
+    @patch("core.services.order_status.sync_order_to_remonline_safely")
     def test_payment_promotes_draft_and_announces_it(self, sync):
         from payments.mono import MonobankPaymentService
 
@@ -140,7 +140,7 @@ class PromoteDraftTests(TestCase):
             ["CREATED_ADMIN_MESSAGE", "CREATED_CLIENT_MESSAGE", "PAYMENT_CONFIRMED"],
         )
 
-    @patch("core.services.order_status.sync_order_to_remonline")
+    @patch("core.services.order_status.sync_order_to_remonline_safely")
     def test_non_draft_order_is_not_announced_twice(self, sync):
         """Оплата заказа по реквизитам не должна повторять «нове замовлення»."""
         from payments.mono import MonobankPaymentService
