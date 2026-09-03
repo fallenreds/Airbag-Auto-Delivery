@@ -157,6 +157,19 @@ def sync_order_to_remonline(order: Order) -> bool:
         order=order,
         details=f"RemOnline order created: {order.remonline_order_id}",
     )
+
+    if order.bank_transfer:
+        # Правило 3: по карточке должно быть сразу видно, что деньги ещё не
+        # подтверждены. Заводится заказ всегда в «Новий» — `create_order`
+        # статус не передаёт вовсе, — поэтому переводим следующей операцией.
+        from core.services import remonline_status
+
+        remonline_status.set_status(
+            order,
+            getattr(settings, "REMONLINE_STATUS_BANK_TRANSFER", None),
+            what="«Оплата по реквізитам»",
+        )
+
     return True
 
 

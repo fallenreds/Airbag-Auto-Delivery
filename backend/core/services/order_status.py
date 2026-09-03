@@ -19,7 +19,7 @@ from django.conf import settings
 from django.db import transaction
 
 from core.models import Order, OrderEvent, OrderEventType
-from core.services import remonline_status
+from core.services import remonline_notes, remonline_status
 from core.services.order_sync import (
     get_payment_type_label,
     sync_order_to_remonline_safely,
@@ -49,6 +49,27 @@ def payment_confirmed(order: Order, *, details: str = "Order payment confirmed")
     # оплаты при уже списанных деньгах. Вне транзакции (PATCH из бота) Django
     # выполняет callback сразу — поведение то, что нужно, в обоих случаях.
     transaction.on_commit(lambda: _sync_quietly(order))
+    transaction.on_commit(lambda: _mark_paid_in_crm(order))
+
+
+def _mark_paid_in_crm(order: Order) -> None:
+    """
+    Правило 4: деньги подтверждены — карточка перестаёт ждать оплату.
+
+    Статус меняем только из «Оплата по реквізитам»: если менеджер уже увёл
+    заказ в сборку или отправку, возвращать его в «Новий» нельзя. А отметку в
+    заметках ставим в любом случае — она сообщает факт, а не состояние.
+    """
+    if not order.remonline_order_id:
+        return
+
+    remonline_status.set_status(
+        order,
+        getattr(settings, "REMONLINE_STATUS_NEW", None),
+        only_from=[getattr(settings, "REMONLINE_STATUS_BANK_TRANSFER", None)],
+        what="«Новий» после оплати",
+    )
+    remonline_notes.refresh_manager_notes(order, paid=True)
 
 
 def promote_draft(order: Order) -> None:

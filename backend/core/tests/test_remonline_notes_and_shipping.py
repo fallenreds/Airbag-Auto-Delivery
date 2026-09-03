@@ -1,0 +1,242 @@
+"""
+Заметки в карточке RemOnline и статус «Відправлений».
+
+Правила 3–7: заказ по реквизитам сразу видно как ждущий оплату, подтверждённая
+оплата уводит его в «Новий» и отмечается в заметках, ТТН из бота попадает в
+заметки инженера, а отправку система фиксирует по данным Новой Почты.
+
+Общее для всех: автоматика не перебивает работу менеджера. Если он увёл заказ
+дальше по цепочке, статус остаётся его.
+"""
+from unittest.mock import patch
+
+from django.test import TestCase, override_settings
+
+from core.models import Client, Order, OrderItem
+from core.services import remonline_notes
+from core.services.remonline_notes import compose_engineer_notes
+
+LOCMEM = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
+
+NEW = "1445137"
+BANK_TRANSFER = "5673032"
+SHIPPED = "1445143"
+ASSEMBLED = "1445139"          # «Зібрав» — ещё до отправки
+CLOSED = "1445134"
+
+CRM_SETTINGS = dict(
+    CACHES=LOCMEM,
+    REMONLINE_API_KEY="rem-key",
+    REMONLINE_BRANCH_PROD_ID="120989",
+    REMONLINE_ORDER_TYPE_ID="199403",
+    REMONLINE_STATUS_NEW=NEW,
+    REMONLINE_STATUS_BANK_TRANSFER=BANK_TRANSFER,
+    REMONLINE_STATUS_SHIPPED=SHIPPED,
+    REMONLINE_STATUSES_BEFORE_SHIPPING=[BANK_TRANSFER, NEW, ASSEMBLED],
+)
+
+
+def make_client(email, **fields):
+    fields.setdefault("name", "Іван")
+    fields.setdefault("last_name", "Петренко")
+    fields.setdefault("phone", f"+3806300{abs(hash(email)) % 10000:04d}")
+    user = Client(email=email, **fields)
+    user.set_password("pass")
+    user.save()
+    return user
+
+
+def make_order(owner, **fields):
+    fields.setdefault("name", "Іван")
+    fields.setdefault("last_name", "Петренко")
+    fields.setdefault("phone", "+380630000000")
+    fields.setdefault("nova_post_address", "Відділення №1")
+    order = Order.objects.create(client=owner, **fields)
+    OrderItem.objects.create(
+        order=order, good_external_id=1, id_remonline=1,
+        title="Подушка безпеки", quantity=1, original_price_minor=95000,
+    )
+    return order
+
+
+class ComposeEngineerNotesTests(TestCase):
+    """
+    Формат читает `parse_engineer_notes`, которым крон забирает ТТН, вписанный
+    менеджером вручную. Значит писать надо ровно так, как тот умеет читать.
+    """
+
+    def test_ttn_is_added_to_empty_notes(self):
+        self.assertEqual(compose_engineer_notes("", "59000123456789"), "ТТН: 59000123456789")
+
+    def test_manager_text_is_kept(self):
+        result = compose_engineer_notes("Клієнт просив зателефонувати", "59000123456789")
+
+        self.assertIn("Клієнт просив зателефонувати", result)
+        self.assertIn("ТТН: 59000123456789", result)
+
+    def test_existing_ttn_is_replaced_not_duplicated(self):
+        """Иначе после пары правок в карточке несколько номеров."""
+        result = compose_engineer_notes("ТТН: 59000000000001\n\nПримітка", "59000123456789")
+
+        self.assertEqual(result.count("ТТН"), 1)
+        self.assertIn("59000123456789", result)
+        self.assertNotIn("59000000000001", result)
+        self.assertIn("Примітка", result)
+
+    def test_result_is_readable_by_the_cron_parser(self):
+        from core.order_event_handler import parse_engineer_notes
+
+        notes = compose_engineer_notes("Довільний текст менеджера", "59000123456789")
+
+        self.assertEqual(parse_engineer_notes(notes), "59000123456789")
+
+    def test_empty_ttn_changes_nothing(self):
+        self.assertEqual(compose_engineer_notes("Текст", ""), "Текст")
+
+
+@override_settings(**CRM_SETTINGS)
+@patch("core.services.remonline_notes.RoappInterface")
+class PushTtnTests(TestCase):
+    def setUp(self):
+        self.owner = make_client("ttn-owner@example.com")
+
+    def test_ttn_is_written_into_the_card(self, roapp):
+        roapp.return_value.get_order.return_value = {"engineer_notes": "Примітка менеджера"}
+        order = make_order(self.owner, remonline_order_id=4242, ttn="59000123456789")
+
+        self.assertTrue(remonline_notes.push_ttn(order))
+
+        sent = roapp.return_value.update_order.call_args.kwargs["engineer_notes"]
+        self.assertIn("ТТН: 59000123456789", sent)
+        self.assertIn("Примітка менеджера", sent)
+
+    def test_order_without_card_is_skipped(self, roapp):
+        order = make_order(self.owner, remonline_order_id=None, ttn="59000123456789")
+
+        self.assertFalse(remonline_notes.push_ttn(order))
+        roapp.return_value.update_order.assert_not_called()
+
+    def test_same_ttn_is_not_written_twice(self, roapp):
+        roapp.return_value.get_order.return_value = {"engineer_notes": "ТТН: 59000123456789"}
+        order = make_order(self.owner, remonline_order_id=4242, ttn="59000123456789")
+
+        self.assertFalse(remonline_notes.push_ttn(order))
+        roapp.return_value.update_order.assert_not_called()
+
+    def test_crm_failure_is_swallowed(self, roapp):
+        """ТТН уже сохранён у нас и клиент уведомлён — падать нельзя."""
+        roapp.return_value.get_order.side_effect = RuntimeError("502")
+        order = make_order(self.owner, remonline_order_id=4242, ttn="59000123456789")
+
+        self.assertFalse(remonline_notes.push_ttn(order))
+
+
+@override_settings(**CRM_SETTINGS)
+@patch("core.services.remonline_notes.RoappInterface")
+class ManagerNotesTests(TestCase):
+    def setUp(self):
+        self.owner = make_client("notes-owner@example.com")
+
+    def test_payment_mark_is_added(self, roapp):
+        order = make_order(self.owner, remonline_order_id=4242, grand_total_minor=95000)
+
+        self.assertTrue(remonline_notes.refresh_manager_notes(order, paid=True))
+
+        sent = roapp.return_value.update_order.call_args.kwargs["manager_notes"]
+        self.assertIn("Оплачено", sent)
+        # Билдер работает по снимку заказа — состав и суммы на месте.
+        self.assertIn("Подушка безпеки", sent)
+        self.assertIn("Петренко", sent)
+
+    def test_without_payment_there_is_no_mark(self, roapp):
+        order = make_order(self.owner, remonline_order_id=4242)
+
+        remonline_notes.refresh_manager_notes(order)
+
+        self.assertNotIn("Оплачено", roapp.return_value.update_order.call_args.kwargs["manager_notes"])
+
+
+@override_settings(**CRM_SETTINGS)
+class BankTransferStatusTests(TestCase):
+    """Правило 3: по карточке видно, что деньги ещё не подтверждены."""
+
+    def setUp(self):
+        self.owner = make_client("bt-owner@example.com", id_remonline=777)
+
+    @patch("core.services.remonline_status.RemonlineInterface")
+    @patch("core.services.order_sync.RemonlineInterface")
+    def test_bank_transfer_order_gets_its_status(self, sync_api, status_api):
+        sync_api.return_value.create_order.return_value = {"data": {"id": 4242}}
+        order = make_order(self.owner, bank_transfer=True, prepayment=True)
+
+        from core.services.order_sync import sync_order_to_remonline
+        sync_order_to_remonline(order)
+
+        status_api.return_value.update_order_status.assert_called_once_with(
+            order_id=4242, status_id=int(BANK_TRANSFER)
+        )
+
+    @patch("core.services.remonline_status.RemonlineInterface")
+    @patch("core.services.order_sync.RemonlineInterface")
+    def test_ordinary_order_keeps_the_default_status(self, sync_api, status_api):
+        sync_api.return_value.create_order.return_value = {"data": {"id": 4243}}
+        order = make_order(self.owner)
+
+        from core.services.order_sync import sync_order_to_remonline
+        sync_order_to_remonline(order)
+
+        status_api.return_value.update_order_status.assert_not_called()
+
+
+@override_settings(**CRM_SETTINGS)
+@patch("core.services.remonline_status.RemonlineInterface")
+class ShippedStatusTests(TestCase):
+    """Правило 7: отправку фиксируем по Новой Почте и только вперёд."""
+
+    def setUp(self):
+        self.owner = make_client("ship-owner@example.com")
+        self.order = make_order(self.owner, remonline_order_id=4242, ttn="59000123456789")
+
+    def move(self, current_status, api):
+        from core.order_event_handler import mark_shipped_in_remonline
+
+        api.return_value.get_orders_by_ids.return_value = [
+            {"id": 4242, "status": {"id": int(current_status)}}
+        ]
+        mark_shipped_in_remonline(self.order)
+        return api.return_value.update_order_status.call_args_list
+
+    def test_moves_from_new(self, api):
+        calls = self.move(NEW, api)
+
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0].kwargs["status_id"], int(SHIPPED))
+
+    def test_moves_from_bank_transfer(self, api):
+        self.assertEqual(len(self.move(BANK_TRANSFER, api)), 1)
+
+    def test_moves_from_assembled(self, api):
+        self.assertEqual(len(self.move(ASSEMBLED, api)), 1)
+
+    def test_does_not_move_from_closed(self, api):
+        """Закрытый заказ автоматика назад не возвращает."""
+        self.assertEqual(len(self.move(CLOSED, api)), 0)
+
+    def test_does_not_move_when_already_shipped(self, api):
+        self.assertEqual(len(self.move(SHIPPED, api)), 0)
+
+
+class ShippedCodesTests(TestCase):
+    """Какие коды Новой Почты считаем отправкой."""
+
+    def test_in_transit_and_delivered_count_as_shipped(self):
+        from core.order_event_handler import SHIPPED_STATUS_CODES
+
+        for code in (4, 5, 6, 7, 9):  # эти наблюдались на боевых накладных
+            self.assertIn(code, SHIPPED_STATUS_CODES)
+
+    def test_created_and_missing_do_not(self):
+        from core.order_event_handler import SHIPPED_STATUS_CODES
+
+        for code in (1, 2, 3):  # створено, видалено, номер не знайдено
+            self.assertNotIn(code, SHIPPED_STATUS_CODES)

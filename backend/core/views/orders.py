@@ -23,7 +23,13 @@ from core.serializers import (
     OrderItemSerializer,
     OrderSerializer,
 )
-from core.services import draft_orders, order_cancel, order_status, remonline_status
+from core.services import (
+    draft_orders,
+    order_cancel,
+    order_status,
+    remonline_notes,
+    remonline_status,
+)
 from core.services.order_sync import sync_order_to_remonline_safely
 from core.views.utils import get_own_queryset
 
@@ -324,6 +330,10 @@ class OrderViewSet(viewsets.ModelViewSet):
                     order=order,
                     details=f"TTN updated to {new_ttn}",
                 )
+                # Правило 6: номер должен появиться и в карточке — иначе
+                # менеджер вбивает его повторно руками. Текст, который он туда
+                # уже написал, сохраняется.
+                transaction.on_commit(partial(remonline_notes.push_ttn, order))
 
         if not before["is_completed"] and validated_data.get("is_completed") is True:
             # Не только событие: карточка в RemOnline тоже должна закрыться.
@@ -373,6 +383,15 @@ class OrderViewSet(viewsets.ModelViewSet):
                 details="Payment type changed to postpayment",
             )
             sync_order_to_remonline_safely(order)
+
+            # Правило 5: карточка больше не ждёт оплату — но только если её
+            # туда поставили мы. Ушедший дальше заказ не трогаем.
+            remonline_status.set_status(
+                order,
+                getattr(settings, "REMONLINE_STATUS_NEW", None),
+                only_from=[getattr(settings, "REMONLINE_STATUS_BANK_TRANSFER", None)],
+                what="«Новий» після переходу на накладений платіж",
+            )
 
 
     @action(detail=True, methods=["GET"], permission_classes=[IsAdminUser],

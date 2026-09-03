@@ -79,6 +79,18 @@ REMONLINE_STATUS_NEW = os.getenv("REMONLINE_STATUS_NEW")
 REMONLINE_STATUS_BANK_TRANSFER = os.getenv("REMONLINE_STATUS_BANK_TRANSFER")
 # «Відправлений» — Новая Почта подтвердила, что посылка в пути.
 REMONLINE_STATUS_SHIPPED = os.getenv("REMONLINE_STATUS_SHIPPED")
+
+# Статусы, из которых автоматика вправе перевести заказ в «Відправлений».
+# Всё, что дальше по цепочке, менеджер выставил руками — назад не возвращаем.
+# Идентификаторы сверены с боевым RemOnline 04.09.2026.
+REMONLINE_STATUSES_BEFORE_SHIPPING = [
+    s.strip()
+    for s in os.getenv(
+        "REMONLINE_STATUSES_BEFORE_SHIPPING",
+        "5673032,1445137,1714569,3624147,1445139",  # реквізити, новий, замовили, можна збирати, зібрав
+    ).split(",")
+    if s.strip()
+]
 _CATEGORIES_WHITELIST_IDS_RAW = os.getenv("CATEGORIES_WHITELIST_IDS", "")
 CATEGORIES_WHITELIST_IDS = [
     int(t)

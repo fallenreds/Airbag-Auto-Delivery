@@ -84,6 +84,14 @@ def process_order(remonline_order: dict, local_order: Order):
         except Exception:
             return local_order.save()
 
+        # Правило 7: посылка уже не у нас — карточка должна это показывать.
+        # Ориентируемся не на один код, а на весь диапазон «в пути и дальше»:
+        # 4 — у дорозі, 5 — прямує до міста, 6 — у місті одержувача,
+        # 7 — прибув на відділення, 8 — у поштоматі, 9–11 — отримано.
+        # Коды 1–3 (створено, видалено, не знайдено) отправкой не считаем.
+        if ttn_details["StatusCode"] in SHIPPED_STATUS_CODES:
+            mark_shipped_in_remonline(local_order)
+
         if ttn_details["StatusCode"] in (9, 10) and not local_order.is_completed:
             local_order.is_completed = True
             # Заказ вручён — закрываем и карточку в CRM. Решение приняли мы, а
@@ -106,6 +114,28 @@ def process_order(remonline_order: dict, local_order: Order):
                 local_order.branch_remember_count += 1
 
     return local_order.save()
+
+
+SHIPPED_STATUS_CODES = (4, 5, 6, 7, 8, 9, 10, 11)
+
+
+def mark_shipped_in_remonline(order: Order) -> None:
+    """
+    Переводит карточку в «Відправлений», не перебивая работу менеджера.
+
+    Двигаем только вперёд: из статусов «до отправки». Если заказ уже закрыт,
+    отменён или менеджер сам увёл его дальше — не трогаем.
+    """
+    from django.conf import settings
+
+    from core.services import remonline_status
+
+    remonline_status.set_status(
+        order,
+        getattr(settings, "REMONLINE_STATUS_SHIPPED", None),
+        only_from=getattr(settings, "REMONLINE_STATUSES_BEFORE_SHIPPING", []),
+        what="«Відправлений»",
+    )
 
 
 def get_ttn_details(documents: list) -> dict:
