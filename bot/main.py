@@ -45,6 +45,7 @@ from notifications import (
     order_in_branch_notifications, deactivated_notifications, deleted_notifications,
 )
 from utils.inline import inline_paginator
+from utils.merge_rules import can_merge
 from logger import logger
 from utils.cancel_rules import (
     admin_can_cancel, client_can_cancel, client_can_request_cancel,
@@ -1207,7 +1208,14 @@ async def callback_admin_panel(callback: types.CallbackQuery, state: FSMContext)
             order_id = await id_spliter(callback.data)
             order = await get_order_by_id(order_id)
             await state.set_state(MergeOrderState.target_order_id.state)
-            client_orders = list(filter(lambda order_obj: order_obj['id'] != order_id, await get_active_orders_by_telegram_id(order['telegram_id'])))
+            # Только однотипные: две наложки либо две оплаченные предоплаты.
+            # Бэкенд такую пару всё равно отклонит, но админ не должен доходить
+            # до ошибки — неподходящих заказов просто нет в списке.
+            client_orders = [
+                candidate
+                for candidate in await get_active_orders_by_telegram_id(order['telegram_id'])
+                if candidate['id'] != order_id and can_merge(order, candidate)
+            ]
             await state.update_data(source_order_id=order_id, order=order, orders=client_orders, goods=goods)
             try:
                 await bot.delete_message(callback.message.chat.id, callback.message.message_id)

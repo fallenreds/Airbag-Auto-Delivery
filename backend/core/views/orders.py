@@ -7,7 +7,11 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
+from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
+
+from functools import partial
 
 from core.models import BONUS_ORDER_MARKER, CancelReason, Order, OrderEvent, OrderEventType, OrderItem
 from core.serializers import (
@@ -16,7 +20,7 @@ from core.serializers import (
     OrderItemSerializer,
     OrderSerializer,
 )
-from core.services import order_cancel, order_status
+from core.services import order_cancel, order_status, remonline_status
 from core.services.order_sync import sync_order_to_remonline
 from core.views.utils import get_own_queryset
 
@@ -136,6 +140,39 @@ class OrderViewSet(viewsets.ModelViewSet):
         order = serializer.save()
         return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
 
+    @staticmethod
+    def _merge_refusal(source_order, target_order):
+        """
+        Причина, по которой объединять эти два заказа нельзя, или None.
+
+        Объединять разрешено только однотипные заказы: две наложки либо две
+        предоплаты, причём обе оплаченные. Иначе объединённый заказ пришлось бы
+        создавать в состоянии, которого не существует — «наполовину оплачен»,
+        — а деньги за одну из половин уже приняты.
+
+        Проверка принадлежности одному клиенту закрывает старую дыру: данные
+        нового заказа берутся из `source`, поэтому объединение заказов разных
+        людей просто теряло второго клиента.
+        """
+        if source_order.client_id != target_order.client_id:
+            return "Orders belong to different clients."
+
+        for order in (source_order, target_order):
+            if order.cancel_state == Order.CancelState.CANCELED:
+                return f"Order {order.pk} is canceled."
+            if order.is_completed:
+                return f"Order {order.pk} is already completed."
+
+        if source_order.payment_kind != target_order.payment_kind:
+            return "Orders use different payment methods."
+
+        if source_order.is_prepaid_flow and not (
+            source_order.is_paid and target_order.is_paid
+        ):
+            return "Prepaid orders can be merged only when both are paid."
+
+        return None
+
     @action(
         detail=False,
         methods=["post"],
@@ -156,6 +193,12 @@ class OrderViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        if str(source_id) == str(target_id):
+            return Response(
+                {"detail": "Cannot merge an order with itself."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         try:
             source_order = Order.objects.get(pk=source_id)
         except Order.DoesNotExist:
@@ -165,6 +208,10 @@ class OrderViewSet(viewsets.ModelViewSet):
             target_order = Order.objects.get(pk=target_id)
         except Order.DoesNotExist:
             return Response({"detail": f"Order {target_id} not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        refusal = self._merge_refusal(source_order, target_order)
+        if refusal:
+            return Response({"detail": refusal}, status=status.HTTP_400_BAD_REQUEST)
 
         source_items = list(OrderItem.objects.filter(order=source_order))
         target_items = list(OrderItem.objects.filter(order=target_order))
@@ -178,6 +225,11 @@ class OrderViewSet(viewsets.ModelViewSet):
             phone=source_order.phone,
             nova_post_address=source_order.nova_post_address,
             prepayment=source_order.prepayment,
+            # Способ оплаты у обоих заказов одинаковый — это проверено выше.
+            # Без bank_transfer объединённый заказ по реквизитам превращался в
+            # «Накладений платіж».
+            bank_transfer=source_order.bank_transfer,
+            payment_document=source_order.payment_document,
             is_paid=source_order.is_paid,
             ttn=source_order.ttn,
             description=source_order.description,
@@ -214,8 +266,26 @@ class OrderViewSet(viewsets.ModelViewSet):
         new_order.discount_total_minor = subtotal - grand_total
         new_order.save(update_fields=["subtotal_minor", "grand_total_minor", "discount_total_minor"])
 
-        source_order.delete()
-        target_order.delete()
+        # Раньше исходные заказы удалялись физически — вместе с платежами
+        # (`Payment.order` = CASCADE) и историей отмены. Теперь отменяем:
+        # `sync_remonline=False`, потому что карточкам нужен не «Відмова», а
+        # «Видалити» — они техническая замена объединённой, а не отказ клиента.
+        for order in (source_order, target_order):
+            order_cancel.cancel_order(
+                order,
+                actor=self.request.user,
+                reason=CancelReason.MERGED,
+                comment=f"Об'єднано в замовлення №{new_order.id}",
+                sync_remonline=False,
+            )
+            transaction.on_commit(
+                partial(
+                    remonline_status.set_status,
+                    order,
+                    getattr(settings, "REMONLINE_STATUS_DELETE", None),
+                    what="«Видалити»",
+                )
+            )
 
         OrderEvent.objects.create(
             type=OrderEventType.MERGED,
@@ -223,7 +293,21 @@ class OrderViewSet(viewsets.ModelViewSet):
             details=f"Merged from orders #{source_id} and #{target_id}",
         )
 
+        # Объединённый заказ должен появиться в CRM — раньше он туда не
+        # попадал вовсе, а обе исходные карточки оставались висеть открытыми.
+        transaction.on_commit(partial(self._sync_merged_order, new_order))
+
         return Response(OrderSerializer(new_order).data, status=status.HTTP_200_OK)
+
+    @staticmethod
+    def _sync_merged_order(order):
+        """Заводит объединённый заказ в RemOnline, не роняя сам merge."""
+        try:
+            sync_order_to_remonline(order)
+        except Exception:
+            logger.exception(
+                "Failed to sync merged order %s to RemOnline", order.pk
+            )
 
     @staticmethod
     def _normalized_ttn(value):
