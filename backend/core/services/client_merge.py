@@ -131,6 +131,17 @@ def absorb_guest(guest, target):
     if guest.telegram_id and not target.telegram_id:
         target.telegram_id = guest.telegram_id
         updated.append("telegram_id")
+    elif guest.telegram_id and target.telegram_id != guest.telegram_id:
+        # У цели свой Telegram — перетирать его нельзя, это чужая привязка.
+        # Но тогда telegram_id гостя после удаления не закреплён ни за кем, и
+        # следующий вход из мини-аппа создаст новую пустую запись. Случай
+        # редкий (два Telegram-аккаунта на один телефон или ошибка в номере),
+        # но молча он выглядит как «слияние не помогло».
+        logger.warning(
+            "Guest %s had telegram_id %s, but target %s already has %s — "
+            "the guest's Telegram will create a fresh record on next login",
+            guest.pk, guest.telegram_id, target.pk, target.telegram_id,
+        )
 
     for field in OPTIONAL_FIELDS:
         incoming = getattr(guest, field, None)

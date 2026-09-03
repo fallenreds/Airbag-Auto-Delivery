@@ -157,7 +157,14 @@ class PromoteDraftTests(TestCase):
         self.assertEqual(types, ["PAYMENT_CONFIRMED"])
 
 
-@override_settings(CACHES=LOCMEM)
+@override_settings(
+    CACHES=LOCMEM,
+    # Токены задаём явно: без них `get_active_monobank_credentials` вернёт
+    # пустое значение, сервис не создастся, и тест начнёт зависеть от того,
+    # лежит ли на машине разработчика боевой .env.
+    MONOBANK_TOKEN_TEST="token-test",
+    MONOBANK_WEBHOOK_KEY_TEST="key-test",
+)
 class DeactivateDraftPaymentsTests(TestCase):
     """
     Оформил другим способом — брошенные счета гасим.

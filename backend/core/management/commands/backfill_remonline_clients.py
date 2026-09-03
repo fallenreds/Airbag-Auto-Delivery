@@ -12,10 +12,10 @@ id»: в CRM его нет, менеджер о нём не знает.
 """
 import logging
 
+from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.db.models import Q
 
-from config.settings import REMONLINE_API_KEY
 from core.models import Client, Order
 from core.services import client_merge
 from core.services.order_sync import sync_order_to_remonline
@@ -39,7 +39,8 @@ class Command(BaseCommand):
         if self.dry_run:
             self.stdout.write(self.style.WARNING("Пробный прогон: изменений не будет"))
 
-        if not REMONLINE_API_KEY and not self.dry_run:
+        self.api_key = getattr(settings, "REMONLINE_API_KEY", None)
+        if not self.api_key and not self.dry_run:
             self.stderr.write(self.style.ERROR("REMONLINE_API_KEY не настроен"))
             return
 
@@ -131,7 +132,7 @@ class Command(BaseCommand):
             self.stdout.write(f"  клиент {client.id}: завести контрагента по {phone}")
             return
 
-        created = RemonlineInterface(REMONLINE_API_KEY).find_or_create_client(
+        created = RemonlineInterface(self.api_key).find_or_create_client(
             phone=phone,
             first_name=client.name or "",
             last_name=client.last_name or "",

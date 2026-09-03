@@ -5,6 +5,7 @@
 семьдесят человек получат дубль или не получат ничего.
 """
 import collections
+import os
 from io import StringIO
 from unittest.mock import MagicMock, patch
 
@@ -49,6 +50,10 @@ class Telegram:
         return response
 
 
+# Токен бота читается из окружения напрямую (`core/services/telegram.py`), а не
+# из настроек, поэтому override_settings его не подменяет. Без этой подстановки
+# тесты проходили только на машине, где рядом лежит боевой .env.
+@patch.dict(os.environ, {"BOT_TOKEN": "test-bot-token"})
 @override_settings(CACHES=LOCMEM, FRONTEND_URL="https://airbagad.com")
 class SendClaimInvitesTests(TestCase):
     def setUp(self):

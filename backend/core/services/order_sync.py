@@ -1,9 +1,6 @@
-from config.settings import (
-    REMONLINE_API_KEY,
-    REMONLINE_BRANCH_PROD_ID,
-    REMONLINE_ORDER_TYPE_ID,
-)
 import logging
+
+from django.conf import settings
 
 from core.models import Client, Good, Order, OrderEvent, OrderEventType
 from core.models import OrderItem
@@ -97,7 +94,7 @@ def ensure_client_in_remonline(order: Order):
         if client.id_remonline is not None:
             return client
 
-    remonline = RemonlineInterface(REMONLINE_API_KEY)
+    remonline = RemonlineInterface(getattr(settings, "REMONLINE_API_KEY", None))
     created = remonline.find_or_create_client(
         phone=phone,
         first_name=order.name or client.name or "",
@@ -126,23 +123,27 @@ def sync_order_to_remonline(order: Order) -> bool:
             order.save(update_fields=["remonline_sync_status"])
         return False
 
-    if not REMONLINE_API_KEY:
+    api_key = getattr(settings, "REMONLINE_API_KEY", None)
+    branch_id = getattr(settings, "REMONLINE_BRANCH_PROD_ID", None)
+    order_type = getattr(settings, "REMONLINE_ORDER_TYPE_ID", None)
+
+    if not api_key:
         raise ValueError("REMONLINE_API_KEY is not configured")
 
     if not order.client:
         raise ValueError("Order has no client")
 
-    if REMONLINE_BRANCH_PROD_ID is None or REMONLINE_ORDER_TYPE_ID is None:
+    if branch_id is None or order_type is None:
         raise ValueError("Remonline order settings are not configured")
 
     client = ensure_client_in_remonline(order)
 
-    remonline = RemonlineInterface(REMONLINE_API_KEY)
+    remonline = RemonlineInterface(api_key)
     manager_notes = build_manager_notes(order=order, user=client)
 
     response = remonline.create_order(
-        branch_id=int(REMONLINE_BRANCH_PROD_ID),
-        order_type=int(REMONLINE_ORDER_TYPE_ID),
+        branch_id=int(branch_id),
+        order_type=int(order_type),
         client_id=int(client.id_remonline),
         manager_notes=manager_notes,
     )
