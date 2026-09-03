@@ -73,12 +73,23 @@ class RoappInterface:
         raise last_error  # pragma: no cover
 
     def get_order(self, order_id: int) -> dict:
-        """Карточка заказа целиком — нужна, чтобы не затереть чужой текст."""
-        response = self._request("GET", "/orders/", params={"ids[]": int(order_id)})
-        for item in response.json().get("data", []):
-            if int(item.get("id", 0)) == int(order_id):
-                return item
-        return {}
+        """
+        Карточка заказа целиком — нужна, чтобы не затереть чужой текст.
+
+        Путь без завершающего слэша: `/orders/` с ним отвечает 404 «Page not
+        found», а `/orders/{id}` отдаёт карточку напрямую (проверено на боевом
+        аккаунте 04.09.2026).
+        """
+        response = self._request("GET", f"/orders/{int(order_id)}")
+        payload = response.json()
+        # Одиночная карточка приходит объектом, но на всякий случай понимаем и
+        # обёртку со списком — формат у соседних методов именно такой.
+        if isinstance(payload, dict) and "data" in payload:
+            for item in payload["data"]:
+                if int(item.get("id", 0)) == int(order_id):
+                    return item
+            return {}
+        return payload if isinstance(payload, dict) else {}
 
     def update_order(self, order_id: int, **fields) -> dict:
         """
