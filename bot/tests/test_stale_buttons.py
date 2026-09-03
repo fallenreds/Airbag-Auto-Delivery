@@ -32,7 +32,7 @@ class TestKnownCallbackVocabulary:
         "show_client_info", "cancel_abort",
         "check_order/12", "make_paid/12", "deactivate_order/12",
         "to_not_prepayment/12", "check_ttn/59001747923405",
-        "send_payment_photo/12", "merge_order/12", "delete_order/12",
+        "merge_order/12", "delete_order/12",
         "cancel_order/12", "request_cancel/12", "cancel_reason/12/changed_mind",
         "admin_cancel_order/12", "admin_cancel_reason/12/no_contact",
         "cancel_approve/12", "cancel_reject/12", "mark_refunded/12",

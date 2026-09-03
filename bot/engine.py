@@ -4,7 +4,7 @@ from aiogram.utils.exceptions import ChatNotFound, BotBlocked
 
 from api import get_client_by_id, get_orders_by_tg_id, get_client_by_tg_id, get_discount
 from buttons import get_cancel_order_button, get_props_info_button, \
-    get_request_cancel_button, get_send_payment_photo_button, get_check_ttn_button
+    get_request_cancel_button, get_check_ttn_button
 from config import PRICE_ID_PROD
 from utils.cancel_rules import client_can_cancel, client_can_request_cancel, is_canceled, \
     is_cancel_requested
@@ -74,10 +74,13 @@ async def make_order(bot, telegram_id, order_items, goods, order, client, messag
         markup_i.add(get_request_cancel_button(order['id']))
 
     if order["prepayment"] and not order["is_paid"] and not is_canceled(order):
-        text += "\n\nДля того щоб отримати реквізити натисніть на кнопку <b>Переглянути реквізити👇</b>" \
-                "\nПісля сплати замовлення натисніть кнопку <b>Відправити фото з оплатою</b>"
+        # Кнопки «Відправити фото з оплатою» здесь больше нет: бот пересылал
+        # картинку админу с подписью «Створена оплата», ничего не проверяя и
+        # никуда не сохраняя, — оплаты за ней могло и не быть. Квитанция
+        # прикрепляется на сайте при оформлении, там она обязательна и хранится
+        # в заказе, а уведомление админу шлёт бэкенд.
+        text += "\n\nДля того щоб отримати реквізити натисніть на кнопку <b>Переглянути реквізити👇</b>"
         markup_i.add(get_props_info_button())
-        markup_i.add(get_send_payment_photo_button(order['id']))
 
     if extra_kb:
         combined = types.InlineKeyboardMarkup(row_width=2)

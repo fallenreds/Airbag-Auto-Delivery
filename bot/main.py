@@ -26,14 +26,14 @@ from buttons import (
     get_active_orders_button, get_not_paid_along_time_button, get_edit_discount_button, get_all_clients_button,
     get_make_post, get_set_props, get_props_info_button, get_deactive_order_button, get_delete_order_button,
     get_merge_order_button, get_check_ttn_button, get_to_not_prepayment_button, get_make_paid_button,
-    get_order_info_button, get_send_payment_photo_button, get_our_contact_button, get_add_month_payment_button,
+    get_order_info_button, get_our_contact_button, get_add_month_payment_button,
     get_payment_mode_button, get_set_payment_mode_button,
     get_admin_cancel_order_button, get_cancel_reasons_keyboard,
     get_mark_refunded_button, ADMIN_CANCEL_REASONS,
 )
 from config import BOT_TOKEN, WEB_URL
 from engine import manager_notes_builder, id_spliter, ttn_info_builder, send_error_log, make_order, show_order_goods
-from States import NewTTN, NewPost, NewClientDiscount, NewPaymentData, NewProps, NewTemplate, \
+from States import NewTTN, NewPost, NewClientDiscount, NewProps, NewTemplate, \
     MergeOrderState
 from handlers.client_handler import make_client
 from labels import AdminLabels
@@ -748,32 +748,6 @@ async def add_ttn_callback_handler(callback: types.CallbackQuery, state: FSMCont
     await NewTTN.next()
 
 
-@dp.message_handler(content_types=['text'], state=NewPaymentData.order_id)
-async def new_payment_order_id_state(message: types.Message, state: FSMContext):
-    async with state.proxy() as data:
-        data['order_id'] = message.text
-    await bot.send_message(message.chat.id, "Чудово, тепер відправте фото з оплатою замовлення")
-    await NewPaymentData.next()
-
-
-@dp.message_handler(content_types=["photo"], state=NewPaymentData.photo)
-async def new_payment_photo_state(message: types.Message, state: FSMContext):
-    async with state.proxy() as data:
-        if message.photo[0]:
-            data['photo'] = message.photo[0].file_id
-
-    data = await state.get_data()
-
-    markup_i = types.InlineKeyboardMarkup()
-    markup_i.add(get_order_info_button(data['order_id']))
-    admin_text = for_admin(
-        f"Створена оплата за замовлення №{data['order_id']}, показати його?"
-    )
-    for admin in admin_list:
-        await bot.send_photo(admin, photo=data['photo'], caption=admin_text, reply_markup=markup_i)
-    await bot.send_message(message.chat.id, "Дякую. Очікуйте повідомлення про підтвердження замовлення")
-    await state.finish()
-
 
 @dp.message_handler(content_types=['text'], state=NewClientDiscount.client_id)
 async def new_client_discount_state(message: types.Message, state: FSMContext):
@@ -1068,7 +1042,7 @@ _KNOWN_CALLBACK_EXACT = frozenset({
 
 _KNOWN_CALLBACK_FRAGMENTS = (
     "order_card/", "check_order/", "make_paid/", "deactivate_order/", "to_not_prepayment/",
-    "check_ttn/", "send_payment_photo", "merge_order", "delete_order/",
+    "check_ttn/", "merge_order", "delete_order/",
     "cancel_order/", "request_cancel/", "cancel_reason/", "admin_cancel_order/",
     "admin_cancel_reason/", "cancel_approve/", "cancel_reject/", "mark_refunded/",
     "add_ttn/", "delete_discount/", "add_client_monthpayment/",
@@ -1198,12 +1172,6 @@ async def callback_admin_panel(callback: types.CallbackQuery, state: FSMContext)
 
         # if "change_order_prepayment/" in callback.data:
         #     order_id = callback.data.rsplit('/')[-1]
-
-        if "send_payment_photo" in callback.data:
-            order_id = callback.data.rsplit('/')[-1]
-            await NewPaymentData.order_id.set()
-            await bot.send_message(callback.message.chat.id,
-                                   f'Будь ласка, напишіть ваш номер замовлення, за яке ви хочете відправити фото оплати. Номер цього замовлення {order_id}.\nДля відміни операції натисніть /stop')
 
         if callback.data == "to_call":
             phones_text = "\n".join(COMPANY_PHONES)
@@ -1516,14 +1484,6 @@ if __name__ == '__main__':
 #         delete_button = get_delete_order_button(order['id'])
 #         markup_i.add(delete_button)
 #
-#     if order["prepayment"] and not order["is_paid"]:
-#         props: dict
-#         with open('props.json', "r", encoding='utf-8') as f:
-#             props = json.load(f)
-#         text += "\n\nДля того щоб отримати реквізити натисніть на кнопку <b>Переглянути реквізити👇</b>" \
-#                 "\nПісля сплати замовлення натисніть кнопку <b>Відправити фото з оплатою</b>"
-#         markup_i.add(get_props_info_button())
-#         markup_i.add(get_send_payment_photo_button(order['id']))
 #     await bot.send_message(telegram_id, text=text, reply_markup=markup_i)
 
     

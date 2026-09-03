@@ -109,10 +109,6 @@ def get_order_info_button(order_id):
     return get_show_order_button(order_id)
 
 
-def get_send_payment_photo_button(order_id):
-    return types.InlineKeyboardButton("Відправити фото з оплатою 🖼", callback_data=f"send_payment_photo/{order_id}")
-
-
 def get_our_contact_button():
     return types.InlineKeyboardButton("Зв‘язок з нами 📞", callback_data="Зв‘язок")
 
