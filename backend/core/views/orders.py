@@ -1,4 +1,7 @@
 # views.py
+import os
+
+from django.http import FileResponse
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status, viewsets
@@ -311,6 +314,49 @@ class OrderViewSet(viewsets.ModelViewSet):
             )
             sync_order_to_remonline(order)
 
+
+    @action(detail=True, methods=["GET"], permission_classes=[IsAdminUser],
+            url_path="payment-doc")
+    def payment_doc(self, request, pk=None):
+        """
+        Отдаёт документ об оплате персоналу.
+
+        Нужен, потому что Django при DEBUG=False медиа не раздаёт: маршрута
+        `/media/` в urlpatterns нет, раздача держалась на отладочном `static()`
+        (ADR-0014). Бот качал файл по `/media/...` и получал 404, поэтому админ
+        видел уведомление об оплате без картинки — только подпись.
+
+        Через nginx это не решить: он проксирует в Django всё, кроме
+        `/media/categories/`, и документы клиентов оказались бы доступны
+        снаружи по угадываемому URL. Здесь же файл закрыт проверкой прав.
+        """
+        order = self.get_object()
+
+        if not order.payment_document:
+            return Response(
+                {"detail": "Order has no payment document."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        try:
+            handle = order.payment_document.open("rb")
+        except FileNotFoundError:
+            # Запись в базе есть, файла на диске нет — например, потерялся при
+            # переносе медиа. Для вызывающего это то же самое, что отсутствие.
+            logger.warning(
+                "Payment document file is missing for order %s: %s",
+                order.pk, order.payment_document.name,
+            )
+            return Response(
+                {"detail": "Payment document file is missing."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        return FileResponse(
+            handle,
+            as_attachment=False,
+            filename=os.path.basename(order.payment_document.name),
+        )
 
     @action(detail=True, methods=["POST"], permission_classes=[IsAuthenticated],
             parser_classes=[MultiPartParser, FormParser], url_path="upload-payment-doc")

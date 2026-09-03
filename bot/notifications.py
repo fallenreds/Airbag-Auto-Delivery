@@ -169,15 +169,16 @@ async def cancel_rejected_notification(bot, order, details: str | None, admin_li
 IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.heic', '.heif'}
 
 
-async def _download_payment_document(doc_url: str):
+async def _download_payment_document(order_id, doc_url: str):
     """Download the payment document from backend. Returns (bytes, filename) or (None, None)."""
     if not doc_url:
         return None, None
-    # payment_document arrives as absolute URL (e.g. http://localhost:8000/media/...),
-    # but the bot must reach the backend via its own base_url (http://backend:8000/).
+    # Имя файла берём из ссылки, а сам файл качаем через API: Django при
+    # DEBUG=False не раздаёт /media/, и запрос по прямой ссылке возвращал 404 —
+    # админ получал уведомление об оплате без картинки.
     path = urlparse(doc_url).path  # /media/payment_docs/xxx.png
     filename = os.path.basename(path) or "payment_document"
-    fetch_url = f"{config.BASE_URL.rstrip('/')}/{path.lstrip('/')}"
+    fetch_url = f"{config.BASE_URL.rstrip('/')}/api/v2/orders/{order_id}/payment-doc/"
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(fetch_url, headers=headers) as resp:
@@ -212,7 +213,7 @@ async def payment_doc_uploaded_notification(bot, order, admin_list):
     markup_i.add(get_show_order_button(order['id']))
 
     doc_url = order.get('payment_document')
-    data, filename = await _download_payment_document(doc_url)
+    data, filename = await _download_payment_document(order['id'], doc_url)
     is_image = bool(filename) and os.path.splitext(filename)[1].lower() in IMAGE_EXTS
 
     for admin in admin_list:
