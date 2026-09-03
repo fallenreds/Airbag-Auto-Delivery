@@ -38,7 +38,7 @@ from States import NewTTN, NewPost, NewClientDiscount, NewPaymentData, NewProps,
 from handlers.client_handler import make_client
 from labels import AdminLabels
 from notifications import (
-    ttn_update_notification, unknown_error_notifications, no_connection_with_server_notification,
+    unknown_error_notifications, no_connection_with_server_notification,
     client_added_bonus_notifications, for_admin,
     check_status_notification, new_order_notification, merge_order_notification,
     order_in_branch_reminder_notifications, new_order_client_notification,
@@ -963,8 +963,9 @@ async def ttn_state(message: types.Message, state: FSMContext):
         response = await update_ttn(data['order_id'], data['ttn_state'])
         if not response:
             return await message.reply(f"❌ Помилка: замовлення №{data['order_id']} не знайдено або недоступне")
-        order = await get_order_by_id(data['order_id'])
-        await ttn_update_notification(bot, order)
+        # Клиенту о ТТН пишет поллер: PATCH выше создаёт на бэкенде событие
+        # TTN_UPDATED. Прямой вызов отсюда остался с тех пор, как события ещё
+        # не было, и давал клиенту второе такое же сообщение.
         return await message.reply("Чудово, ви успішно оновили TTN замовлення ✅")
     except Exception as error:
         await send_error_log(bot, 516842877, error)
