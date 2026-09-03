@@ -15,9 +15,11 @@
 """
 import logging
 
+from django.conf import settings
 from django.db import transaction
 
 from core.models import Order, OrderEvent, OrderEventType
+from core.services import remonline_status
 from core.services.order_sync import sync_order_to_remonline
 
 logger = logging.getLogger(__name__)
@@ -44,6 +46,32 @@ def payment_confirmed(order: Order, *, details: str = "Order payment confirmed")
     # оплаты при уже списанных деньгах. Вне транзакции (PATCH из бота) Django
     # выполняет callback сразу — поведение то, что нужно, в обоих случаях.
     transaction.on_commit(lambda: _sync_quietly(order))
+
+
+def finished(order: Order, *, details: str = "Order finished") -> None:
+    """
+    Заказ завершён: событие + закрытие карточки в RemOnline.
+
+    Зовут два пути, которые решают это сами: админ кнопкой «Виконано» в боте и
+    крон, когда Новая Почта подтвердила вручение. Третий путь — крон увидел в
+    CRM статус «Закрито» — сюда не приходит: там карточка уже закрыта, и
+    сообщать RemOnline о его же решении незачем.
+    """
+    OrderEvent.objects.create(
+        type=OrderEventType.FINISHED,
+        order=order,
+        details=details,
+    )
+
+    transaction.on_commit(lambda: _close_quietly(order))
+
+
+def _close_quietly(order: Order) -> None:
+    remonline_status.set_status(
+        order,
+        getattr(settings, "REMONLINE_STATUS_CLOSED", None),
+        what="«Закрито»",
+    )
 
 
 def _sync_quietly(order: Order) -> None:

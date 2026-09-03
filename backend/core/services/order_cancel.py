@@ -23,7 +23,7 @@ from django.utils import timezone
 from django.conf import settings
 
 from core.models import CancelReason, Order, OrderEvent, OrderEventType
-from core.services.remonline import RemonlineInterface
+from core.services import remonline_status
 
 logger = logging.getLogger(__name__)
 
@@ -106,36 +106,23 @@ def _deactivate_pending_payments(order: Order) -> None:
         )
 
 
-def _mark_canceled_in_remonline(order: Order) -> None:
-    """Переводит заказ в RemOnline в статус удаления."""
-    if not order.remonline_order_id:
-        return
+def _mark_dropped_in_remonline(order: Order) -> None:
+    """
+    Переводит карточку в RemOnline в «Відмова».
 
-    # Читаем настройки на вызове, а не на импорте: ключ и статус приходят из
-    # окружения и подменяются в тестах.
-    api_key = getattr(settings, "REMONLINE_API_KEY", None)
-    delete_status_id = getattr(settings, "DELETE_ORDER_STATUS_ID", None)
+    Раньше ставилось «Видалити». Технически это работало, но означало не то:
+    отказ клиента и ошибочно созданная карточка выглядели в CRM одинаково, и
+    отличить одно от другого в отчётности было нельзя. «Видалити» осталось за
+    объединением заказов, где карточка действительно техническая.
 
-    if not api_key or not delete_status_id:
-        logger.warning(
-            "Cannot cancel order %s in RemOnline: REMONLINE_API_KEY or "
-            "DELETE_ORDER_STATUS_ID is not configured",
-            order.id,
-        )
-        return
-
-    try:
-        RemonlineInterface(api_key).update_order_status(
-            order_id=int(order.remonline_order_id),
-            status_id=int(delete_status_id),
-        )
-    except Exception:
-        # RemOnline недоступен — отмену в нашей БД это откатывать не должно,
-        # админ увидит расхождение и снимет заказ вручную.
-        logger.exception(
-            "Failed to move RemOnline order %s to delete status",
-            order.remonline_order_id,
-        )
+    Настройки читаем на вызове, а не на импорте: они приходят из окружения и
+    подменяются в тестах.
+    """
+    remonline_status.set_status(
+        order,
+        getattr(settings, "REMONLINE_STATUS_DROPPED", None),
+        what="«Відмова»",
+    )
 
 
 def cancel_order(
@@ -183,7 +170,7 @@ def cancel_order(
     # отмену при недоступности Monobank/RemOnline.
     transaction.on_commit(lambda: _deactivate_pending_payments(order))
     if sync_remonline:
-        transaction.on_commit(lambda: _mark_canceled_in_remonline(order))
+        transaction.on_commit(lambda: _mark_dropped_in_remonline(order))
 
     return order
 

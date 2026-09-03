@@ -6,6 +6,7 @@ from config.settings import (
     REMONLINE_API_KEY,
 )
 from core.models import CancelReason, Order, OrderEvent, OrderEventType
+from core.services import order_status
 from core.services.order_cancel import cancel_order
 from core.services.remonline.api import RemonlineInterface
 
@@ -83,10 +84,10 @@ def process_order(remonline_order: dict, local_order: Order):
 
         if ttn_details["StatusCode"] in (9, 10) and not local_order.is_completed:
             local_order.is_completed = True
-            OrderEvent.objects.create(
-                type=OrderEventType.FINISHED,
-                order=local_order,
-                details="Order marked as completed due to TTN status",
+            # Заказ вручён — закрываем и карточку в CRM. Решение приняли мы, а
+            # не RemOnline, поэтому сообщить ему об этом надо.
+            order_status.finished(
+                local_order, details="Order marked as completed due to TTN status"
             )
 
         elif ttn_details["StatusCode"] in (7,):

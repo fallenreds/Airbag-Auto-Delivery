@@ -58,7 +58,27 @@ REMONLINE_TOGETHERBUY_CUSTOM_FIELD_ID = os.getenv(
 )
 PRICE_ID_PROD = os.getenv("PRICE_ID_PROD")
 BONUS_ID = os.getenv("BONUS_ID")
-DELETE_ORDER_STATUS_ID = os.getenv("DELETE_ORDER_STATUS_ID")  # Used for merge orders
+# Статусы заказа в RemOnline. Держим идентификаторы в настройках, а не в коде:
+# они привязаны к конкретному аккаунту CRM и в тестах подменяются.
+#
+# DELETE_ORDER_STATUS_ID — историческое имя, на проде переменная уже задана.
+# Оставлено как источник значения по умолчанию для «Видалити», чтобы выкат не
+# требовал одновременной правки .env.
+DELETE_ORDER_STATUS_ID = os.getenv("DELETE_ORDER_STATUS_ID")
+
+# «Видалити» — исходные карточки после объединения заказов.
+REMONLINE_STATUS_DELETE = os.getenv("REMONLINE_STATUS_DELETE", DELETE_ORDER_STATUS_ID)
+# «Відмова» — клиент отказался от заказа. Отличается от «Видалити»: отказ
+# клиента и технический мусор не должны выглядеть в отчётности одинаково.
+REMONLINE_STATUS_DROPPED = os.getenv("REMONLINE_STATUS_DROPPED")
+# «Закрито» — заказ завершён.
+REMONLINE_STATUS_CLOSED = os.getenv("REMONLINE_STATUS_CLOSED")
+# «Новий» — обычный рабочий статус.
+REMONLINE_STATUS_NEW = os.getenv("REMONLINE_STATUS_NEW")
+# «Оплата по реквізитам» — ждём подтверждения оплаты администратором.
+REMONLINE_STATUS_BANK_TRANSFER = os.getenv("REMONLINE_STATUS_BANK_TRANSFER")
+# «Відправлений» — Новая Почта подтвердила, что посылка в пути.
+REMONLINE_STATUS_SHIPPED = os.getenv("REMONLINE_STATUS_SHIPPED")
 _CATEGORIES_WHITELIST_IDS_RAW = os.getenv("CATEGORIES_WHITELIST_IDS", "")
 CATEGORIES_WHITELIST_IDS = [
     int(t)

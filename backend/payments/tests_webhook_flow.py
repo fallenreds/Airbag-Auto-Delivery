@@ -203,7 +203,7 @@ class MonobankWebhookTests(TestCase):
             OrderEvent.objects.filter(order=self.order, type=OrderEventType.REFUNDED).exists()
         )
 
-    @patch("core.services.order_cancel._mark_canceled_in_remonline")
+    @patch("core.services.order_cancel._mark_dropped_in_remonline")
     @patch("core.services.order_cancel._deactivate_pending_payments")
     @patch("payments.mono.MonobankAPI")
     def test_reversed_without_request_cancels_order(self, api_cls, _deact, _remonline):

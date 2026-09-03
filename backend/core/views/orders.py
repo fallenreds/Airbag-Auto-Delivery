@@ -268,11 +268,8 @@ class OrderViewSet(viewsets.ModelViewSet):
                 )
 
         if not before["is_completed"] and validated_data.get("is_completed") is True:
-            OrderEvent.objects.create(
-                type=OrderEventType.FINISHED,
-                order=order,
-                details="Marked as completed by staff",
-            )
+            # Не только событие: карточка в RemOnline тоже должна закрыться.
+            order_status.finished(order, details="Marked as completed by staff")
 
     def perform_update(self, serializer):
         order = serializer.instance
