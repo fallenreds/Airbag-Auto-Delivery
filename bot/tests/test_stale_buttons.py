@@ -28,11 +28,11 @@ def cb_factory():
 class TestKnownCallbackVocabulary:
     @pytest.mark.parametrize("data", [
         "active_order", "show_all_clients", "discount_info", "to_call",
-        "no_paid", "Зв‘язок", "Статус", "edit_discount", "new_discount",
+        "Зв‘язок", "Статус", "edit_discount", "new_discount",
         "show_client_info", "cancel_abort",
         "check_order/12", "make_paid/12", "deactivate_order/12",
         "to_not_prepayment/12", "check_ttn/59001747923405",
-        "send_payment_photo/12", "merge_order/12", "delete_order/12",
+        "merge_order/12", "delete_order/12",
         "cancel_order/12", "request_cancel/12", "cancel_reason/12/changed_mind",
         "admin_cancel_order/12", "admin_cancel_reason/12/no_contact",
         "cancel_approve/12", "cancel_reject/12", "mark_refunded/12",

@@ -60,10 +60,12 @@ class PaymentCreateSerializer(serializers.Serializer):
         if order.cancel_state == Order.CancelState.CANCELED:
             raise serializers.ValidationError("Order is canceled")
 
-        # Предоплата only: postpayment orders should not go through online prepayment flow
-        if not order.prepayment:
+        # Онлайн-счёт заводится только для оплаты картой. Наложка его не
+        # требует, а оплата по реквизитам идёт мимо monobank — при этом у неё
+        # `prepayment` тоже True, поэтому смотрим на способ оплаты, а не на флаг.
+        if not order.is_online_payment:
             raise serializers.ValidationError(
-                "This order uses postpayment and cannot be paid via prepayment flow"
+                "This order is not paid by card and cannot be paid via prepayment flow"
             )
 
         self.context["order"] = order
@@ -131,9 +133,9 @@ class GooglePayWalletPaymentSerializer(serializers.Serializer):
         if order.cancel_state == Order.CancelState.CANCELED:
             raise serializers.ValidationError("Order is canceled")
 
-        if not order.prepayment:
+        if not order.is_online_payment:
             raise serializers.ValidationError(
-                "This order uses postpayment and cannot be paid via prepayment flow"
+                "This order is not paid by card and cannot be paid via prepayment flow"
             )
 
         self.context["order"] = order

@@ -57,10 +57,11 @@ def admin_order_kb(order, extra_rows=None) -> types.InlineKeyboardMarkup:
 
 def _payment_type_label(order) -> str:
     """Как назвать тип оплаты в сообщении админам."""
-    if order.get('prepayment'):
-        return "передплата"
+    # Реквизиты первыми: у них `prepayment` тоже True.
     if order.get('bank_transfer'):
         return "оплата за реквізитами"
+    if order.get('prepayment'):
+        return "передплата"
     if not (order.get('nova_post_address') or '').strip():
         return "оплата в магазині"
     return "накладений платіж"

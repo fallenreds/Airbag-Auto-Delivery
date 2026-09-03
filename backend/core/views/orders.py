@@ -10,7 +10,11 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
+from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
+
+from functools import partial
 
 from core.models import BONUS_ORDER_MARKER, CancelReason, Order, OrderEvent, OrderEventType, OrderItem
 from core.serializers import (
@@ -19,7 +23,7 @@ from core.serializers import (
     OrderItemSerializer,
     OrderSerializer,
 )
-from core.services import order_cancel, order_status
+from core.services import draft_orders, order_cancel, order_status, remonline_status
 from core.services.order_sync import sync_order_to_remonline
 from core.views.utils import get_own_queryset
 
@@ -43,6 +47,12 @@ class OrderViewSet(viewsets.ModelViewSet):
         # из ниоткуда, поэтому показываем такие записи только персоналу.
         if not IsAdminUser().has_permission(self.request, self):
             qs = qs.exclude(description=BONUS_ORDER_MARKER)
+
+        # Черновики (оплата картой до платежа) не показываем в списках никому.
+        # Получение по id оставляем открытым: на нём держится страница оплаты,
+        # ради которой черновик и существует.
+        if self.action == "list":
+            qs = draft_orders.visible(qs)
         return qs
 
     def get_permissions(self):
@@ -64,45 +74,6 @@ class OrderViewSet(viewsets.ModelViewSet):
         else:
             # For anonymous users, don't set the user field
             serializer.save()
-
-    @action(
-        detail=False,
-        methods=["get"],
-        permission_classes=[IsAdminUser],
-        url_path="unpaid-overdue",
-    )
-    def unpaid_overdue(self, request):
-        """
-        Get orders that are unpaid, not completed, have prepayment,
-        and were created more than 1 hour ago.
-        Only accessible by admin users.
-        
-        Query Parameters:
-            limit: Number of results to return per page (default: 100, max: 100)
-            offset: The initial index from which to return the results (default: 0)
-        """
-
-        one_hour_ago = timezone.now() - timezone.timedelta(hours=1)
-
-        # Отменённые исключены: напоминать об оплате заказа, который клиент
-        # уже отменил, незачем. Отмена не выставляет is_completed, поэтому под
-        # прежний фильтр такие заказы попадали.
-        queryset = (
-            Order.objects.filter(
-                is_completed=False, is_paid=False, prepayment=True, date__lt=one_hour_ago
-            )
-            .exclude(cancel_state=Order.CancelState.CANCELED)
-            .order_by("date")
-        )
-
-        # Apply pagination
-        page = self.paginate_queryset(queryset)
-        if page is not None:
-            serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
-
-        serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)
 
     @swagger_auto_schema(
         request_body=OrderCreateSerializer,
@@ -139,6 +110,43 @@ class OrderViewSet(viewsets.ModelViewSet):
         order = serializer.save()
         return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
 
+    @staticmethod
+    def _merge_refusal(source_order, target_order):
+        """
+        Причина, по которой объединять эти два заказа нельзя, или None.
+
+        Объединять разрешено только однотипные заказы: две наложки либо две
+        предоплаты, причём обе оплаченные. Иначе объединённый заказ пришлось бы
+        создавать в состоянии, которого не существует — «наполовину оплачен»,
+        — а деньги за одну из половин уже приняты.
+
+        Проверка принадлежности одному клиенту закрывает старую дыру: данные
+        нового заказа берутся из `source`, поэтому объединение заказов разных
+        людей просто теряло второго клиента.
+        """
+        if source_order.client_id != target_order.client_id:
+            return "Orders belong to different clients."
+
+        for order in (source_order, target_order):
+            if order.is_draft:
+                # Черновика для админа не существует: он его не видит и выбрать
+                # не может. Проверка на случай прямого запроса к API.
+                return f"Order {order.pk} is not placed yet."
+            if order.cancel_state == Order.CancelState.CANCELED:
+                return f"Order {order.pk} is canceled."
+            if order.is_completed:
+                return f"Order {order.pk} is already completed."
+
+        if source_order.payment_kind != target_order.payment_kind:
+            return "Orders use different payment methods."
+
+        if source_order.is_prepaid_flow and not (
+            source_order.is_paid and target_order.is_paid
+        ):
+            return "Prepaid orders can be merged only when both are paid."
+
+        return None
+
     @action(
         detail=False,
         methods=["post"],
@@ -159,6 +167,12 @@ class OrderViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        if str(source_id) == str(target_id):
+            return Response(
+                {"detail": "Cannot merge an order with itself."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         try:
             source_order = Order.objects.get(pk=source_id)
         except Order.DoesNotExist:
@@ -168,6 +182,10 @@ class OrderViewSet(viewsets.ModelViewSet):
             target_order = Order.objects.get(pk=target_id)
         except Order.DoesNotExist:
             return Response({"detail": f"Order {target_id} not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        refusal = self._merge_refusal(source_order, target_order)
+        if refusal:
+            return Response({"detail": refusal}, status=status.HTTP_400_BAD_REQUEST)
 
         source_items = list(OrderItem.objects.filter(order=source_order))
         target_items = list(OrderItem.objects.filter(order=target_order))
@@ -181,6 +199,11 @@ class OrderViewSet(viewsets.ModelViewSet):
             phone=source_order.phone,
             nova_post_address=source_order.nova_post_address,
             prepayment=source_order.prepayment,
+            # Способ оплаты у обоих заказов одинаковый — это проверено выше.
+            # Без bank_transfer объединённый заказ по реквизитам превращался в
+            # «Накладений платіж».
+            bank_transfer=source_order.bank_transfer,
+            payment_document=source_order.payment_document,
             is_paid=source_order.is_paid,
             ttn=source_order.ttn,
             description=source_order.description,
@@ -217,8 +240,26 @@ class OrderViewSet(viewsets.ModelViewSet):
         new_order.discount_total_minor = subtotal - grand_total
         new_order.save(update_fields=["subtotal_minor", "grand_total_minor", "discount_total_minor"])
 
-        source_order.delete()
-        target_order.delete()
+        # Раньше исходные заказы удалялись физически — вместе с платежами
+        # (`Payment.order` = CASCADE) и историей отмены. Теперь отменяем:
+        # `sync_remonline=False`, потому что карточкам нужен не «Відмова», а
+        # «Видалити» — они техническая замена объединённой, а не отказ клиента.
+        for order in (source_order, target_order):
+            order_cancel.cancel_order(
+                order,
+                actor=self.request.user,
+                reason=CancelReason.MERGED,
+                comment=f"Об'єднано в замовлення №{new_order.id}",
+                sync_remonline=False,
+            )
+            transaction.on_commit(
+                partial(
+                    remonline_status.set_status,
+                    order,
+                    getattr(settings, "REMONLINE_STATUS_DELETE", None),
+                    what="«Видалити»",
+                )
+            )
 
         OrderEvent.objects.create(
             type=OrderEventType.MERGED,
@@ -226,7 +267,21 @@ class OrderViewSet(viewsets.ModelViewSet):
             details=f"Merged from orders #{source_id} and #{target_id}",
         )
 
+        # Объединённый заказ должен появиться в CRM — раньше он туда не
+        # попадал вовсе, а обе исходные карточки оставались висеть открытыми.
+        transaction.on_commit(partial(self._sync_merged_order, new_order))
+
         return Response(OrderSerializer(new_order).data, status=status.HTTP_200_OK)
+
+    @staticmethod
+    def _sync_merged_order(order):
+        """Заводит объединённый заказ в RemOnline, не роняя сам merge."""
+        try:
+            sync_order_to_remonline(order)
+        except Exception:
+            logger.exception(
+                "Failed to sync merged order %s to RemOnline", order.pk
+            )
 
     @staticmethod
     def _normalized_ttn(value):
@@ -271,11 +326,8 @@ class OrderViewSet(viewsets.ModelViewSet):
                 )
 
         if not before["is_completed"] and validated_data.get("is_completed") is True:
-            OrderEvent.objects.create(
-                type=OrderEventType.FINISHED,
-                order=order,
-                details="Marked as completed by staff",
-            )
+            # Не только событие: карточка в RemOnline тоже должна закрыться.
+            order_status.finished(order, details="Marked as completed by staff")
 
     def perform_update(self, serializer):
         order = serializer.instance
@@ -307,6 +359,14 @@ class OrderViewSet(viewsets.ModelViewSet):
         self._emit_manual_status_events(order, validated_data, before)
 
         if prepayment_in_payload and current_prepayment and (not target_prepayment):
+            # Постоплата гасит и признак оплаты по реквизитам: иначе заказ
+            # остался бы «по реквізитами, але без передоплати» — состояние, в
+            # котором подпись типа оплаты и логика оплаты противоречат друг
+            # другу. Бот присылает оба флага, но полагаться на это не нужно.
+            if order.bank_transfer:
+                order.bank_transfer = False
+                order.save(update_fields=["bank_transfer"])
+
             OrderEvent.objects.create(
                 type=OrderEventType.PAYMENT_TYPE_CHANGED,
                 order=order,

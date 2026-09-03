@@ -7,14 +7,14 @@ from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
 from aiogram.utils.callback_data import CallbackData
 import api
-from updates import order_updates, get_no_paid_orders, client_updates
+from updates import order_updates, client_updates
 
 from api import (
     add_new_visitor, get_orders_by_tg_id, get_all_goods, get_discounts_info, get_discount_percentage, get_client_by_tg_id,
     get_money_spend_cur_month, post_discount, get_order_by_id, delete_order,
     get_active_orders, get_active_orders_by_telegram_id, drop_canceled, add_bonus_client_discount, get_visitors, delete_visitor,
     make_pay_order, merge_order, get_templates, create_template,
-    get_template, update_ttn, unpaid_overdue, get_order_by_ttn,
+    get_template, update_ttn, get_order_by_ttn,
     finish_order, ttn_tracking, change_to_not_prepayment, get_discount, delete_discount, get_all_clients,
     get_bank_details, update_bank_details, get_payment_mode, set_payment_mode,
     cancel_order as cancel_order_request, request_cancel_order, approve_cancel_order,
@@ -23,17 +23,17 @@ from api import (
 from aiogram import Bot, Dispatcher, executor, filters, types
 
 from buttons import (
-    get_active_orders_button, get_not_paid_along_time_button, get_edit_discount_button, get_all_clients_button,
+    get_active_orders_button, get_edit_discount_button, get_all_clients_button,
     get_make_post, get_set_props, get_props_info_button, get_deactive_order_button, get_delete_order_button,
     get_merge_order_button, get_check_ttn_button, get_to_not_prepayment_button, get_make_paid_button,
-    get_order_info_button, get_send_payment_photo_button, get_our_contact_button, get_add_month_payment_button,
+    get_order_info_button, get_our_contact_button, get_add_month_payment_button,
     get_payment_mode_button, get_set_payment_mode_button,
     get_admin_cancel_order_button, get_cancel_reasons_keyboard,
     get_mark_refunded_button, ADMIN_CANCEL_REASONS,
 )
 from config import BOT_TOKEN, WEB_URL
 from engine import manager_notes_builder, id_spliter, ttn_info_builder, send_error_log, make_order, show_order_goods
-from States import NewTTN, NewPost, NewClientDiscount, NewPaymentData, NewProps, NewTemplate, \
+from States import NewTTN, NewPost, NewClientDiscount, NewProps, NewTemplate, \
     MergeOrderState
 from handlers.client_handler import make_client
 from labels import AdminLabels
@@ -45,6 +45,8 @@ from notifications import (
     order_in_branch_notifications, deactivated_notifications, deleted_notifications,
 )
 from utils.inline import inline_paginator
+from utils.merge_rules import can_merge
+from utils.payment import is_bank_transfer, is_prepaid_flow
 from logger import logger
 from utils.cancel_rules import (
     admin_can_cancel, client_can_cancel, client_can_request_cancel,
@@ -123,7 +125,6 @@ def _build_admin_panel_markup() -> types.InlineKeyboardMarkup:
     markup_i = types.InlineKeyboardMarkup(row_width=1)
     markup_i.add(
         get_active_orders_button(),
-        get_not_paid_along_time_button(),
         get_edit_discount_button(),
         get_all_clients_button(),
         get_make_post(),
@@ -376,8 +377,12 @@ def _build_order_action_kb(order: dict) -> types.InlineKeyboardMarkup:
             types.InlineKeyboardButton("Оновити ttn", callback_data=f"add_ttn/{order['id']}"),
             get_check_ttn_button(order['ttn']),
         )
-    if order['prepayment'] and order['is_paid'] == 0:
-        kb.add(get_to_not_prepayment_button(order['id']))
+    if is_prepaid_flow(order) and order['is_paid'] == 0:
+        # Перевод в наложку осмыслен только для оплаты по реквизитам: клиент
+        # ещё не платил, и способ можно поменять. У оплаты картой такой заказ
+        # либо оплачен, либо его вовсе не существует как видимого.
+        if is_bank_transfer(order):
+            kb.add(get_to_not_prepayment_button(order['id']))
         kb.add(get_make_paid_button(order['id']))
     if is_cancel_requested(order):
         kb.add(
@@ -742,32 +747,6 @@ async def add_ttn_callback_handler(callback: types.CallbackQuery, state: FSMCont
     await NewTTN.next()
 
 
-@dp.message_handler(content_types=['text'], state=NewPaymentData.order_id)
-async def new_payment_order_id_state(message: types.Message, state: FSMContext):
-    async with state.proxy() as data:
-        data['order_id'] = message.text
-    await bot.send_message(message.chat.id, "Чудово, тепер відправте фото з оплатою замовлення")
-    await NewPaymentData.next()
-
-
-@dp.message_handler(content_types=["photo"], state=NewPaymentData.photo)
-async def new_payment_photo_state(message: types.Message, state: FSMContext):
-    async with state.proxy() as data:
-        if message.photo[0]:
-            data['photo'] = message.photo[0].file_id
-
-    data = await state.get_data()
-
-    markup_i = types.InlineKeyboardMarkup()
-    markup_i.add(get_order_info_button(data['order_id']))
-    admin_text = for_admin(
-        f"Створена оплата за замовлення №{data['order_id']}, показати його?"
-    )
-    for admin in admin_list:
-        await bot.send_photo(admin, photo=data['photo'], caption=admin_text, reply_markup=markup_i)
-    await bot.send_message(message.chat.id, "Дякую. Очікуйте повідомлення про підтвердження замовлення")
-    await state.finish()
-
 
 @dp.message_handler(content_types=['text'], state=NewClientDiscount.client_id)
 async def new_client_discount_state(message: types.Message, state: FSMContext):
@@ -994,7 +973,6 @@ async def on_startup(dp):
         types.BotCommand("admin", "Панель адміна"),
     ])
     asyncio.create_task(order_updates(bot, admin_list))
-    asyncio.create_task(get_no_paid_orders(bot, admin_list))
     asyncio.create_task(client_updates(bot, admin_list))
 
 
@@ -1056,14 +1034,14 @@ _STALE_BUTTON_TEXT = "Ця кнопка застаріла 🕗\nВідкрий�
 # доходить не должно: aiogram не закрывает callback сам, и Telegram крутит
 # «часики» на кнопке до таймаута.
 _KNOWN_CALLBACK_EXACT = frozenset({
-    "active_order", "show_all_clients", "discount_info", "to_call", "no_paid",
+    "active_order", "show_all_clients", "discount_info", "to_call",
     "Зв‘язок", "Статус", "edit_discount", "new_discount", "show_client_info",
     "cancel_abort",
 })
 
 _KNOWN_CALLBACK_FRAGMENTS = (
     "order_card/", "check_order/", "make_paid/", "deactivate_order/", "to_not_prepayment/",
-    "check_ttn/", "send_payment_photo", "merge_order", "delete_order/",
+    "check_ttn/", "merge_order", "delete_order/",
     "cancel_order/", "request_cancel/", "cancel_reason/", "admin_cancel_order/",
     "admin_cancel_reason/", "cancel_approve/", "cancel_reject/", "mark_refunded/",
     "add_ttn/", "delete_discount/", "add_client_monthpayment/",
@@ -1194,12 +1172,6 @@ async def callback_admin_panel(callback: types.CallbackQuery, state: FSMContext)
         # if "change_order_prepayment/" in callback.data:
         #     order_id = callback.data.rsplit('/')[-1]
 
-        if "send_payment_photo" in callback.data:
-            order_id = callback.data.rsplit('/')[-1]
-            await NewPaymentData.order_id.set()
-            await bot.send_message(callback.message.chat.id,
-                                   f'Будь ласка, напишіть ваш номер замовлення, за яке ви хочете відправити фото оплати. Номер цього замовлення {order_id}.\nДля відміни операції натисніть /stop')
-
         if callback.data == "to_call":
             phones_text = "\n".join(COMPANY_PHONES)
             await bot.send_message(callback.message.chat.id, text=f"Номери телефонів: \n{phones_text}")
@@ -1208,7 +1180,14 @@ async def callback_admin_panel(callback: types.CallbackQuery, state: FSMContext)
             order_id = await id_spliter(callback.data)
             order = await get_order_by_id(order_id)
             await state.set_state(MergeOrderState.target_order_id.state)
-            client_orders = list(filter(lambda order_obj: order_obj['id'] != order_id, await get_active_orders_by_telegram_id(order['telegram_id'])))
+            # Только однотипные: две наложки либо две оплаченные предоплаты.
+            # Бэкенд такую пару всё равно отклонит, но админ не должен доходить
+            # до ошибки — неподходящих заказов просто нет в списке.
+            client_orders = [
+                candidate
+                for candidate in await get_active_orders_by_telegram_id(order['telegram_id'])
+                if candidate['id'] != order_id and can_merge(order, candidate)
+            ]
             await state.update_data(source_order_id=order_id, order=order, orders=client_orders, goods=goods)
             try:
                 await bot.delete_message(callback.message.chat.id, callback.message.message_id)
@@ -1396,12 +1375,6 @@ async def callback_admin_panel(callback: types.CallbackQuery, state: FSMContext)
                 show_alert=not ok,
             )
 
-        if callback.data == "no_paid":
-            orders = await unpaid_overdue()
-            if not orders:
-                return await bot.send_message(admin_id, text="Наразі немає несплачених замовлень, з передплатою")
-            await order_list_builder(bot, orders, admin_id, goods, callback.message.message_id)
-
         if callback.data == "Зв‘язок":
             await show_info(callback)
 
@@ -1458,7 +1431,6 @@ async def callback_admin_panel(callback: types.CallbackQuery, state: FSMContext)
 
 
 async def update(_):
-    asyncio.create_task(get_no_paid_orders(bot, admin_list))
     asyncio.create_task(order_updates(bot, admin_list))
     asyncio.create_task(client_updates(bot, admin_list))
 
@@ -1504,14 +1476,6 @@ if __name__ == '__main__':
 #         delete_button = get_delete_order_button(order['id'])
 #         markup_i.add(delete_button)
 #
-#     if order["prepayment"] and not order["is_paid"]:
-#         props: dict
-#         with open('props.json', "r", encoding='utf-8') as f:
-#             props = json.load(f)
-#         text += "\n\nДля того щоб отримати реквізити натисніть на кнопку <b>Переглянути реквізити👇</b>" \
-#                 "\nПісля сплати замовлення натисніть кнопку <b>Відправити фото з оплатою</b>"
-#         markup_i.add(get_props_info_button())
-#         markup_i.add(get_send_payment_photo_button(order['id']))
 #     await bot.send_message(telegram_id, text=text, reply_markup=markup_i)
 
     

@@ -4,7 +4,7 @@ from aiogram.utils.exceptions import ChatNotFound, BotBlocked
 
 from api import get_client_by_id, get_orders_by_tg_id, get_client_by_tg_id, get_discount
 from buttons import get_cancel_order_button, get_props_info_button, \
-    get_request_cancel_button, get_send_payment_photo_button, get_check_ttn_button
+    get_request_cancel_button, get_check_ttn_button
 from config import PRICE_ID_PROD
 from utils.cancel_rules import client_can_cancel, client_can_request_cancel, is_canceled, \
     is_cancel_requested
@@ -24,13 +24,10 @@ async def make_order(bot, telegram_id, order_items, goods, order, client, messag
         text += f"<b>Номер ТТН</b>: {ttn}\n"
         markup_i.add(get_check_ttn_button(order['ttn']))
 
-    if order["prepayment"]:
-        text += '<b>Тип платежу:</b> Передплата\n'
-        if order['is_paid'] == 1:
-            text += '<b>Статус оплати:</b> Оплачено\n\n'
-        else:
-            text += '<b>Статус оплати:</b> Потребує оплати\n\n'
-    elif order.get('bank_transfer'):
+    # Реквизиты проверяем первыми: у них `prepayment` тоже True («клиент платит
+    # до отгрузки»), и при обратном порядке такой заказ подписывался бы как
+    # «Передплата».
+    if order.get('bank_transfer'):
         text += '<b>Тип платежу:</b> Оплата за реквізитами\n'
         if order['is_paid'] == 1:
             text += '<b>Статус оплати:</b> Оплачено\n\n'
@@ -38,6 +35,12 @@ async def make_order(bot, telegram_id, order_items, goods, order, client, messag
             text += '<b>Статус оплати:</b> Потребує перевірки\n\n'
         if order.get('payment_document'):
             text += f"<b>Документ про оплату:</b> {order['payment_document']}\n\n"
+    elif order["prepayment"]:
+        text += '<b>Тип платежу:</b> Передплата\n'
+        if order['is_paid'] == 1:
+            text += '<b>Статус оплати:</b> Оплачено\n\n'
+        else:
+            text += '<b>Статус оплати:</b> Потребує оплати\n\n'
     else:
         is_pickup = not order.get('nova_post_address', '').strip()
         payment_label = 'Оплата в магазині' if is_pickup else 'Накладений платіж'
@@ -71,10 +74,13 @@ async def make_order(bot, telegram_id, order_items, goods, order, client, messag
         markup_i.add(get_request_cancel_button(order['id']))
 
     if order["prepayment"] and not order["is_paid"] and not is_canceled(order):
-        text += "\n\nДля того щоб отримати реквізити натисніть на кнопку <b>Переглянути реквізити👇</b>" \
-                "\nПісля сплати замовлення натисніть кнопку <b>Відправити фото з оплатою</b>"
+        # Кнопки «Відправити фото з оплатою» здесь больше нет: бот пересылал
+        # картинку админу с подписью «Створена оплата», ничего не проверяя и
+        # никуда не сохраняя, — оплаты за ней могло и не быть. Квитанция
+        # прикрепляется на сайте при оформлении, там она обязательна и хранится
+        # в заказе, а уведомление админу шлёт бэкенд.
+        text += "\n\nДля того щоб отримати реквізити натисніть на кнопку <b>Переглянути реквізити👇</b>"
         markup_i.add(get_props_info_button())
-        markup_i.add(get_send_payment_photo_button(order['id']))
 
     if extra_kb:
         combined = types.InlineKeyboardMarkup(row_width=2)
@@ -115,10 +121,10 @@ async def manager_notes_builder(order, goods) -> dict:
     phone = f"{order['phone']}"
     address = f"{order['nova_post_address']}"
     _is_pickup = not order.get('nova_post_address', '').strip()
-    if order["prepayment"]:
-        prepayment = "Передплата"
-    elif order.get('bank_transfer'):
+    if order.get('bank_transfer'):
         prepayment = "Оплата за реквізитами"
+    elif order["prepayment"]:
+        prepayment = "Передплата"
     elif _is_pickup:
         prepayment = "Оплата в магазині"
     else:

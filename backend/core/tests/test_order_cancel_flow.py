@@ -46,7 +46,7 @@ def make_order(client, **overrides):
 
 @override_settings(
     REMONLINE_API_KEY="rem-key",
-    DELETE_ORDER_STATUS_ID="777",
+    REMONLINE_STATUS_DROPPED="778",
     MONOBANK_TOKEN_TEST="token-test",
     MONOBANK_WEBHOOK_KEY_TEST="key-test",
 )
@@ -65,7 +65,7 @@ class OrderCancelPermissionTests(TestCase):
             f"/api/v2/orders/{order.id}/cancel/", {"reason": reason}, format="json"
         )
 
-    @patch("core.services.order_cancel._mark_canceled_in_remonline")
+    @patch("core.services.order_cancel._mark_dropped_in_remonline")
     @patch("core.services.order_cancel._deactivate_pending_payments")
     def test_owner_cancels_unpaid_order(self, _deactivate, _remonline):
         order = make_order(self.owner)
@@ -115,7 +115,7 @@ class OrderCancelPermissionTests(TestCase):
         order.refresh_from_db()
         self.assertEqual(order.cancel_state, Order.CancelState.NONE)
 
-    @patch("core.services.order_cancel._mark_canceled_in_remonline")
+    @patch("core.services.order_cancel._mark_dropped_in_remonline")
     @patch("core.services.order_cancel._deactivate_pending_payments")
     def test_admin_cancels_shipped_order(self, _deactivate, _remonline):
         order = make_order(self.owner, ttn="59000000000000")
@@ -136,7 +136,7 @@ class OrderCancelPermissionTests(TestCase):
 
         self.assertEqual(resp.status_code, 400)
 
-    @patch("core.services.order_cancel._mark_canceled_in_remonline")
+    @patch("core.services.order_cancel._mark_dropped_in_remonline")
     @patch("core.services.order_cancel._deactivate_pending_payments")
     def test_second_cancel_is_rejected(self, _deactivate, _remonline):
         order = make_order(self.owner)
@@ -160,7 +160,7 @@ class OrderCancelPermissionTests(TestCase):
 
 @override_settings(
     REMONLINE_API_KEY="rem-key",
-    DELETE_ORDER_STATUS_ID="777",
+    REMONLINE_STATUS_DROPPED="778",
     MONOBANK_TOKEN_TEST="token-test",
     MONOBANK_WEBHOOK_KEY_TEST="key-test",
 )
@@ -173,7 +173,7 @@ class OrderCancelSideEffectTests(TestCase):
         self.api.force_authenticate(self.owner)
 
     @patch("payments.services.monobank.api.MonobankAPI.deactivate_invoice")
-    @patch("core.services.order_cancel.RemonlineInterface")
+    @patch("core.services.remonline_status.RemonlineInterface")
     def test_pending_invoice_is_deactivated(self, _remonline, deactivate_invoice):
         order = make_order(self.owner)
         Payment.objects.create(
@@ -200,8 +200,8 @@ class OrderCancelSideEffectTests(TestCase):
         )
 
     @patch("core.services.order_cancel._deactivate_pending_payments")
-    @patch("core.services.order_cancel.RemonlineInterface")
-    def test_synced_order_is_moved_to_delete_status(self, remonline_cls, _deactivate):
+    @patch("core.services.remonline_status.RemonlineInterface")
+    def test_synced_order_is_moved_to_dropped_status(self, remonline_cls, _deactivate):
         order = make_order(self.owner, prepayment=False, remonline_order_id=4242)
 
         with self.captureOnCommitCallbacks(execute=True):
@@ -213,11 +213,11 @@ class OrderCancelSideEffectTests(TestCase):
 
         self.assertEqual(resp.status_code, 200, resp.data)
         remonline_cls.return_value.update_order_status.assert_called_once_with(
-            order_id=4242, status_id=777
+            order_id=4242, status_id=778
         )
 
     @patch("core.services.order_cancel._deactivate_pending_payments")
-    @patch("core.services.order_cancel.RemonlineInterface")
+    @patch("core.services.remonline_status.RemonlineInterface")
     def test_remonline_failure_does_not_roll_back_cancellation(
         self, remonline_cls, _deactivate
     ):
@@ -237,7 +237,7 @@ class OrderCancelSideEffectTests(TestCase):
         self.assertEqual(order.cancel_state, Order.CancelState.CANCELED)
 
 
-@override_settings(REMONLINE_API_KEY="rem-key", DELETE_ORDER_STATUS_ID="777")
+@override_settings(REMONLINE_API_KEY="rem-key", REMONLINE_STATUS_DROPPED="778")
 class OrderEventHandlerCancelTests(TestCase):
     """
     Замовлення зникло в RemOnline.
@@ -285,7 +285,7 @@ class OrderEventHandlerCancelTests(TestCase):
 
 @override_settings(
     REMONLINE_API_KEY="rem-key",
-    DELETE_ORDER_STATUS_ID="777",
+    REMONLINE_STATUS_DROPPED="778",
     MONOBANK_TOKEN_TEST="token-test",
     MONOBANK_WEBHOOK_KEY_TEST="key-test",
 )
@@ -350,7 +350,7 @@ class OrderCancelRequestTests(TestCase):
         self.order.refresh_from_db()
         self.assertEqual(self.order.cancel_state, Order.CancelState.REQUESTED)
 
-    @patch("core.services.order_cancel._mark_canceled_in_remonline")
+    @patch("core.services.order_cancel._mark_dropped_in_remonline")
     @patch("core.services.order_cancel._deactivate_pending_payments")
     @patch("payments.services.monobank.api.MonobankAPI.cancel_invoice")
     def test_approve_refunds_and_cancels(self, cancel_invoice, _deactivate, _remonline):
@@ -368,7 +368,7 @@ class OrderCancelRequestTests(TestCase):
         self.assertEqual(self.order.cancel_state, Order.CancelState.CANCELED)
         self.assertEqual(self.order.refund_state, Order.RefundState.PENDING)
 
-    @patch("core.services.order_cancel._mark_canceled_in_remonline")
+    @patch("core.services.order_cancel._mark_dropped_in_remonline")
     @patch("core.services.order_cancel._deactivate_pending_payments")
     @patch("payments.services.monobank.api.MonobankAPI.cancel_invoice")
     def test_approve_without_monobank_payment_falls_back_to_manual(

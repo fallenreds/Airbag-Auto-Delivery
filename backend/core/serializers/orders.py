@@ -1,10 +1,13 @@
+from functools import partial
 from typing import TypedDict
 
+from django.db import transaction
 from rest_framework import serializers
 
 from core.models import Client, Good, Order, OrderEvent, OrderEventType, OrderItem
 from core.services import order_cancel
 from core.services.discount_service import DiscountService
+from core.services.draft_orders import deactivate_draft_payments
 from core.services.order_sync import get_payment_type_label, sync_order_to_remonline
 
 from .common import validate_currency, validate_nonneg_int
@@ -182,6 +185,20 @@ class OrderCreateSerializer(serializers.ModelSerializer):
             if money_spent >= discount["month_payment"]:
                 return discount
 
+    def validate(self, attrs):
+        """
+        «Предоплата» означает «клиент платит до отгрузки».
+
+        Оплата по реквизитам — тоже до отгрузки, поэтому флаг ставим и ей,
+        независимо от того, что прислал фронт. Решение принимает бэкенд:
+        способ оплаты влияет и на момент отправки в CRM, и на доступность
+        онлайн-счёта, так что выводить его из двух независимых булевых полей,
+        приходящих снаружи, не стоит.
+        """
+        if attrs.get("bank_transfer"):
+            attrs["prepayment"] = True
+        return attrs
+
     def create(self, validated_data: dict):
         user: Client = self.context["request"].user
         items_data = validated_data.pop("items")
@@ -234,23 +251,43 @@ class OrderCreateSerializer(serializers.ModelSerializer):
             ]
         )
 
-        # Заказ оформлен — об этом надо сказать обоим сторонам. Событий два, а
-        # не одно: адресаты разные, и бот шлёт их разными сообщениями. Раньше
-        # их не создавал никто, поэтому админ не видел новых заказов, а клиент
-        # не получал подтверждения — обработчики в боте просто простаивали.
-        OrderEvent.objects.create(
-            type=OrderEventType.CREATED_ADMIN_MESSAGE,
-            order=order,
-            details=f"Order created: {get_payment_type_label(order)}",
-        )
-        OrderEvent.objects.create(
-            type=OrderEventType.CREATED_CLIENT_MESSAGE,
-            order=order,
-            details="Order created",
-        )
+        if order.is_online_payment:
+            # Оплата картой: пока деньги не пришли, заказа для всех остальных
+            # не существует. Ни уведомлений, ни карточки в CRM, ни строки в
+            # списках — брошенный чекаут не должен оставлять следов, которые
+            # потом кто-то разбирает вручную. Всё это произойдёт разом, когда
+            # вебхук подтвердит оплату (`order_status.promote_draft`).
+            order.is_draft = True
+            order.save(update_fields=["is_draft"])
+        else:
+            # Заказ оформлен — об этом надо сказать обоим сторонам. Событий
+            # два, а не одно: адресаты разные, и бот шлёт их разными
+            # сообщениями. Раньше их не создавал никто, поэтому админ не видел
+            # новых заказов, а клиент не получал подтверждения — обработчики в
+            # боте просто простаивали.
+            OrderEvent.objects.create(
+                type=OrderEventType.CREATED_ADMIN_MESSAGE,
+                order=order,
+                details=f"Order created: {get_payment_type_label(order)}",
+            )
+            OrderEvent.objects.create(
+                type=OrderEventType.CREATED_CLIENT_MESSAGE,
+                order=order,
+                details="Order created",
+            )
 
-        # Postpayment syncs immediately; prepayment waits for payment success.
-        if not order.prepayment:
+            # Клиент дошёл до оформления другим способом — прежние черновики
+            # ему больше не нужны. Гасим их счета, иначе он может вернуться во
+            # вкладку монобанка и оплатить брошенный: черновик развернётся в
+            # полноценный заказ, и получится два оплаченных вместо одного.
+            transaction.on_commit(partial(deactivate_draft_payments, order))
+
+        # В CRM сразу уезжает всё, кроме оплаты картой: наложка, самовывоз и
+        # оплата по реквизитам. Онлайн-заказ ждёт подтверждения платежа —
+        # иначе брошенный чекаут оставляет в CRM карточку, за которой ничего
+        # нет. Условие смотрит на способ оплаты, а не на голый флаг: у оплаты
+        # по реквизитам `prepayment` тоже True.
+        if not order.is_online_payment:
             sync_order_to_remonline(order)
 
         return order
@@ -341,7 +378,10 @@ class OrderSerializer(serializers.ModelSerializer):
     # заказ пропадал из «Активних замовлень» у админа ещё до сборки.
     # Факт оплаты подтверждает вебхук, выполнение — RemOnline, админ или статус
     # Новой Почты; ТТН приходит из RemOnline.
-    STAFF_ONLY_FIELDS = ("is_paid", "is_completed", "ttn")
+    # `bank_transfer` здесь же: у `prepayment` проверка есть в perform_update,
+    # а способ оплаты клиент менять не должен вовсе — он влияет и на момент
+    # отправки в CRM, и на доступность онлайн-счёта.
+    STAFF_ONLY_FIELDS = ("is_paid", "is_completed", "ttn", "bank_transfer")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

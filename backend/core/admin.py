@@ -166,7 +166,9 @@ class OrderAdmin(admin.ModelAdmin):
         "name",
         "last_name",
     )
-    list_filter = ("is_paid", "is_completed", "prepayment", "remonline_sync_status")
+    # Черновики в админке видны: это единственное место, где они вообще
+    # показываются, и разбираться с зависшей оплатой больше негде.
+    list_filter = ("is_draft", "is_paid", "is_completed", "prepayment", "remonline_sync_status")
 
 
 @admin.register(OrderEvent)

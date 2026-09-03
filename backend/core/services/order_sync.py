@@ -10,10 +10,13 @@ from core.services.remonline import RemonlineInterface
 
 def get_payment_type_label(order: Order) -> str:
     """Human-readable payment type for the order (Ukrainian)."""
-    if order.prepayment:
-        return "Передоплата"
+    # Реквизиты проверяем первыми: у них `prepayment` тоже True («клиент платит
+    # до отгрузки»), и при обратном порядке такой заказ подписывался бы в CRM
+    # как «Передоплата».
     if getattr(order, "bank_transfer", False):
         return "Оплата за реквізитами"
+    if order.prepayment:
+        return "Передоплата"
     # AIRBAG-82: пустой адрес ИЛИ адрес из одних пробелов/запятых (", ") = самовывоз
     if not order.nova_post_address or not order.nova_post_address.strip(" ,"):
         return "Оплата в магазині"

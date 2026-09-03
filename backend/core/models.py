@@ -281,6 +281,7 @@ class CancelReason:
     NO_CONTACT = "no_contact"
     OUT_OF_STOCK = "out_of_stock"
     REMOVED_IN_REMONLINE = "removed_in_remonline"
+    MERGED = "merged"
 
     CLIENT_CHOICES = [
         CHANGED_MIND,
@@ -303,6 +304,7 @@ class CancelReason:
         (NO_CONTACT, "No contact with client"),
         (OUT_OF_STOCK, "Out of stock"),
         (REMOVED_IN_REMONLINE, "Removed in Remonline"),
+        (MERGED, "Merged into another order"),
     ]
 
 
@@ -374,6 +376,15 @@ class Order(models.Model):
     bank_transfer = models.BooleanField(default=False)
     payment_document = models.FileField(upload_to='payment_docs/', null=True, blank=True)
     is_paid = models.BooleanField(default=False)
+    # Черновик — заказ с оплатой картой, который ещё не оплачен. Он не виден
+    # нигде: ни в кабинете клиента, ни в списках бота, ни при выборе заказа для
+    # объединения, ни в CRM. Обычным заказом становится по вебхуку об успешной
+    # оплате.
+    #
+    # Отдельное поле, а не вычисление «предоплата и не оплачен»: заказ,
+    # оплаченный и потом отменённый, под такое вычисление снова попал бы в
+    # черновики.
+    is_draft = models.BooleanField(default=False, db_index=True)
     ttn = models.TextField(blank=True, null=True)
     is_completed = models.BooleanField(default=False)
 
@@ -419,6 +430,36 @@ class Order(models.Model):
     in_branch_datetime = models.DateTimeField(blank=True, null=True)
 
     date = models.DateTimeField(auto_now_add=True)
+
+    @property
+    def is_prepaid_flow(self) -> bool:
+        """
+        Клиент платит до отгрузки — картой онлайн или по реквизитам.
+
+        Именованное свойство, а не проверка флагов по месту: условие нужно в
+        шести местах (отправка в CRM, доступность онлайн-счёта, подписи типа
+        оплаты, кнопки в боте), и разъехавшись, оно разъедется незаметно.
+        """
+        return bool(self.prepayment or self.bank_transfer)
+
+    @property
+    def is_online_payment(self) -> bool:
+        """Оплата картой: платит до отгрузки, но не по реквизитам."""
+        return bool(self.prepayment and not self.bank_transfer)
+
+    @property
+    def payment_kind(self) -> str:
+        """
+        Способ оплаты одним значением — для сравнения двух заказов между собой.
+
+        Объединять разрешено только однотипные заказы, и «однотипность» должна
+        считаться в одном месте.
+        """
+        if self.bank_transfer:
+            return "bank_transfer"
+        if self.prepayment:
+            return "online"
+        return "postpaid"
 
     class Meta:
         indexes = [

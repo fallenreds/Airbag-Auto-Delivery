@@ -167,14 +167,22 @@ class TestClientOrderCard:
         assert "очікує підтвердження" in kwargs["text"]
         assert not any("cancel" in c for c in kb_callbacks(kwargs["reply_markup"]))
 
-    async def test_prepayment_card_offers_props_and_photo(self, bot_module, sample_client, order_factory):
+    async def test_prepayment_card_offers_props_only(self, bot_module, sample_client, order_factory):
+        """
+        Кнопки «Відправити фото з оплатою» больше нет.
+
+        Бот пересылал картинку админу с подписью «Створена оплата», ничего не
+        проверяя и никуда не сохраняя, — оплаты за ней могло и не быть.
+        Квитанция прикрепляется на сайте при оформлении.
+        """
         order = order_factory(prepayment=True, is_paid=False)
         fake = await self._render(bot_module, order, sample_client)
         kwargs = fake.send_message.await_args.kwargs
         cbs = kb_callbacks(kwargs["reply_markup"])
         assert "get_props_info" in cbs
-        assert any(c.startswith("send_payment_photo") for c in cbs)
+        assert not any(c.startswith("send_payment_photo") for c in cbs)
         assert "Переглянути реквізити" in kwargs["text"]
+        assert "фото з оплатою" not in kwargs["text"]
 
     async def test_pagination_shown_only_for_multiple_orders(self, bot_module, sample_client, order_factory):
         single = await self._render(bot_module, order_factory(), sample_client)

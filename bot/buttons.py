@@ -109,24 +109,12 @@ def get_order_info_button(order_id):
     return get_show_order_button(order_id)
 
 
-def get_send_payment_photo_button(order_id):
-    return types.InlineKeyboardButton("Відправити фото з оплатою 🖼", callback_data=f"send_payment_photo/{order_id}")
-
-
 def get_our_contact_button():
     return types.InlineKeyboardButton("Зв‘язок з нами 📞", callback_data="Зв‘язок")
 
 
-def get_to_pay_button():
-    return types.InlineKeyboardButton("Сплатити 💸", callback_data="Статус")
-
-
 def get_status_button():
     return types.InlineKeyboardButton("Статус замовлень 📦", callback_data="Статус")
-
-
-def get_no_paid_orders_button():
-    return types.InlineKeyboardButton("Так, переглянути несплачені замовлення ⏰", callback_data="no_paid")
 
 
 def get_add_month_payment_button(client_id):
@@ -147,10 +135,6 @@ def get_set_props():
 
 def get_make_paid_button(order_id):
     return types.InlineKeyboardButton("Зробити сплаченим 💸", callback_data=f"make_paid/{order_id}")
-
-
-def get_not_paid_along_time_button():
-    return types.InlineKeyboardButton("Довго не сплачували замовлення 📆", callback_data="no_paid")
 
 
 def get_edit_discount_button():

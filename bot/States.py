@@ -16,10 +16,6 @@ class NewClientDiscount(StatesGroup):
     count = State()
 
 
-class NewPaymentData(StatesGroup):
-    order_id = State()
-    photo = State()
-
 class NewProps(StatesGroup):
     set = State()
     full_name = State()

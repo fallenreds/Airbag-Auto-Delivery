@@ -418,6 +418,12 @@ class MonobankPaymentService:
         order.is_paid = True
         order.save(update_fields=["is_paid"])
 
+        # Заказ с оплатой картой до этого момента был черновиком: его не видел
+        # ни клиент, ни админ, и в CRM он не попадал. Деньги пришли — заказ
+        # становится обычным, и только теперь о нём есть смысл сообщать.
+        if order.is_draft:
+            order_status.promote_draft(order)
+
         # Последствия оплаты одни и те же, кем бы она ни была подтверждена —
         # вебхуком или админом кнопкой в боте.
         order_status.payment_confirmed(order)

@@ -250,12 +250,6 @@ class TestOrders:
         result = await api.change_to_not_prepayment(1)
         assert result["prepayment"] is False
 
-    async def test_update_no_paid_remember_count(self, mocked):
-        updated = {**ORDER, "remember_count": 1}
-        mocked.patch(f"{BASE_URL}api/v2/orders/1/", payload=updated)
-        result = await api.update_no_paid_remember_count(1, 1)
-        assert result["remember_count"] == 1
-
     async def test_update_branch_remember_count_increments(self, mocked):
         # First call: GET order (current branch_remember_count=0)
         mocked.get(f"{BASE_URL}api/v2/orders/1/", payload=ORDER)
@@ -269,14 +263,6 @@ class TestOrders:
         mocked.get(f"{BASE_URL}api/v2/orders/999/", status=404)
         result = await api.update_branch_remember_count(999)
         assert result is None
-
-    async def test_unpaid_overdue(self, mocked):
-        mocked.get(
-            f"{BASE_URL}api/v2/orders/unpaid-overdue/?limit=100&offset=0",
-            payload=paged([ORDER]),
-        )
-        result = await api.unpaid_overdue()
-        assert result == [ORDER]
 
     async def test_merge_order_success(self, mocked):
         merged = {**ORDER, "id": 99}
