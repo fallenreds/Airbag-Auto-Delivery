@@ -366,6 +366,10 @@ class Order(models.Model):
         choices=RemonlineSyncStatus.CHOICES,
         default=RemonlineSyncStatus.PENDING,
     )
+    # Сколько раз подряд не удалось записать заказ в CRM. Нужен, чтобы
+    # перестать долбиться в недоступный сервис и один раз сказать админу, что
+    # заказ туда так и не уехал.
+    remonline_sync_attempts = models.PositiveSmallIntegerField(default=0)
 
     client = models.ForeignKey(
         "Client", on_delete=models.SET_NULL, null=True, related_name="orders"
@@ -520,6 +524,7 @@ class OrderEventType:
     CANCELED = "CANCELED"
     CANCEL_REJECTED = "CANCEL_REJECTED"
     REFUNDED = "REFUNDED"
+    REMONLINE_SYNC_FAILED = "REMONLINE_SYNC_FAILED"
 
     CHOICES = [
         (MERGED, "Merged"),
@@ -536,6 +541,7 @@ class OrderEventType:
         (CANCELED, "Canceled"),
         (CANCEL_REJECTED, "Cancellation Rejected"),
         (REFUNDED, "Refunded"),
+        (REMONLINE_SYNC_FAILED, "Remonline Sync Failed"),
     ]
 
 

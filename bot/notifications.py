@@ -191,6 +191,22 @@ async def _download_payment_document(order_id, doc_url: str):
         return None, None
 
 
+async def remonline_sync_failed_notification(bot, order, admin_list):
+    """Заказ так и не уехал в CRM — дальше только руками."""
+    try:
+        await send_messages_to_admins(
+            bot, admin_list,
+            for_admin(
+                f"\u26a0\ufe0f <b>Замовлення \u2116{order['id']} не потрапило до RemOnline</b>\n"
+                f"Автоматичні спроби вичерпано. Заведіть картку вручну "
+                f"або перевірте доступність CRM."
+            ),
+            admin_order_kb(order),
+        )
+    except Exception as error:
+        await send_error_log(bot, 516842877, error)
+
+
 async def payment_doc_uploaded_notification(bot, order, admin_list):
     """Notify admins that a client uploaded a bank-transfer payment document for review.
 

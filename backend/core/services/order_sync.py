@@ -9,6 +9,11 @@ from core.services.remonline import RemonlineInterface
 
 logger = logging.getLogger(__name__)
 
+# Сколько раз крон пробует дотянуть заказ, прежде чем позвать человека.
+# Пять попыток с интервалом в пять минут — это почти полчаса: временный сбой
+# CRM за это время проходит, а постоянный уже требует вмешательства.
+MAX_SYNC_ATTEMPTS = 5
+
 
 def get_payment_type_label(order: Order) -> str:
     """Human-readable payment type for the order (Ukrainian)."""
@@ -189,10 +194,26 @@ def sync_order_to_remonline_safely(order: Order) -> bool:
         sync_order_to_remonline(order)
     except Exception:
         logger.exception("Failed to sync order %s to RemOnline", order.pk)
-        if order.remonline_sync_status != Order.RemonlineSyncStatus.FAILED:
-            order.remonline_sync_status = Order.RemonlineSyncStatus.FAILED
-            order.save(update_fields=["remonline_sync_status"])
+        order.remonline_sync_status = Order.RemonlineSyncStatus.FAILED
+        order.remonline_sync_attempts = (order.remonline_sync_attempts or 0) + 1
+        order.save(update_fields=["remonline_sync_status", "remonline_sync_attempts"])
+
+        if order.remonline_sync_attempts == MAX_SYNC_ATTEMPTS:
+            # Ровно один раз, на переходе через порог: дальше крон заказ не
+            # берёт, и без этого сообщения о нём никто бы не узнал.
+            OrderEvent.objects.create(
+                type=OrderEventType.REMONLINE_SYNC_FAILED,
+                order=order,
+                details=(
+                    f"Order did not reach RemOnline after "
+                    f"{MAX_SYNC_ATTEMPTS} attempts"
+                ),
+            )
         return False
+
+    if order.remonline_sync_attempts:
+        order.remonline_sync_attempts = 0
+        order.save(update_fields=["remonline_sync_attempts"])
 
     return True
 
@@ -213,6 +234,7 @@ def retry_failed_syncs(limit: int = 50) -> int:
             remonline_sync_status=Order.RemonlineSyncStatus.FAILED,
             remonline_order_id__isnull=True,
             is_draft=False,
+            remonline_sync_attempts__lt=MAX_SYNC_ATTEMPTS,
         )
         .exclude(cancel_state=Order.CancelState.CANCELED)
         .order_by("id")[:limit]
