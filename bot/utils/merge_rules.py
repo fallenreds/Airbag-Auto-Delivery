@@ -11,20 +11,9 @@
 правила осознанное — интерфейс обязан отсеивать неподходящее заранее, а
 последнее слово всё равно за бэкендом.
 """
+from utils.payment import is_prepaid_flow, payment_kind
 
-
-def payment_kind(order: dict) -> str:
-    """Способ оплаты одним значением — для сравнения двух заказов."""
-    if order.get("bank_transfer"):
-        return "bank_transfer"
-    if order.get("prepayment"):
-        return "online"
-    return "postpaid"
-
-
-def is_prepaid_flow(order: dict) -> bool:
-    """Клиент платит до отгрузки — картой или по реквизитам."""
-    return bool(order.get("prepayment") or order.get("bank_transfer"))
+__all__ = ["can_merge", "is_prepaid_flow", "payment_kind"]
 
 
 def can_merge(one: dict, other: dict) -> bool:

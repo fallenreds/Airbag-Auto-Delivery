@@ -46,6 +46,7 @@ from notifications import (
 )
 from utils.inline import inline_paginator
 from utils.merge_rules import can_merge
+from utils.payment import is_bank_transfer, is_prepaid_flow
 from logger import logger
 from utils.cancel_rules import (
     admin_can_cancel, client_can_cancel, client_can_request_cancel,
@@ -377,8 +378,12 @@ def _build_order_action_kb(order: dict) -> types.InlineKeyboardMarkup:
             types.InlineKeyboardButton("Оновити ttn", callback_data=f"add_ttn/{order['id']}"),
             get_check_ttn_button(order['ttn']),
         )
-    if order['prepayment'] and order['is_paid'] == 0:
-        kb.add(get_to_not_prepayment_button(order['id']))
+    if is_prepaid_flow(order) and order['is_paid'] == 0:
+        # Перевод в наложку осмыслен только для оплаты по реквизитам: клиент
+        # ещё не платил, и способ можно поменять. У оплаты картой такой заказ
+        # либо оплачен, либо его вовсе не существует как видимого.
+        if is_bank_transfer(order):
+            kb.add(get_to_not_prepayment_button(order['id']))
         kb.add(get_make_paid_button(order['id']))
     if is_cancel_requested(order):
         kb.add(

@@ -50,10 +50,22 @@ class TestOrderActionKeyboard:
         assert "Оновити ttn" in kb_texts(kb)
         assert any(c.startswith("check_ttn/") for c in kb_callbacks(kb))
 
-    def test_unpaid_prepayment_offers_switch_and_mark_paid(self, bot_module, order_factory):
-        order = order_factory(prepayment=True, is_paid=0)
+    def test_unpaid_bank_transfer_offers_switch_and_mark_paid(self, bot_module, order_factory):
+        order = order_factory(prepayment=True, bank_transfer=True, is_paid=0)
         cbs = kb_callbacks(bot_module._build_order_action_kb(order))
         assert any(c.startswith("to_not_prepayment/") for c in cbs)
+        assert any(c.startswith("make_paid/") for c in cbs)
+
+    def test_unpaid_card_order_offers_mark_paid_only(self, bot_module, order_factory):
+        """
+        Перевод в наложку осмыслен только для оплаты по реквизитам.
+
+        У оплаты картой заказ либо уже оплачен, либо его вовсе нет как
+        видимого — переключать нечего.
+        """
+        order = order_factory(prepayment=True, bank_transfer=False, is_paid=0)
+        cbs = kb_callbacks(bot_module._build_order_action_kb(order))
+        assert not any(c.startswith("to_not_prepayment/") for c in cbs)
         assert any(c.startswith("make_paid/") for c in cbs)
 
     def test_paid_order_hides_payment_actions(self, bot_module, order_factory):

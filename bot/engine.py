@@ -24,13 +24,10 @@ async def make_order(bot, telegram_id, order_items, goods, order, client, messag
         text += f"<b>Номер ТТН</b>: {ttn}\n"
         markup_i.add(get_check_ttn_button(order['ttn']))
 
-    if order["prepayment"]:
-        text += '<b>Тип платежу:</b> Передплата\n'
-        if order['is_paid'] == 1:
-            text += '<b>Статус оплати:</b> Оплачено\n\n'
-        else:
-            text += '<b>Статус оплати:</b> Потребує оплати\n\n'
-    elif order.get('bank_transfer'):
+    # Реквизиты проверяем первыми: у них `prepayment` тоже True («клиент платит
+    # до отгрузки»), и при обратном порядке такой заказ подписывался бы как
+    # «Передплата».
+    if order.get('bank_transfer'):
         text += '<b>Тип платежу:</b> Оплата за реквізитами\n'
         if order['is_paid'] == 1:
             text += '<b>Статус оплати:</b> Оплачено\n\n'
@@ -38,6 +35,12 @@ async def make_order(bot, telegram_id, order_items, goods, order, client, messag
             text += '<b>Статус оплати:</b> Потребує перевірки\n\n'
         if order.get('payment_document'):
             text += f"<b>Документ про оплату:</b> {order['payment_document']}\n\n"
+    elif order["prepayment"]:
+        text += '<b>Тип платежу:</b> Передплата\n'
+        if order['is_paid'] == 1:
+            text += '<b>Статус оплати:</b> Оплачено\n\n'
+        else:
+            text += '<b>Статус оплати:</b> Потребує оплати\n\n'
     else:
         is_pickup = not order.get('nova_post_address', '').strip()
         payment_label = 'Оплата в магазині' if is_pickup else 'Накладений платіж'
@@ -115,10 +118,10 @@ async def manager_notes_builder(order, goods) -> dict:
     phone = f"{order['phone']}"
     address = f"{order['nova_post_address']}"
     _is_pickup = not order.get('nova_post_address', '').strip()
-    if order["prepayment"]:
-        prepayment = "Передплата"
-    elif order.get('bank_transfer'):
+    if order.get('bank_transfer'):
         prepayment = "Оплата за реквізитами"
+    elif order["prepayment"]:
+        prepayment = "Передплата"
     elif _is_pickup:
         prepayment = "Оплата в магазині"
     else:

@@ -182,6 +182,20 @@ class OrderCreateSerializer(serializers.ModelSerializer):
             if money_spent >= discount["month_payment"]:
                 return discount
 
+    def validate(self, attrs):
+        """
+        «Предоплата» означает «клиент платит до отгрузки».
+
+        Оплата по реквизитам — тоже до отгрузки, поэтому флаг ставим и ей,
+        независимо от того, что прислал фронт. Решение принимает бэкенд:
+        способ оплаты влияет и на момент отправки в CRM, и на доступность
+        онлайн-счёта, так что выводить его из двух независимых булевых полей,
+        приходящих снаружи, не стоит.
+        """
+        if attrs.get("bank_transfer"):
+            attrs["prepayment"] = True
+        return attrs
+
     def create(self, validated_data: dict):
         user: Client = self.context["request"].user
         items_data = validated_data.pop("items")
@@ -249,8 +263,12 @@ class OrderCreateSerializer(serializers.ModelSerializer):
             details="Order created",
         )
 
-        # Postpayment syncs immediately; prepayment waits for payment success.
-        if not order.prepayment:
+        # В CRM сразу уезжает всё, кроме оплаты картой: наложка, самовывоз и
+        # оплата по реквизитам. Онлайн-заказ ждёт подтверждения платежа —
+        # иначе брошенный чекаут оставляет в CRM карточку, за которой ничего
+        # нет. Условие смотрит на способ оплаты, а не на голый флаг: у оплаты
+        # по реквизитам `prepayment` тоже True.
+        if not order.is_online_payment:
             sync_order_to_remonline(order)
 
         return order
@@ -341,7 +359,10 @@ class OrderSerializer(serializers.ModelSerializer):
     # заказ пропадал из «Активних замовлень» у админа ещё до сборки.
     # Факт оплаты подтверждает вебхук, выполнение — RemOnline, админ или статус
     # Новой Почты; ТТН приходит из RemOnline.
-    STAFF_ONLY_FIELDS = ("is_paid", "is_completed", "ttn")
+    # `bank_transfer` здесь же: у `prepayment` проверка есть в perform_update,
+    # а способ оплаты клиент менять не должен вовсе — он влияет и на момент
+    # отправки в CRM, и на доступность онлайн-счёта.
+    STAFF_ONLY_FIELDS = ("is_paid", "is_completed", "ttn", "bank_transfer")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

@@ -385,6 +385,14 @@ class OrderViewSet(viewsets.ModelViewSet):
         self._emit_manual_status_events(order, validated_data, before)
 
         if prepayment_in_payload and current_prepayment and (not target_prepayment):
+            # Постоплата гасит и признак оплаты по реквизитам: иначе заказ
+            # остался бы «по реквізитами, але без передоплати» — состояние, в
+            # котором подпись типа оплаты и логика оплаты противоречат друг
+            # другу. Бот присылает оба флага, но полагаться на это не нужно.
+            if order.bank_transfer:
+                order.bank_transfer = False
+                order.save(update_fields=["bank_transfer"])
+
             OrderEvent.objects.create(
                 type=OrderEventType.PAYMENT_TYPE_CHANGED,
                 order=order,
