@@ -167,14 +167,22 @@ class TestClientOrderCard:
         assert "очікує підтвердження" in kwargs["text"]
         assert not any("cancel" in c for c in kb_callbacks(kwargs["reply_markup"]))
 
-    async def test_prepayment_card_offers_props_and_photo(self, bot_module, sample_client, order_factory):
+    async def test_prepayment_card_offers_props_only(self, bot_module, sample_client, order_factory):
+        """
+        Кнопки «Відправити фото з оплатою» больше нет.
+
+        Бот пересылал картинку админу с подписью «Створена оплата», ничего не
+        проверяя и никуда не сохраняя, — оплаты за ней могло и не быть.
+        Квитанция прикрепляется на сайте при оформлении.
+        """
         order = order_factory(prepayment=True, is_paid=False)
         fake = await self._render(bot_module, order, sample_client)
         kwargs = fake.send_message.await_args.kwargs
         cbs = kb_callbacks(kwargs["reply_markup"])
         assert "get_props_info" in cbs
-        assert any(c.startswith("send_payment_photo") for c in cbs)
+        assert not any(c.startswith("send_payment_photo") for c in cbs)
         assert "Переглянути реквізити" in kwargs["text"]
+        assert "фото з оплатою" not in kwargs["text"]
 
     async def test_pagination_shown_only_for_multiple_orders(self, bot_module, sample_client, order_factory):
         single = await self._render(bot_module, order_factory(), sample_client)
@@ -375,8 +383,6 @@ class TestCancelTexts:
         assert expected in bot_module._cancel_block_text(order)
 
     @pytest.mark.parametrize("refund_state,expected", [
-        ("done", "Кошти повернуто 💵"),
-        ("manual", "Кошти повернуто 💵"),
         ("pending", "в обробці"),
         ("", ""),
         (None, ""),
@@ -385,3 +391,16 @@ class TestCancelTexts:
         """Приписка про возврат переехала в уведомление вместе с рассылкой."""
         import notifications
         assert expected in notifications._refund_suffix({"refund_state": refund_state})
+
+    @pytest.mark.parametrize("refund_state", ["done", "manual"])
+    def test_completed_refund_is_not_announced_with_cancellation(self, refund_state):
+        """
+        Про состоявшийся возврат в сообщении об отмене молчим.
+
+        Деньги возвращаются не мгновенно и не всегда автоматически, а
+        «Кошти повернуто 💵» в ту же секунду, что и «замовлення скасовано»,
+        читается как обещание, которого никто не давал. Когда возврат
+        действительно пройдёт, клиент получит отдельное сообщение.
+        """
+        import notifications
+        assert notifications._refund_suffix({"refund_state": refund_state}) == ""

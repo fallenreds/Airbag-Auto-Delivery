@@ -1,12 +1,25 @@
 import json
+import logging
 import os
+import time
 from typing import List, Optional
 
 import requests
 from requests import HTTPError
 
+logger = logging.getLogger(__name__)
+
 
 class RemonlineInterface:
+    # Сколько ждать ответа. Без таймаута зависший коннект держит воркер
+    # gunicorn бесконечно, а вызов идёт внутри запроса клиента.
+    TIMEOUT = 15
+
+    # Паузы между повторами временных сбоев. Дольше ждать нельзя — на том
+    # конце человек ждёт ответа на «Оформити замовлення».
+    RETRY_DELAYS = (1, 2, 4)
+    RETRY_STATUSES = (502, 503, 504)
+
     def __init__(self, api_key: str):
         """Инициализация API клиента Remonline"""
         self.api_key = api_key
@@ -20,42 +33,96 @@ class RemonlineInterface:
     def get_user_token(self) -> str:
         """Получает токен по API ключу"""
         response = requests.post(
-            url=self._url_builder("token/new"), data={"api_key": self.api_key}
+            url=self._url_builder("token/new"),
+            data={"api_key": self.api_key},
+            timeout=self.TIMEOUT,
         )
         response.raise_for_status()
 
         return response.json()["token"]
 
-    def _refresh_token_and_retry(self, method, url: str, **kwargs) -> requests.Response:
-        """Обновляет токен и повторяет запрос"""
-        self.token = self.get_user_token()
-        response = method(url, **kwargs)
-        response.raise_for_status()
-        return response
+    def _with_fresh_token(self, payload):
+        """
+        Подставляет в запрос актуальный токен.
+
+        Токен RemOnline едет не в заголовке, а прямо в параметрах запроса.
+        Прежний повтор по 401 обновлял `self.token`, но отправлял те же самые
+        params/data — то есть со старым токеном, — и гарантированно получал
+        второй 401, который уже летел наружу. Ровно это видно в логе 03.09.2026
+        на `warehouse/goods`.
+        """
+        if payload is None:
+            return None
+        if isinstance(payload, dict):
+            updated = dict(payload)
+            updated["token"] = self.token
+            return updated
+        # POST собирает данные списком пар, чтобы получилось ids=1&ids=2
+        return [
+            (key, self.token) if key == "token" else (key, value)
+            for key, value in payload
+        ]
+
+    def _request(self, method, url: str, *, params=None, data=None) -> requests.Response:
+        """
+        Запрос к RemOnline с обновлением токена и повтором временных сбоев.
+
+        Повторяем 502/503/504 и сетевые ошибки: у `api.remonline.app` они
+        случаются регулярно, а вызов происходит внутри пользовательского
+        запроса на создание заказа — падать из-за чужой пятисотки нельзя.
+        Паузы короткие по той же причине: клиент ждёт ответ.
+
+        401/403 — отдельный случай: это не сбой, а протухший токен. Обновляем
+        его один раз и сразу повторяем, без паузы.
+        """
+        token_refreshed = False
+        last_error: Optional[Exception] = None
+
+        for attempt in range(len(self.RETRY_DELAYS) + 1):
+            try:
+                response = method(
+                    url,
+                    params=self._with_fresh_token(params) if params is not None else None,
+                    data=self._with_fresh_token(data) if data is not None else None,
+                    timeout=self.TIMEOUT,
+                )
+            except requests.RequestException as exc:
+                # Сеть не ответила — это тот же временный сбой.
+                last_error = exc
+                if attempt < len(self.RETRY_DELAYS):
+                    time.sleep(self.RETRY_DELAYS[attempt])
+                    continue
+                raise
+
+            if 200 <= response.status_code < 300:
+                return response
+
+            if response.status_code in (401, 403) and not token_refreshed:
+                self.token = self.get_user_token()
+                token_refreshed = True
+                continue
+
+            if response.status_code in self.RETRY_STATUSES and attempt < len(self.RETRY_DELAYS):
+                logger.warning(
+                    "RemOnline answered %s on %s, retrying in %ss",
+                    response.status_code, url, self.RETRY_DELAYS[attempt],
+                )
+                time.sleep(self.RETRY_DELAYS[attempt])
+                continue
+
+            response.raise_for_status()
+            return response
+
+        # Сюда попадаем, только исчерпав повторы по сетевой ошибке.
+        raise last_error  # pragma: no cover
 
     def get(self, url: str, params: Optional[dict] = None) -> requests.Response:
-        """GET-запрос с возможностью обновления токена"""
-        response = requests.get(url, params=params)
-        if 200 <= response.status_code < 300:
-            return response
-
-        if response.status_code in (401, 403):
-            return self._refresh_token_and_retry(requests.get, url, params=params)
-
-        response.raise_for_status()
-        return response
+        """GET-запрос с обновлением токена и повтором временных сбоев."""
+        return self._request(requests.get, url, params=params if params is not None else {})
 
     def post(self, url: str, data: Optional[dict] = None) -> requests.Response:
-        """POST-запрос с возможностью обновления токена"""
-        response = requests.post(url, data=data)
-        if 200 <= response.status_code < 300:
-            return response
-
-        if response.status_code in (401, 403):
-            return self._refresh_token_and_retry(requests.post, url, data=data)
-
-        response.raise_for_status()
-        return response
+        """POST-запрос с обновлением токена и повтором временных сбоев."""
+        return self._request(requests.post, url, data=data if data is not None else {})
 
     def get_objects(
         self, api_path: str, accepted_params_path: Optional[str] = None, **kwargs

@@ -22,7 +22,7 @@ class PaymentConfirmationFlowTests(TestCase):
         self.client_user.set_password("pass")
         self.client_user.save()
 
-    @patch("core.services.order_status.sync_order_to_remonline")
+    @patch("core.services.order_status.sync_order_to_remonline_safely")
     def test_mark_order_paid_triggers_sync_for_prepayment(self, sync_mock):
         order = Order.objects.create(
             client=self.client_user,
@@ -52,7 +52,7 @@ class PaymentConfirmationFlowTests(TestCase):
             ).exists()
         )
 
-    @patch("core.services.order_status.sync_order_to_remonline")
+    @patch("core.services.order_status.sync_order_to_remonline_safely")
     def test_mark_order_paid_does_not_trigger_sync_for_postpayment(self, sync_mock):
         order = Order.objects.create(
             client=self.client_user,

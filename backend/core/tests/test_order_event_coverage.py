@@ -81,7 +81,10 @@ class OrderCreationEventsTests(TestCase):
         )
 
     def test_new_order_notifies_both_admin_and_client(self):
-        response = self.api.post("/api/v2/orders/", self.payload(), format="json", **HOST)
+        with patch("core.serializers.orders.sync_order_to_remonline_safely"):
+            response = self.api.post(
+                "/api/v2/orders/", self.payload(bank_transfer=True), format="json", **HOST
+            )
 
         self.assertEqual(response.status_code, 201)
         self.assertEqual(
@@ -91,16 +94,32 @@ class OrderCreationEventsTests(TestCase):
 
     def test_admin_event_carries_the_payment_type(self):
         """Из details админ должен понимать, чего ждать от заказа."""
-        response = self.api.post("/api/v2/orders/", self.payload(), format="json", **HOST)
+        with patch("core.serializers.orders.sync_order_to_remonline_safely"):
+            response = self.api.post(
+                "/api/v2/orders/", self.payload(bank_transfer=True), format="json", **HOST
+            )
 
         event = OrderEvent.objects.get(
             order_id=response.data["id"], type=OrderEventType.CREATED_ADMIN_MESSAGE
         )
         self.assertIn("Order created:", event.details)
 
+    def test_card_order_is_silent_until_paid(self):
+        """
+        Заказ с оплатой картой — черновик: до платежа его нет ни для кого.
+
+        Раньше брошенный чекаут поднимал админа сообщением «нове замовлення» и
+        оставлял в списках заказ, за которым ничего нет.
+        """
+        response = self.api.post("/api/v2/orders/", self.payload(), format="json", **HOST)
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(Order.objects.get(pk=response.data["id"]).is_draft)
+        self.assertEqual(self.types_for(response.data["id"]), [])
+
     def test_postpayment_order_also_reports_remonline(self):
         """Постоплатный заказ уезжает в RemOnline сразу — об этом отдельное событие."""
-        with patch("core.serializers.orders.sync_order_to_remonline") as sync:
+        with patch("core.serializers.orders.sync_order_to_remonline_safely") as sync:
             response = self.api.post(
                 "/api/v2/orders/", self.payload(prepayment=False), format="json", **HOST
             )
@@ -119,7 +138,10 @@ class OrderCreationEventsTests(TestCase):
         Бот шлёт сообщения в том порядке, в каком получил события: «замовлення
         оформлено» обязано прийти раньше «оплату підтверджено».
         """
-        response = self.api.post("/api/v2/orders/", self.payload(), format="json", **HOST)
+        with patch("core.serializers.orders.sync_order_to_remonline_safely"):
+            response = self.api.post(
+                "/api/v2/orders/", self.payload(bank_transfer=True), format="json", **HOST
+            )
         order = Order.objects.get(pk=response.data["id"])
         OrderEvent.objects.create(type=OrderEventType.PAYMENT_CONFIRMED, order=order)
 

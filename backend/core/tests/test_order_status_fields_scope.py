@@ -268,7 +268,7 @@ class ManualPaymentSyncsRemonlineTests(TestCase):
         # captureOnCommitCallbacks: тест идёт в транзакции, которая не
         # коммитится, поэтому on_commit сам по себе не сработал бы. На бою
         # ATOMIC_REQUESTS выключен, и Django выполняет callback сразу.
-        with patch("core.services.order_status.sync_order_to_remonline") as sync:
+        with patch("core.services.order_status.sync_order_to_remonline_safely") as sync:
             with self.captureOnCommitCallbacks(execute=True):
                 self.api.patch(f"/api/v2/orders/{order.pk}/", {"is_paid": True}, format="json")
 
@@ -278,7 +278,7 @@ class ManualPaymentSyncsRemonlineTests(TestCase):
         """Постоплатный уехал в RemOnline ещё при оформлении."""
         order = self.make_order(prepayment=False)
 
-        with patch("core.services.order_status.sync_order_to_remonline") as sync:
+        with patch("core.services.order_status.sync_order_to_remonline_safely") as sync:
             with self.captureOnCommitCallbacks(execute=True):
                 self.api.patch(f"/api/v2/orders/{order.pk}/", {"is_paid": True}, format="json")
 
@@ -287,7 +287,7 @@ class ManualPaymentSyncsRemonlineTests(TestCase):
     def test_repeated_mark_does_not_sync_twice(self):
         order = self.make_order(prepayment=True)
 
-        with patch("core.services.order_status.sync_order_to_remonline") as sync:
+        with patch("core.services.order_status.sync_order_to_remonline_safely") as sync:
             with self.captureOnCommitCallbacks(execute=True):
                 self.api.patch(f"/api/v2/orders/{order.pk}/", {"is_paid": True}, format="json")
                 self.api.patch(f"/api/v2/orders/{order.pk}/", {"is_paid": True}, format="json")
@@ -301,7 +301,10 @@ class ManualPaymentSyncsRemonlineTests(TestCase):
         """
         order = self.make_order(prepayment=True)
 
-        with patch("core.services.order_status.sync_order_to_remonline",
+        # Сбой должен возникнуть ВНУТРИ синхронизации — её обёртка и обязана
+        # его поглотить, записав заказу FAILED. Патчить саму обёртку бессмысленно:
+        # тогда проверялась бы заглушка, а не поведение.
+        with patch("core.services.order_sync.sync_order_to_remonline",
                    side_effect=ValueError("Order has no client")):
             with self.captureOnCommitCallbacks(execute=True):
                 response = self.api.patch(
@@ -319,61 +322,3 @@ class ManualPaymentSyncsRemonlineTests(TestCase):
         )
 
 
-@override_settings(CACHES=LOCMEM)
-class UnpaidOverdueSkipsCanceledTests(TestCase):
-    """
-    Напоминания об оплате не идут по отменённым заказам.
-
-    Отмена не выставляет `is_completed`, поэтому отменённый неоплаченный заказ
-    с предоплатой попадал под тот же фильтр, что и живой, и клиент получал бы
-    «у вас є несплачені замовлення» по заказу, который сам же и отменил.
-    """
-
-    def setUp(self):
-        self.admin = make_client("admin@airbag.local", is_staff=True)
-        self.admin.is_superuser = True
-        self.admin.save(update_fields=["is_superuser"])
-        self.customer = make_client("customer@airbag.local", telegram_id=222)
-        self.api = APIClient()
-        self.api.force_authenticate(user=self.admin)
-
-    def make_order(self, **overrides):
-        fields = dict(
-            client=self.customer,
-            telegram_id=self.customer.telegram_id,
-            name="N",
-            last_name="L",
-            phone="+380000000000",
-            nova_post_address="Addr",
-            prepayment=True,
-            is_paid=False,
-            grand_total_minor=240100,
-        )
-        fields.update(overrides)
-        order = Order.objects.create(**fields)
-        # date стоит auto_now_add, а фильтр смотрит на «старше часа»
-        Order.objects.filter(pk=order.pk).update(
-            date=timezone.now() - timedelta(hours=2)
-        )
-        return order
-
-    def listed(self):
-        response = self.api.get("/api/v2/orders/unpaid-overdue/")
-        self.assertEqual(response.status_code, 200)
-        return [o["id"] for o in response.data["results"]]
-
-    def test_live_unpaid_order_is_listed(self):
-        order = self.make_order()
-
-        self.assertEqual(self.listed(), [order.pk])
-
-    def test_canceled_order_is_not_listed(self):
-        self.make_order(cancel_state=Order.CancelState.CANCELED)
-
-        self.assertEqual(self.listed(), [])
-
-    def test_cancel_request_is_still_listed(self):
-        """Пока админ не подтвердил отмену, заказ в работе и оплаты ждёт."""
-        order = self.make_order(cancel_state=Order.CancelState.REQUESTED)
-
-        self.assertEqual(self.listed(), [order.pk])

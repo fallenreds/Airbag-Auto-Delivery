@@ -6,6 +6,7 @@ from config.settings import (
     REMONLINE_API_KEY,
 )
 from core.models import CancelReason, Order, OrderEvent, OrderEventType
+from core.services import order_status, remonline_notes
 from core.services.order_cancel import cancel_order
 from core.services.remonline.api import RemonlineInterface
 
@@ -14,9 +15,11 @@ logger = logging.getLogger(__name__)
 
 def order_event_handler():
     # Get active orders with valid remonline_order_id
+    # Черновики сюда не попадают и по `remonline_order_id`: их в CRM нет.
+    # Условие всё равно указано явно — чтобы связь была видна на месте.
     active_local_orders = list(
         Order.objects.filter(
-            is_completed=False, remonline_order_id__isnull=False
+            is_completed=False, is_draft=False, remonline_order_id__isnull=False
         ).exclude(cancel_state=Order.CancelState.CANCELED)
     )
     if not active_local_orders:
@@ -81,15 +84,37 @@ def process_order(remonline_order: dict, local_order: Order):
         except Exception:
             return local_order.save()
 
-        if ttn_details["StatusCode"] in (9, 10) and not local_order.is_completed:
+        # Правило 7: посылка уже не у нас — карточка должна это показывать.
+        if is_shipped(ttn_details["StatusCode"]):
+            mark_shipped_in_remonline(local_order)
+
+        if ttn_details["StatusCode"] in DELIVERED_STATUS_CODES and not local_order.is_completed:
+            if not local_order.is_paid:
+                # Посылка вручена — значит деньги получены. Для наложенного
+                # платежа это единственный момент, когда такое известно: до
+                # вручения клиент ничего не платил, и пометить заказ
+                # оплаченным раньше означало бы отобрать у него право
+                # отменить заказ самому.
+                #
+                # События PAYMENT_CONFIRMED при этом не создаём: оно шлёт
+                # клиенту «беремо замовлення в роботу», а заказ уже у него на
+                # руках. Заметки в CRM обновляем до закрытия карточки — после
+                # него RemOnline менять её уже не даёт.
+                local_order.is_paid = True
+                local_order.save(update_fields=["is_paid"])
+                remonline_notes.refresh_manager_notes(local_order)
+
             local_order.is_completed = True
-            OrderEvent.objects.create(
-                type=OrderEventType.FINISHED,
-                order=local_order,
-                details="Order marked as completed due to TTN status",
+            # Заказ вручён — закрываем и карточку в CRM. Решение приняли мы, а
+            # не RemOnline, поэтому сообщить ему об этом надо.
+            order_status.finished(
+                local_order, details="Order marked as completed due to TTN status"
             )
 
-        elif ttn_details["StatusCode"] in (7,):
+        else:
+            announce_delivery_problem(local_order, ttn_details["StatusCode"])
+
+        if ttn_details["StatusCode"] in IN_BRANCH_STATUS_CODES:
             if local_order.branch_remember_count == 0 or (
                 local_order.branch_remember_count == 1
                 and one_day_difference(local_order)
@@ -103,6 +128,101 @@ def process_order(remonline_order: dict, local_order: Order):
                 local_order.branch_remember_count += 1
 
     return local_order.save()
+
+
+# Коды Новой Почты, при которых посылка ещё у нас. Перечисляем именно их, а не
+# наоборот: список «в пути» у НП длинный и растёт, и белый список молча
+# пропускал бы новые. Так, из первой версии выпали 41 (доставка в пределах
+# города — для Одессы основной случай) и 101 (курьер везёт получателю).
+#
+#   1  — відправник створив накладну, але ще не передав
+#   2  — видалено
+#   3  — номер не знайдено
+#   12 — Нова пошта комплектує відправлення
+NOT_SHIPPED_STATUS_CODES = (1, 2, 3, 12)
+
+# Вручено. Код 11 — «грошовий переказ видано одержувачу», то есть наложенный
+# платёж: без него такой заказ не закрывался вовсе.
+#   9   — відправлення отримано
+#   10  — отримано, переказ надійде до каси
+#   11  — отримано, переказ видано одержувачу
+#   106 — одержано і створено ЕН зворотної доставки
+DELIVERED_STATUS_CODES = (9, 10, 11, 106)
+
+
+def is_shipped(status_code) -> bool:
+    """Посылка передана Новой Почте и больше не у нас."""
+    return status_code not in NOT_SHIPPED_STATUS_CODES
+
+
+def mark_shipped_in_remonline(order: Order) -> None:
+    """
+    Переводит карточку в «Відправлений», не перебивая работу менеджера.
+
+    Двигаем только вперёд: из статусов «до отправки». Если заказ уже закрыт,
+    отменён или менеджер сам увёл его дальше — не трогаем.
+    """
+    from django.conf import settings
+
+    from core.services import remonline_status
+
+    remonline_status.set_status(
+        order,
+        getattr(settings, "REMONLINE_STATUS_SHIPPED", None),
+        only_from=getattr(settings, "REMONLINE_STATUSES_BEFORE_SHIPPING", []),
+        what="«Відправлений»",
+    )
+
+
+
+# Прибыла и ждёт клиента. Код 8 — почтомат: напоминание нужно и там, раньше оно
+# уходило только по отделениям.
+#   7 — прибув на відділення
+#   8 — прибув на відділення (завантажено в Поштомат)
+IN_BRANCH_STATUS_CODES = (7, 8)
+
+# Что пошло не так с доставкой. Ключ — код Новой Почты, значение — событие.
+#   102 — відмова від отримання (відправник створив замовлення на повернення)
+#   103 — відмова від отримання
+#   105 — припинено зберігання
+#   111 — невдала спроба доставки (не застали одержувача)
+#   124 — знищено внаслідок ворожої атаки
+DELIVERY_PROBLEM_EVENTS = {
+    102: OrderEventType.DELIVERY_RETURNED,
+    103: OrderEventType.DELIVERY_RETURNED,
+    105: OrderEventType.DELIVERY_RETURNED,
+    111: OrderEventType.DELIVERY_FAILED,
+    124: OrderEventType.PARCEL_DESTROYED,
+}
+
+
+def announce_delivery_problem(order: Order, status_code) -> bool:
+    """
+    Сообщает о неудачной доставке — один раз на каждый новый код.
+
+    Статус у Новой Почты висит сутками, а крон опрашивает накладную раз в
+    минуту: без отметки о том, что уже сообщили, «клієнт не забрав» уходило бы
+    каждую минуту и админу, и клиенту.
+
+    Сам заказ не трогаем: отменять его или ждать — решает человек. Наше дело
+    сказать, что посылка не дошла, иначе об этом не узнает никто и заказ
+    навсегда останется «відправленим».
+    """
+    event_type = DELIVERY_PROBLEM_EVENTS.get(status_code)
+    if event_type is None or order.np_notified_status == status_code:
+        return False
+
+    OrderEvent.objects.create(
+        type=event_type,
+        order=order,
+        details=f"Nova Poshta status {status_code}",
+    )
+    order.np_notified_status = status_code
+    order.save(update_fields=["np_notified_status"])
+    logger.info(
+        "Order %s: delivery problem, Nova Poshta status %s", order.pk, status_code
+    )
+    return True
 
 
 def get_ttn_details(documents: list) -> dict:

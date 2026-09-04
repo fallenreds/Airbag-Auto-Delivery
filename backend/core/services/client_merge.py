@@ -102,3 +102,65 @@ def merge_clients(source, target):
     logger.info("Merged client %s into %s", source.pk, target.pk)
     source.delete()
     return target
+
+
+def absorb_guest(guest, target):
+    """
+    Вливает пустого Telegram-гостя в существующую запись того же человека.
+
+    Отличается от `merge_clients` направлением переносимого: там переезжает
+    вход (почта и пароль нового аккаунта), здесь — `telegram_id` гостя. Гость
+    входа не имеет вовсе: Telegram в `init_data` ни почты, ни телефона не
+    передаёт, поэтому запись создаётся пустой. Трогать почту и пароль цели
+    нельзя — это рабочий вход живого клиента.
+
+    Опознаём одного человека по телефону: он в системе уникален
+    (`Client.phone` — `unique=True`), и другого признака у Telegram-гостя нет.
+
+    Возвращает `target`.
+    """
+    if guest.pk == target.pk:
+        return target
+
+    Order.objects.filter(client=guest).update(client=target)
+    Order.objects.filter(canceled_by=guest).update(canceled_by=target)
+    ClientEvent.objects.filter(client=guest).update(client=target)
+    _move_cart(guest, target)
+
+    updated = []
+    if guest.telegram_id and not target.telegram_id:
+        target.telegram_id = guest.telegram_id
+        updated.append("telegram_id")
+    elif guest.telegram_id and target.telegram_id != guest.telegram_id:
+        # У цели свой Telegram — перетирать его нельзя, это чужая привязка.
+        # Но тогда telegram_id гостя после удаления не закреплён ни за кем, и
+        # следующий вход из мини-аппа создаст новую пустую запись. Случай
+        # редкий (два Telegram-аккаунта на один телефон или ошибка в номере),
+        # но молча он выглядит как «слияние не помогло».
+        logger.warning(
+            "Guest %s had telegram_id %s, but target %s already has %s — "
+            "the guest's Telegram will create a fresh record on next login",
+            guest.pk, guest.telegram_id, target.pk, target.telegram_id,
+        )
+
+    for field in OPTIONAL_FIELDS:
+        incoming = getattr(guest, field, None)
+        if incoming and not getattr(target, field, None):
+            setattr(target, field, incoming)
+            updated.append(field)
+
+    if guest.id_remonline and not target.id_remonline:
+        target.id_remonline = guest.id_remonline
+        updated.append("id_remonline")
+
+    # Уникальные поля освобождаем до сохранения цели: иначе UNIQUE сработает
+    # на ещё живой записи-источнике.
+    Client.objects.filter(pk=guest.pk).update(
+        email=None, phone=None, login=None, telegram_id=None
+    )
+    if updated:
+        target.save(update_fields=updated)
+
+    logger.info("Absorbed guest client %s into %s", guest.pk, target.pk)
+    guest.delete()
+    return target

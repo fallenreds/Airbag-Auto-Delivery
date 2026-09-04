@@ -57,10 +57,11 @@ def admin_order_kb(order, extra_rows=None) -> types.InlineKeyboardMarkup:
 
 def _payment_type_label(order) -> str:
     """Как назвать тип оплаты в сообщении админам."""
-    if order.get('prepayment'):
-        return "передплата"
+    # Реквизиты первыми: у них `prepayment` тоже True.
     if order.get('bank_transfer'):
         return "оплата за реквізитами"
+    if order.get('prepayment'):
+        return "передплата"
     if not (order.get('nova_post_address') or '').strip():
         return "оплата в магазині"
     return "накладений платіж"
@@ -169,15 +170,16 @@ async def cancel_rejected_notification(bot, order, details: str | None, admin_li
 IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.heic', '.heif'}
 
 
-async def _download_payment_document(doc_url: str):
+async def _download_payment_document(order_id, doc_url: str):
     """Download the payment document from backend. Returns (bytes, filename) or (None, None)."""
     if not doc_url:
         return None, None
-    # payment_document arrives as absolute URL (e.g. http://localhost:8000/media/...),
-    # but the bot must reach the backend via its own base_url (http://backend:8000/).
+    # Имя файла берём из ссылки, а сам файл качаем через API: Django при
+    # DEBUG=False не раздаёт /media/, и запрос по прямой ссылке возвращал 404 —
+    # админ получал уведомление об оплате без картинки.
     path = urlparse(doc_url).path  # /media/payment_docs/xxx.png
     filename = os.path.basename(path) or "payment_document"
-    fetch_url = f"{config.BASE_URL.rstrip('/')}/{path.lstrip('/')}"
+    fetch_url = f"{config.BASE_URL.rstrip('/')}/api/v2/orders/{order_id}/payment-doc/"
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(fetch_url, headers=headers) as resp:
@@ -187,6 +189,98 @@ async def _download_payment_document(doc_url: str):
                 return data, filename
     except Exception:
         return None, None
+
+
+async def remonline_sync_failed_notification(bot, order, admin_list):
+    """Заказ так и не уехал в CRM — дальше только руками."""
+    try:
+        await send_messages_to_admins(
+            bot, admin_list,
+            for_admin(
+                f"\u26a0\ufe0f <b>Замовлення \u2116{order['id']} не потрапило до RemOnline</b>\n"
+                f"Автоматичні спроби вичерпано. Заведіть картку вручну "
+                f"або перевірте доступність CRM."
+            ),
+            admin_order_kb(order),
+        )
+    except Exception as error:
+        await send_error_log(bot, 516842877, error)
+
+
+async def delivery_returned_notification(bot, order, admin_list):
+    """Клиент не забрал посылку — она едет обратно."""
+    try:
+        await send_messages_to_admins(
+            bot, admin_list,
+            for_admin(
+                f"\U0001f4e6 <b>Замовлення \u2116{order['id']} повертається</b>\n"
+                f"Клієнт не отримав посилку: відмова або закінчився термін зберігання.\n"
+                f"Вирішіть, що робити із замовленням."
+            ),
+            admin_order_kb(order),
+        )
+        if not order.get('telegram_id'):
+            return
+        await bot.send_message(
+            order['telegram_id'],
+            for_client(
+                f"<b>Ваше замовлення \u2116{order['id']} повертається до нас.</b>\n"
+                f"Посилку не було отримано. Якщо це помилка \u2014 зв\u02bcяжіться з нами."
+            ),
+            reply_markup=types.InlineKeyboardMarkup().add(get_our_contact_button()),
+        )
+    except Exception as error:
+        await send_error_log(bot, 516842877, error)
+
+
+async def delivery_failed_notification(bot, order, admin_list):
+    """Курьер не застал клиента."""
+    try:
+        await send_messages_to_admins(
+            bot, admin_list,
+            for_admin(
+                f"\u26a0\ufe0f <b>Не вдалося вручити замовлення \u2116{order['id']}</b>\n"
+                f"Кур\u02bcєр не застав одержувача або не було зв\u02bcязку."
+            ),
+            admin_order_kb(order),
+        )
+        if not order.get('telegram_id'):
+            return
+        await bot.send_message(
+            order['telegram_id'],
+            for_client(
+                f"<b>Кур\u02bcєр не зміг вручити замовлення \u2116{order['id']}.</b>\n"
+                f"Зв\u02bcяжіться з Новою Поштою або з нами, щоб домовитися про доставку."
+            ),
+            reply_markup=types.InlineKeyboardMarkup().add(get_our_contact_button()),
+        )
+    except Exception as error:
+        await send_error_log(bot, 516842877, error)
+
+
+async def parcel_destroyed_notification(bot, order, admin_list):
+    """Отправление уничтожено."""
+    try:
+        await send_messages_to_admins(
+            bot, admin_list,
+            for_admin(
+                f"\u203c\ufe0f <b>Відправлення за замовленням \u2116{order['id']} знищено</b>\n"
+                f"За даними Нової Пошти посилку втрачено. Потрібне рішення вручну."
+            ),
+            admin_order_kb(order),
+        )
+        if not order.get('telegram_id'):
+            return
+        await bot.send_message(
+            order['telegram_id'],
+            for_client(
+                f"<b>На жаль, ваше замовлення \u2116{order['id']} не буде доставлено.</b>\n"
+                f"Відправлення втрачено під час доставки. Ми зв\u02bcяжемося з вами."
+            ),
+            reply_markup=types.InlineKeyboardMarkup().add(get_our_contact_button()),
+        )
+    except Exception as error:
+        await send_error_log(bot, 516842877, error)
 
 
 async def payment_doc_uploaded_notification(bot, order, admin_list):
@@ -212,7 +306,7 @@ async def payment_doc_uploaded_notification(bot, order, admin_list):
     markup_i.add(get_show_order_button(order['id']))
 
     doc_url = order.get('payment_document')
-    data, filename = await _download_payment_document(doc_url)
+    data, filename = await _download_payment_document(order['id'], doc_url)
     is_image = bool(filename) and os.path.splitext(filename)[1].lower() in IMAGE_EXTS
 
     for admin in admin_list:
@@ -374,10 +468,16 @@ def _refund_rows(order):
 
 
 def _refund_suffix(order) -> str:
-    refund_state = (order or {}).get('refund_state')
-    if refund_state in ('done', 'manual'):
-        return "\nКошти повернуто 💵"
-    if refund_state == 'pending':
+    """
+    Что дописать клиенту к сообщению об отмене.
+
+    Про состоявшийся возврат здесь молчим: деньги возвращаются не мгновенно и
+    не всегда автоматически, а «Кошти повернуто 💵» в ту же секунду, что и
+    «замовлення скасовано», читается как обещание, которого никто не давал.
+    Когда возврат действительно пройдёт, клиент получит отдельное сообщение
+    (`refunded_notifications`).
+    """
+    if (order or {}).get('refund_state') == 'pending':
         return "\nПовернення коштів в обробці ⏳"
     return ""
 

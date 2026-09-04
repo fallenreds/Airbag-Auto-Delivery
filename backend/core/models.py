@@ -181,6 +181,7 @@ class GoodCategory(models.Model):
     meta_title = models.CharField(max_length=255, blank=True, null=True)
     meta_description = models.TextField(blank=True, null=True)
 
+
     def save(self, *args, **kwargs):
         if not self.slug and self.title:
             self.slug = transliterate_slug(self.title)
@@ -221,9 +222,18 @@ class Good(models.Model):
     meta_title = models.CharField(max_length=255, blank=True, null=True)
     meta_description = models.TextField(blank=True, null=True)
 
+    # Название в нижнем регистре — по нему идёт поиск.
+    #
+    # SQLite сравнивает без учёта регистра только ASCII: `title__icontains="пп"`
+    # не находил «ПП сиденье», хотя `original` и `ORIGINAL` работали одинаково.
+    # Привести к нижнему регистру средствами БД нельзя — её `LOWER()` страдает
+    # тем же, — поэтому храним готовую копию и ищем по ней.
+    search_title = models.CharField(max_length=255, blank=True, db_index=True)
+
     def save(self, *args, **kwargs):
         if not self.slug and self.title:
             self.slug = transliterate_slug(self.title)
+        self.search_title = (self.title or "").lower()
         super().save(*args, **kwargs)
 
     @staticmethod
@@ -281,6 +291,7 @@ class CancelReason:
     NO_CONTACT = "no_contact"
     OUT_OF_STOCK = "out_of_stock"
     REMOVED_IN_REMONLINE = "removed_in_remonline"
+    MERGED = "merged"
 
     CLIENT_CHOICES = [
         CHANGED_MIND,
@@ -303,6 +314,7 @@ class CancelReason:
         (NO_CONTACT, "No contact with client"),
         (OUT_OF_STOCK, "Out of stock"),
         (REMOVED_IN_REMONLINE, "Removed in Remonline"),
+        (MERGED, "Merged into another order"),
     ]
 
 
@@ -317,10 +329,16 @@ class Order(models.Model):
     class RemonlineSyncStatus:
         PENDING = "PENDING"
         SYNCED = "SYNCED"
+        # Запись в CRM сорвалась: сеть, 401, 502. Отдельно от PENDING, потому
+        # что по одному «ещё не синхронизирован» нельзя было отличить заказ,
+        # честно ждущий оплаты, от заказа, который в CRM уже не попадёт
+        # никогда. Такие заказы дотягивает крон и показывает фильтр в админке.
+        FAILED = "FAILED"
 
         CHOICES = [
             (PENDING, "Pending"),
             (SYNCED, "Synced"),
+            (FAILED, "Failed"),
         ]
 
     class CancelState:
@@ -358,6 +376,14 @@ class Order(models.Model):
         choices=RemonlineSyncStatus.CHOICES,
         default=RemonlineSyncStatus.PENDING,
     )
+    # Сколько раз подряд не удалось записать заказ в CRM. Нужен, чтобы
+    # перестать долбиться в недоступный сервис и один раз сказать админу, что
+    # заказ туда так и не уехал.
+    remonline_sync_attempts = models.PositiveSmallIntegerField(default=0)
+    # Код Новой Почты, о котором уже сообщили. Крон опрашивает накладную раз в
+    # минуту, а статус висит сутками: без этой отметки «клієнт не забрав»
+    # уходило бы админу и клиенту каждую минуту.
+    np_notified_status = models.PositiveSmallIntegerField(null=True, blank=True)
 
     client = models.ForeignKey(
         "Client", on_delete=models.SET_NULL, null=True, related_name="orders"
@@ -374,6 +400,15 @@ class Order(models.Model):
     bank_transfer = models.BooleanField(default=False)
     payment_document = models.FileField(upload_to='payment_docs/', null=True, blank=True)
     is_paid = models.BooleanField(default=False)
+    # Черновик — заказ с оплатой картой, который ещё не оплачен. Он не виден
+    # нигде: ни в кабинете клиента, ни в списках бота, ни при выборе заказа для
+    # объединения, ни в CRM. Обычным заказом становится по вебхуку об успешной
+    # оплате.
+    #
+    # Отдельное поле, а не вычисление «предоплата и не оплачен»: заказ,
+    # оплаченный и потом отменённый, под такое вычисление снова попал бы в
+    # черновики.
+    is_draft = models.BooleanField(default=False, db_index=True)
     ttn = models.TextField(blank=True, null=True)
     is_completed = models.BooleanField(default=False)
 
@@ -419,6 +454,36 @@ class Order(models.Model):
     in_branch_datetime = models.DateTimeField(blank=True, null=True)
 
     date = models.DateTimeField(auto_now_add=True)
+
+    @property
+    def is_prepaid_flow(self) -> bool:
+        """
+        Клиент платит до отгрузки — картой онлайн или по реквизитам.
+
+        Именованное свойство, а не проверка флагов по месту: условие нужно в
+        шести местах (отправка в CRM, доступность онлайн-счёта, подписи типа
+        оплаты, кнопки в боте), и разъехавшись, оно разъедется незаметно.
+        """
+        return bool(self.prepayment or self.bank_transfer)
+
+    @property
+    def is_online_payment(self) -> bool:
+        """Оплата картой: платит до отгрузки, но не по реквизитам."""
+        return bool(self.prepayment and not self.bank_transfer)
+
+    @property
+    def payment_kind(self) -> str:
+        """
+        Способ оплаты одним значением — для сравнения двух заказов между собой.
+
+        Объединять разрешено только однотипные заказы, и «однотипность» должна
+        считаться в одном месте.
+        """
+        if self.bank_transfer:
+            return "bank_transfer"
+        if self.prepayment:
+            return "online"
+        return "postpaid"
 
     class Meta:
         indexes = [
@@ -473,6 +538,10 @@ class OrderEventType:
     CANCELED = "CANCELED"
     CANCEL_REJECTED = "CANCEL_REJECTED"
     REFUNDED = "REFUNDED"
+    REMONLINE_SYNC_FAILED = "REMONLINE_SYNC_FAILED"
+    DELIVERY_RETURNED = "DELIVERY_RETURNED"
+    DELIVERY_FAILED = "DELIVERY_FAILED"
+    PARCEL_DESTROYED = "PARCEL_DESTROYED"
 
     CHOICES = [
         (MERGED, "Merged"),
@@ -489,6 +558,10 @@ class OrderEventType:
         (CANCELED, "Canceled"),
         (CANCEL_REJECTED, "Cancellation Rejected"),
         (REFUNDED, "Refunded"),
+        (REMONLINE_SYNC_FAILED, "Remonline Sync Failed"),
+        (DELIVERY_RETURNED, "Delivery Returned"),
+        (DELIVERY_FAILED, "Delivery Failed"),
+        (PARCEL_DESTROYED, "Parcel Destroyed"),
     ]
 
 
