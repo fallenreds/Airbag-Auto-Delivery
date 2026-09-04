@@ -28,12 +28,28 @@ class UniversalFieldFilterBackend(BaseFilterBackend):
             return False
         raise ValueError(f"Unrecognized boolean value: {raw}")
 
+    @staticmethod
+    def _handled_by_filterset(view):
+        """
+        Параметры, которые уже разобрал FilterSet вьюхи.
+
+        Их нельзя применять второй раз: `title__icontains` у товаровFilterSet
+        превращает в поиск по нормализованному названию, а прямой фильтр по
+        `title` поверх этого обнулил бы выдачу — SQLite сравнивает кириллицу
+        с учётом регистра.
+        """
+        filterset = getattr(view, "filterset_class", None)
+        return set(getattr(filterset, "base_filters", {}) or {})
+
     def filter_queryset(self, request, queryset, view):
         model = queryset.model
         field_names = set(f.name for f in model._meta.get_fields() if isinstance(f, Field))
+        already_handled = self._handled_by_filterset(view)
         filter_kwargs = {}
-        
+
         for param, value in request.query_params.items():
+            if param in already_handled:
+                continue
             # поддержка __lookup
             base_field = param.split("__", 1)[0]
             if base_field in field_names:

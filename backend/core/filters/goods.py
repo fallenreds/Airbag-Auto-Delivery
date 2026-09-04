@@ -8,6 +8,14 @@ class GoodFilterSet(filters.FilterSet):
     # Пользовательский параметр: ?category_id=1
     category_id = filters.NumberFilter(method="filter_category_id")
 
+    # Поиск по названию. Фронт шлёт `title__icontains`, и раньше запрос уходил
+    # прямо в базу — а SQLite сравнивает без учёта регистра только ASCII:
+    # «пп» не находило «ПП сиденье», хотя «original» и «ORIGINAL» работали
+    # одинаково. Плюс искалась вся строка целиком, поэтому «ПП руль» не
+    # находило «ПП в руль 60мм».
+    title__icontains = filters.CharFilter(method="filter_title_search")
+    search = filters.CharFilter(method="filter_title_search")
+
     class Meta:
         model = Good
         # Аналогично generate_filterset_for_model:
@@ -38,3 +46,17 @@ class GoodFilterSet(filters.FilterSet):
 
         # В модели Good FK: category -> GoodCategory, Django даёт поле category_id
         return queryset.filter(category_id__in=all_ids)
+    def filter_title_search(self, queryset, name, value):
+        """
+        Ищет все слова запроса в названии, в любом порядке и любом регистре.
+
+        Слова соединяются по И: «пп руль» находит «ПП в руль 60мм», но не
+        «ПП сиденье». Порядок не важен — «руль пп» найдёт то же самое.
+        """
+        words = [w for w in (value or "").lower().split() if w]
+        if not words:
+            return queryset
+
+        for word in words:
+            queryset = queryset.filter(search_title__contains=word)
+        return queryset

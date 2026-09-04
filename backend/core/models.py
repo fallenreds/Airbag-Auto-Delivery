@@ -181,6 +181,7 @@ class GoodCategory(models.Model):
     meta_title = models.CharField(max_length=255, blank=True, null=True)
     meta_description = models.TextField(blank=True, null=True)
 
+
     def save(self, *args, **kwargs):
         if not self.slug and self.title:
             self.slug = transliterate_slug(self.title)
@@ -221,9 +222,18 @@ class Good(models.Model):
     meta_title = models.CharField(max_length=255, blank=True, null=True)
     meta_description = models.TextField(blank=True, null=True)
 
+    # Название в нижнем регистре — по нему идёт поиск.
+    #
+    # SQLite сравнивает без учёта регистра только ASCII: `title__icontains="пп"`
+    # не находил «ПП сиденье», хотя `original` и `ORIGINAL` работали одинаково.
+    # Привести к нижнему регистру средствами БД нельзя — её `LOWER()` страдает
+    # тем же, — поэтому храним готовую копию и ищем по ней.
+    search_title = models.CharField(max_length=255, blank=True, db_index=True)
+
     def save(self, *args, **kwargs):
         if not self.slug and self.title:
             self.slug = transliterate_slug(self.title)
+        self.search_title = (self.title or "").lower()
         super().save(*args, **kwargs)
 
     @staticmethod
