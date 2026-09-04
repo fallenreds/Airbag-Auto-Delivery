@@ -380,6 +380,10 @@ class Order(models.Model):
     # перестать долбиться в недоступный сервис и один раз сказать админу, что
     # заказ туда так и не уехал.
     remonline_sync_attempts = models.PositiveSmallIntegerField(default=0)
+    # Код Новой Почты, о котором уже сообщили. Крон опрашивает накладную раз в
+    # минуту, а статус висит сутками: без этой отметки «клієнт не забрав»
+    # уходило бы админу и клиенту каждую минуту.
+    np_notified_status = models.PositiveSmallIntegerField(null=True, blank=True)
 
     client = models.ForeignKey(
         "Client", on_delete=models.SET_NULL, null=True, related_name="orders"
@@ -535,6 +539,9 @@ class OrderEventType:
     CANCEL_REJECTED = "CANCEL_REJECTED"
     REFUNDED = "REFUNDED"
     REMONLINE_SYNC_FAILED = "REMONLINE_SYNC_FAILED"
+    DELIVERY_RETURNED = "DELIVERY_RETURNED"
+    DELIVERY_FAILED = "DELIVERY_FAILED"
+    PARCEL_DESTROYED = "PARCEL_DESTROYED"
 
     CHOICES = [
         (MERGED, "Merged"),
@@ -552,6 +559,9 @@ class OrderEventType:
         (CANCEL_REJECTED, "Cancellation Rejected"),
         (REFUNDED, "Refunded"),
         (REMONLINE_SYNC_FAILED, "Remonline Sync Failed"),
+        (DELIVERY_RETURNED, "Delivery Returned"),
+        (DELIVERY_FAILED, "Delivery Failed"),
+        (PARCEL_DESTROYED, "Parcel Destroyed"),
     ]
 
 

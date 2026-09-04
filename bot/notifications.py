@@ -207,6 +207,82 @@ async def remonline_sync_failed_notification(bot, order, admin_list):
         await send_error_log(bot, 516842877, error)
 
 
+async def delivery_returned_notification(bot, order, admin_list):
+    """Клиент не забрал посылку — она едет обратно."""
+    try:
+        await send_messages_to_admins(
+            bot, admin_list,
+            for_admin(
+                f"\U0001f4e6 <b>Замовлення \u2116{order['id']} повертається</b>\n"
+                f"Клієнт не отримав посилку: відмова або закінчився термін зберігання.\n"
+                f"Вирішіть, що робити із замовленням."
+            ),
+            admin_order_kb(order),
+        )
+        if not order.get('telegram_id'):
+            return
+        await bot.send_message(
+            order['telegram_id'],
+            for_client(
+                f"<b>Ваше замовлення \u2116{order['id']} повертається до нас.</b>\n"
+                f"Посилку не було отримано. Якщо це помилка \u2014 зв\u02bcяжіться з нами."
+            ),
+            reply_markup=types.InlineKeyboardMarkup().add(get_our_contact_button()),
+        )
+    except Exception as error:
+        await send_error_log(bot, 516842877, error)
+
+
+async def delivery_failed_notification(bot, order, admin_list):
+    """Курьер не застал клиента."""
+    try:
+        await send_messages_to_admins(
+            bot, admin_list,
+            for_admin(
+                f"\u26a0\ufe0f <b>Не вдалося вручити замовлення \u2116{order['id']}</b>\n"
+                f"Кур\u02bcєр не застав одержувача або не було зв\u02bcязку."
+            ),
+            admin_order_kb(order),
+        )
+        if not order.get('telegram_id'):
+            return
+        await bot.send_message(
+            order['telegram_id'],
+            for_client(
+                f"<b>Кур\u02bcєр не зміг вручити замовлення \u2116{order['id']}.</b>\n"
+                f"Зв\u02bcяжіться з Новою Поштою або з нами, щоб домовитися про доставку."
+            ),
+            reply_markup=types.InlineKeyboardMarkup().add(get_our_contact_button()),
+        )
+    except Exception as error:
+        await send_error_log(bot, 516842877, error)
+
+
+async def parcel_destroyed_notification(bot, order, admin_list):
+    """Отправление уничтожено."""
+    try:
+        await send_messages_to_admins(
+            bot, admin_list,
+            for_admin(
+                f"\u203c\ufe0f <b>Відправлення за замовленням \u2116{order['id']} знищено</b>\n"
+                f"За даними Нової Пошти посилку втрачено. Потрібне рішення вручну."
+            ),
+            admin_order_kb(order),
+        )
+        if not order.get('telegram_id'):
+            return
+        await bot.send_message(
+            order['telegram_id'],
+            for_client(
+                f"<b>На жаль, ваше замовлення \u2116{order['id']} не буде доставлено.</b>\n"
+                f"Відправлення втрачено під час доставки. Ми зв\u02bcяжемося з вами."
+            ),
+            reply_markup=types.InlineKeyboardMarkup().add(get_our_contact_button()),
+        )
+    except Exception as error:
+        await send_error_log(bot, 516842877, error)
+
+
 async def payment_doc_uploaded_notification(bot, order, admin_list):
     """Notify admins that a client uploaded a bank-transfer payment document for review.
 

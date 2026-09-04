@@ -3,7 +3,7 @@ from aiogram import types
 from api import get_order_updates, delete_order_updates, get_order_by_id, \
     get_clients_updates, delete_client_update, get_client_by_id
 from engine import send_messages_to_admins
-from notifications import for_admin, merge_order_notification, new_order_notification, new_order_client_notification, deactivated_notifications, ttn_update_notification, order_in_branch_notifications, payment_doc_uploaded_notification, canceled_notifications, refunded_notifications, cancel_requested_notifications, remonline_created_notification, payment_confirmed_notification, payment_type_changed_notification, cancel_rejected_notification, remonline_sync_failed_notification
+from notifications import for_admin, merge_order_notification, new_order_notification, new_order_client_notification, deactivated_notifications, ttn_update_notification, order_in_branch_notifications, payment_doc_uploaded_notification, canceled_notifications, refunded_notifications, cancel_requested_notifications, remonline_created_notification, payment_confirmed_notification, payment_type_changed_notification, cancel_rejected_notification, remonline_sync_failed_notification, delivery_returned_notification, delivery_failed_notification, parcel_destroyed_notification
 import asyncio
 
 
@@ -84,6 +84,18 @@ async def _on_remonline_sync_failed(bot, order, record, admin_list):
     await remonline_sync_failed_notification(bot, order, admin_list)
 
 
+async def _on_delivery_returned(bot, order, record, admin_list):
+    await delivery_returned_notification(bot, order, admin_list)
+
+
+async def _on_delivery_failed(bot, order, record, admin_list):
+    await delivery_failed_notification(bot, order, admin_list)
+
+
+async def _on_parcel_destroyed(bot, order, record, admin_list):
+    await parcel_destroyed_notification(bot, order, admin_list)
+
+
 ORDER_EVENT_HANDLERS = {
     "CREATED_ADMIN_MESSAGE": _on_created_admin_message,
     "CREATED_CLIENT_MESSAGE": _on_created_client_message,
@@ -92,6 +104,9 @@ ORDER_EVENT_HANDLERS = {
     "PAYMENT_TYPE_CHANGED": _on_payment_type_changed,
     "PAYMENT_DOC_UPLOADED": _on_payment_doc_uploaded,
     "REMONLINE_SYNC_FAILED": _on_remonline_sync_failed,
+    "DELIVERY_RETURNED": _on_delivery_returned,
+    "DELIVERY_FAILED": _on_delivery_failed,
+    "PARCEL_DESTROYED": _on_parcel_destroyed,
     "MERGED": _on_merged,
     "FINISHED": _on_finished,
     "TTN_UPDATED": _on_ttn_updated,

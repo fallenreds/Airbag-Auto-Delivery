@@ -111,7 +111,10 @@ def process_order(remonline_order: dict, local_order: Order):
                 local_order, details="Order marked as completed due to TTN status"
             )
 
-        elif ttn_details["StatusCode"] in (7,):
+        else:
+            announce_delivery_problem(local_order, ttn_details["StatusCode"])
+
+        if ttn_details["StatusCode"] in IN_BRANCH_STATUS_CODES:
             if local_order.branch_remember_count == 0 or (
                 local_order.branch_remember_count == 1
                 and one_day_difference(local_order)
@@ -169,6 +172,57 @@ def mark_shipped_in_remonline(order: Order) -> None:
         only_from=getattr(settings, "REMONLINE_STATUSES_BEFORE_SHIPPING", []),
         what="«Відправлений»",
     )
+
+
+
+# Прибыла и ждёт клиента. Код 8 — почтомат: напоминание нужно и там, раньше оно
+# уходило только по отделениям.
+#   7 — прибув на відділення
+#   8 — прибув на відділення (завантажено в Поштомат)
+IN_BRANCH_STATUS_CODES = (7, 8)
+
+# Что пошло не так с доставкой. Ключ — код Новой Почты, значение — событие.
+#   102 — відмова від отримання (відправник створив замовлення на повернення)
+#   103 — відмова від отримання
+#   105 — припинено зберігання
+#   111 — невдала спроба доставки (не застали одержувача)
+#   124 — знищено внаслідок ворожої атаки
+DELIVERY_PROBLEM_EVENTS = {
+    102: OrderEventType.DELIVERY_RETURNED,
+    103: OrderEventType.DELIVERY_RETURNED,
+    105: OrderEventType.DELIVERY_RETURNED,
+    111: OrderEventType.DELIVERY_FAILED,
+    124: OrderEventType.PARCEL_DESTROYED,
+}
+
+
+def announce_delivery_problem(order: Order, status_code) -> bool:
+    """
+    Сообщает о неудачной доставке — один раз на каждый новый код.
+
+    Статус у Новой Почты висит сутками, а крон опрашивает накладную раз в
+    минуту: без отметки о том, что уже сообщили, «клієнт не забрав» уходило бы
+    каждую минуту и админу, и клиенту.
+
+    Сам заказ не трогаем: отменять его или ждать — решает человек. Наше дело
+    сказать, что посылка не дошла, иначе об этом не узнает никто и заказ
+    навсегда останется «відправленим».
+    """
+    event_type = DELIVERY_PROBLEM_EVENTS.get(status_code)
+    if event_type is None or order.np_notified_status == status_code:
+        return False
+
+    OrderEvent.objects.create(
+        type=event_type,
+        order=order,
+        details=f"Nova Poshta status {status_code}",
+    )
+    order.np_notified_status = status_code
+    order.save(update_fields=["np_notified_status"])
+    logger.info(
+        "Order %s: delivery problem, Nova Poshta status %s", order.pk, status_code
+    )
+    return True
 
 
 def get_ttn_details(documents: list) -> dict:
