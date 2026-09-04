@@ -14,7 +14,6 @@ from django.test import TestCase, override_settings
 
 from core.models import Client, Order, OrderItem
 from core.services import remonline_notes
-from core.services.remonline_notes import compose_engineer_notes
 
 LOCMEM = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 
@@ -59,56 +58,35 @@ def make_order(owner, **fields):
     return order
 
 
-class ComposeEngineerNotesTests(TestCase):
-    """
-    Формат читает `parse_engineer_notes`, которым крон забирает ТТН, вписанный
-    менеджером вручную. Значит писать надо ровно так, как тот умеет читать.
-    """
-
-    def test_ttn_is_added_to_empty_notes(self):
-        self.assertEqual(compose_engineer_notes("", "59000123456789"), "ТТН: 59000123456789")
-
-    def test_manager_text_is_kept(self):
-        result = compose_engineer_notes("Клієнт просив зателефонувати", "59000123456789")
-
-        self.assertIn("Клієнт просив зателефонувати", result)
-        self.assertIn("ТТН: 59000123456789", result)
-
-    def test_existing_ttn_is_replaced_not_duplicated(self):
-        """Иначе после пары правок в карточке несколько номеров."""
-        result = compose_engineer_notes("ТТН: 59000000000001\n\nПримітка", "59000123456789")
-
-        self.assertEqual(result.count("ТТН"), 1)
-        self.assertIn("59000123456789", result)
-        self.assertNotIn("59000000000001", result)
-        self.assertIn("Примітка", result)
-
-    def test_result_is_readable_by_the_cron_parser(self):
-        from core.order_event_handler import parse_engineer_notes
-
-        notes = compose_engineer_notes("Довільний текст менеджера", "59000123456789")
-
-        self.assertEqual(parse_engineer_notes(notes), "59000123456789")
-
-    def test_empty_ttn_changes_nothing(self):
-        self.assertEqual(compose_engineer_notes("Текст", ""), "Текст")
-
-
 @override_settings(**CRM_SETTINGS)
 @patch("core.services.remonline_notes.RoappInterface")
 class PushTtnTests(TestCase):
     def setUp(self):
         self.owner = make_client("ttn-owner@example.com")
 
-    def test_ttn_is_written_into_the_card(self, roapp):
-        roapp.return_value.get_order.return_value = {"engineer_notes": "Примітка менеджера"}
+    def test_ttn_goes_into_manager_notes(self, roapp):
+        """
+        ТТН живёт там же, где остальные данные заказа.
+
+        «Замітки інженера» система только читает — туда номер вписывает
+        менеджер, и трогать это поле мы не должны.
+        """
         order = make_order(self.owner, remonline_order_id=4242, ttn="59000123456789")
 
         self.assertTrue(remonline_notes.push_ttn(order))
 
-        sent = roapp.return_value.update_order.call_args.kwargs["engineer_notes"]
-        self.assertIn("ТТН: 59000123456789", sent)
-        self.assertIn("Примітка менеджера", sent)
+        sent = roapp.return_value.update_order.call_args.kwargs
+        self.assertIn("Номер ТТН: 59000123456789", sent["manager_notes"])
+        self.assertNotIn("engineer_notes", sent)
+
+    def test_notes_keep_the_rest_of_the_order(self, roapp):
+        order = make_order(self.owner, remonline_order_id=4242, ttn="59000123456789")
+
+        remonline_notes.push_ttn(order)
+
+        notes = roapp.return_value.update_order.call_args.kwargs["manager_notes"]
+        self.assertIn("Подушка безпеки", notes)
+        self.assertIn("Петренко", notes)
 
     def test_order_without_card_is_skipped(self, roapp):
         order = make_order(self.owner, remonline_order_id=None, ttn="59000123456789")
@@ -116,16 +94,15 @@ class PushTtnTests(TestCase):
         self.assertFalse(remonline_notes.push_ttn(order))
         roapp.return_value.update_order.assert_not_called()
 
-    def test_same_ttn_is_not_written_twice(self, roapp):
-        roapp.return_value.get_order.return_value = {"engineer_notes": "ТТН: 59000123456789"}
-        order = make_order(self.owner, remonline_order_id=4242, ttn="59000123456789")
+    def test_order_without_ttn_is_skipped(self, roapp):
+        order = make_order(self.owner, remonline_order_id=4242, ttn="")
 
         self.assertFalse(remonline_notes.push_ttn(order))
         roapp.return_value.update_order.assert_not_called()
 
     def test_crm_failure_is_swallowed(self, roapp):
         """ТТН уже сохранён у нас и клиент уведомлён — падать нельзя."""
-        roapp.return_value.get_order.side_effect = RuntimeError("502")
+        roapp.return_value.update_order.side_effect = RuntimeError("502")
         order = make_order(self.owner, remonline_order_id=4242, ttn="59000123456789")
 
         self.assertFalse(remonline_notes.push_ttn(order))
@@ -138,9 +115,10 @@ class ManagerNotesTests(TestCase):
         self.owner = make_client("notes-owner@example.com")
 
     def test_payment_mark_is_added(self, roapp):
-        order = make_order(self.owner, remonline_order_id=4242, grand_total_minor=95000)
+        order = make_order(self.owner, remonline_order_id=4242,
+                           grand_total_minor=95000, is_paid=True)
 
-        self.assertTrue(remonline_notes.refresh_manager_notes(order, paid=True))
+        self.assertTrue(remonline_notes.refresh_manager_notes(order))
 
         sent = roapp.return_value.update_order.call_args.kwargs["manager_notes"]
         self.assertIn("Оплачено", sent)
@@ -148,8 +126,22 @@ class ManagerNotesTests(TestCase):
         self.assertIn("Подушка безпеки", sent)
         self.assertIn("Петренко", sent)
 
+    def test_paid_order_with_ttn_keeps_both(self, roapp):
+        """
+        Обе строки — часть билдера, поэтому переживают перегенерацию.
+        Дописанные поверх, они затирали бы друг друга.
+        """
+        order = make_order(self.owner, remonline_order_id=4242,
+                           is_paid=True, ttn="59000123456789")
+
+        remonline_notes.refresh_manager_notes(order)
+
+        notes = roapp.return_value.update_order.call_args.kwargs["manager_notes"]
+        self.assertIn("Оплачено", notes)
+        self.assertIn("Номер ТТН: 59000123456789", notes)
+
     def test_without_payment_there_is_no_mark(self, roapp):
-        order = make_order(self.owner, remonline_order_id=4242)
+        order = make_order(self.owner, remonline_order_id=4242, is_paid=False)
 
         remonline_notes.refresh_manager_notes(order)
 

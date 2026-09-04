@@ -69,7 +69,7 @@ def _mark_paid_in_crm(order: Order) -> None:
         only_from=[getattr(settings, "REMONLINE_STATUS_BANK_TRANSFER", None)],
         what="«Новий» после оплати",
     )
-    remonline_notes.refresh_manager_notes(order, paid=True)
+    remonline_notes.refresh_manager_notes(order)
 
 
 def promote_draft(order: Order) -> None:

@@ -56,6 +56,18 @@ def build_manager_notes(order: Order, user: Client) -> str:
         f"До сплати зі знижкою: {Good.convert_minore_to_major(order.grand_total_minor)} UAH"
     )
 
+    if order.ttn:
+        # ТТН живёт здесь, рядом с остальными данными заказа, — как и в старой
+        # системе. «Замітки інженера» мы только читаем: туда номер вписывает
+        # менеджер вручную, и оттуда его забирает крон.
+        goods_info += f"\nНомер ТТН: {order.ttn}"
+
+    if order.is_paid:
+        # Часть текста, а не приписка сверху: заметки перегенерируются целиком
+        # при каждом изменении, и всё, что дописано поверх билдера, потерялось
+        # бы при следующей перегенерации.
+        goods_info += "\nСтатус оплати: Оплачено ✅"
+
     order_items = OrderItem.objects.filter(order=order)
     for order_item in order_items:
         goods_info += f"\n\nТовар: {order_item.title} - Кількість: {order_item.quantity}"
