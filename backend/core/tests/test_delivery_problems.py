@@ -10,11 +10,13 @@
 Сам заказ система не трогает: отменять его или ждать — решает человек. Её дело
 сказать, что доставка не состоялась.
 """
+import itertools
 from unittest.mock import patch
 
 from django.test import TestCase, override_settings
 
 from core.models import Client, Order, OrderEvent, OrderEventType, OrderItem
+from core.services import remonline_notes
 from core.order_event_handler import (
     announce_delivery_problem,
     parse_status_code,
@@ -25,17 +27,23 @@ from core.order_event_handler import (
 LOCMEM = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 
 
+_client_seq = itertools.count(1)
+
+
 def make_order(**fields):
+    # Телефон уникален у каждого клиента, поэтому нумеруем: тесты создают
+    # несколько заказов подряд, и общий номер ронял бы их на UNIQUE.
+    n = next(_client_seq)
     owner = Client(
-        email=f"delivery-{fields.get('ttn', 'x')}@example.com",
-        name="Іван", last_name="Петренко", phone="+380630000000",
+        email=f"delivery-{n}@example.com",
+        name="Іван", last_name="Петренко", phone=f"+38063000{n:04d}",
     )
     owner.set_password("pass")
     owner.save()
     fields.setdefault("ttn", "59000123456789")
     order = Order.objects.create(
         client=owner, name="Іван", last_name="Петренко",
-        phone="+380630000000", nova_post_address="Відділення №1", **fields
+        phone=owner.phone, nova_post_address="Відділення №1", **fields
     )
     OrderItem.objects.create(
         order=order, good_external_id=1, id_remonline=1,
@@ -263,3 +271,126 @@ class TtnIsReadFromManagerNotesTests(TestCase):
     def test_too_short_number_is_rejected(self):
         """Обрывок вместо накладной — не номер."""
         self.assertIsNone(parse_ttn("ТТН: 204515"))
+
+
+class TtnFromOurOwnRecordTests(TestCase):
+    """
+    Отслеживание идёт по номеру, который хранится у нас.
+
+    Карточка — лишь способ узнать, что менеджер вписал номер руками. У заказов,
+    заведённых до перехода на одно поле, номер в карточке лежит в другом месте,
+    но в базе он есть: перестать следить за такими заказами нельзя.
+    """
+
+    def setUp(self):
+        self.order = make_order(remonline_order_id=4242, ttn="20451524772776")
+
+    @patch("core.services.remonline_status.RemonlineInterface")
+    @patch("core.services.remonline_notes.RoappInterface")
+    def test_tracking_works_when_card_has_no_ttn(self, notes_api, status_api):
+        with patch("core.order_event_handler.get_ttn_details") as details:
+            details.return_value = {"data": [{"StatusCode": "9"}]}
+            process_order(
+                {"status": {"name": "Відправлений"}, "manager_notes": "Тип платежа: Накладений платіж"},
+                self.order,
+            )
+
+        self.order.refresh_from_db()
+        self.assertTrue(self.order.is_completed)
+
+    @patch("core.services.remonline_status.RemonlineInterface")
+    def test_manager_can_replace_the_number(self, status_api):
+        with patch("core.order_event_handler.get_ttn_details") as details:
+            details.return_value = {"data": [{"StatusCode": "5"}]}
+            process_order(
+                {"status": {"name": "Відправлений"}, "manager_notes": "Номер ТТН: 20451599999999"},
+                self.order,
+            )
+
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.ttn, "20451599999999")
+        self.assertTrue(
+            OrderEvent.objects.filter(
+                order=self.order, type=OrderEventType.TTN_UPDATED
+            ).exists()
+        )
+
+    @patch("core.services.remonline_status.RemonlineInterface")
+    def test_order_without_any_ttn_is_left_alone(self, status_api):
+        order = make_order(remonline_order_id=4243, ttn="")
+
+        with patch("core.order_event_handler.get_ttn_details") as details:
+            process_order({"status": {"name": "Новий"}, "manager_notes": ""}, order)
+            details.assert_not_called()
+
+
+class AdoptManagerTtnTests(TestCase):
+    """
+    Номер, вписанный менеджером, не теряется при перегенерации заметок.
+
+    Заметки перезаписываются целиком из состояния заказа. Между вводом номера
+    и вычиткой его кроном оставалось окно: подтверждение оплаты в этот момент
+    затирало свежий номер нашим пустым. Карточка перечитывается перед записью.
+    """
+
+    def setUp(self):
+        self.order = make_order(remonline_order_id=7001, ttn="")
+
+    @patch("core.services.remonline_notes.RoappInterface")
+    def test_number_from_card_is_adopted_and_announced(self, api):
+        api.return_value.get_order.return_value = {
+            "manager_notes": "ID Клієнта: 5\nТТН: 20451524772776"
+        }
+
+        remonline_notes.refresh_manager_notes(self.order)
+
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.ttn, "20451524772776")
+        # Без события клиент остался бы без номера: крон на следующем проходе
+        # увидит совпадение и промолчит.
+        self.assertTrue(
+            OrderEvent.objects.filter(
+                order=self.order, type=OrderEventType.TTN_UPDATED
+            ).exists()
+        )
+        # Записанный текст содержит подхваченный номер, а не пустоту.
+        written = api.return_value.update_order.call_args.kwargs["manager_notes"]
+        self.assertIn("20451524772776", written)
+
+    @patch("core.services.remonline_notes.RoappInterface")
+    def test_push_ttn_does_not_adopt_the_older_number(self, api):
+        """Админ ввёл номер в боте — подхват из карточки откатил бы ввод."""
+        self.order.ttn = "20451599999999"
+        self.order.save(update_fields=["ttn"])
+        api.return_value.get_order.return_value = {
+            "manager_notes": "ТТН: 20451500000000"
+        }
+
+        remonline_notes.push_ttn(self.order)
+
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.ttn, "20451599999999")
+        api.return_value.get_order.assert_not_called()
+
+    @patch("core.services.remonline_notes.RoappInterface")
+    def test_unreadable_card_does_not_block_the_rewrite(self, api):
+        api.return_value.get_order.side_effect = RuntimeError("CRM down")
+
+        self.assertTrue(remonline_notes.refresh_manager_notes(self.order))
+        api.return_value.update_order.assert_called_once()
+
+    @patch("core.services.remonline_notes.RoappInterface")
+    def test_same_number_is_not_announced_twice(self, api):
+        self.order.ttn = "20451524772776"
+        self.order.save(update_fields=["ttn"])
+        api.return_value.get_order.return_value = {
+            "manager_notes": "Номер ТТН: 20451524772776"
+        }
+
+        remonline_notes.refresh_manager_notes(self.order)
+
+        self.assertFalse(
+            OrderEvent.objects.filter(
+                order=self.order, type=OrderEventType.TTN_UPDATED
+            ).exists()
+        )

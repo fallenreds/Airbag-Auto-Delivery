@@ -7,6 +7,7 @@ from config.settings import (
 )
 from core.models import CancelReason, Order, OrderEvent, OrderEventType
 from core.services import order_status, remonline_notes
+from core.services.remonline_notes import parse_ttn  # noqa: F401  (читают и тесты, и крон)
 from core.services.order_cancel import cancel_order
 from core.services.remonline.api import RemonlineInterface
 
@@ -68,15 +69,21 @@ def process_order(remonline_order: dict, local_order: Order):
             )
         return
 
-    TTN = parse_ttn(remonline_order.get("manager_notes", ""))
+    # Номер из карточки — это способ узнать, что менеджер вписал его вручную.
+    # Хранится он у нас, и отслеживание идёт по нашему значению: у заказов,
+    # заведённых до перехода на одно поле, номер в карточке лежит в другом
+    # месте, но в базе он есть — терять их из виду нельзя.
+    written_by_manager = parse_ttn(remonline_order.get("manager_notes", ""))
 
-    if TTN is not None and TTN != local_order.ttn:
-        local_order.ttn = TTN
+    if written_by_manager is not None and written_by_manager != local_order.ttn:
+        local_order.ttn = written_by_manager
         OrderEvent.objects.create(
             type=OrderEventType.TTN_UPDATED,
             order=local_order,
-            details=f"TTN updated to {TTN}",
+            details=f"TTN updated to {written_by_manager}",
         )
+
+    TTN = (local_order.ttn or "").strip() or None
 
     if TTN is not None:
         try:
@@ -258,31 +265,6 @@ def get_ttn_details(documents: list) -> dict:
     }
     url = "https://api.novaposhta.ua/v2.0/json/"
     return requests.post(url, json=request).json()
-
-
-def parse_ttn(manager_notes: str):
-    """
-    Номер ТТН из заметок менеджера.
-
-    Заметки менеджера — единственное поле карточки, с которым работает система:
-    там и состав заказа, и суммы, и номер накладной. Менеджер вписывает ТТН
-    туда же, и оттуда мы его забираем.
-
-    Разбор терпим к оформлению: все пробелы и переводы строк убираются, метка
-    ищется как «ТТН:», а номер — следующие 14 символов. Поэтому одинаково
-    читаются и «Номер ТТН: 2045…», как пишет система, и «ттн:2045…», как
-    может написать человек.
-    """
-    notes = (manager_notes or "").replace(" ", "").replace("\n", "")
-    # Метку ищем без учёта регистра: менеджер пишет и «ТТН:», и «ттн:».
-    index = notes.upper().find("ТТН:")
-    if index == -1:
-        return None
-
-    ttn = notes[index + 4 : index + 4 + 14]
-    if len(ttn) < 10:
-        return None
-    return ttn
 
 
 def one_day_difference(order: Order):

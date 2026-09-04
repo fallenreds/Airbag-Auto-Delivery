@@ -13,13 +13,14 @@
 
 Других полей карточки система не касается: заметки менеджера — единственное
 место, откуда она читает и куда пишет. Номер ТТН, вписанный менеджером вручную,
-забирается оттуда же (`order_event_handler.parse_ttn`).
+забирается оттуда же — `parse_ttn` ниже, и `adopt_manager_ttn` перед каждой
+перегенерацией, чтобы свежий номер не оказался стёрт собственным текстом.
 """
 import logging
 
 from django.conf import settings
 
-from core.models import Order
+from core.models import Order, OrderEvent, OrderEventType
 from core.services.order_sync import build_manager_notes
 from core.services.remonline.roapp import RoappInterface
 
@@ -30,7 +31,48 @@ def _client(api_key=None) -> RoappInterface:
     return RoappInterface(api_key or getattr(settings, "REMONLINE_API_KEY", None))
 
 
-def refresh_manager_notes(order: Order) -> bool:
+def adopt_manager_ttn(order: Order) -> None:
+    """
+    Забирает номер ТТН, вписанный менеджером в карточку, до перегенерации.
+
+    Заметки перезаписываются целиком из состояния заказа. Пока номер читал
+    только крон (раз в минуту), между вводом номера и его вычиткой оставалось
+    окно: подтверждение оплаты в этот момент перегенерировало заметки из
+    нашего пустого `ttn` и стирало то, что менеджер только что написал.
+    Поэтому карточка перечитывается прямо перед записью.
+
+    Сбой чтения не мешает перегенерации: свои данные в карточке важнее, чем
+    подхват чужого номера, и заказ у нас уже сохранён.
+    """
+    try:
+        card = _client().get_order(order.remonline_order_id)
+    except Exception:
+        logger.warning(
+            "Could not re-read card %s before rewriting notes of order %s",
+            order.remonline_order_id, order.pk, exc_info=True,
+        )
+        return
+
+    written_by_manager = parse_ttn(card.get("manager_notes", ""))
+    if written_by_manager is None or written_by_manager == order.ttn:
+        return
+
+    order.ttn = written_by_manager
+    order.save(update_fields=["ttn"])
+    # Событие обязательно: иначе крон на следующем проходе увидит совпадение,
+    # промолчит, и клиент останется без номера для отслеживания.
+    OrderEvent.objects.create(
+        type=OrderEventType.TTN_UPDATED,
+        order=order,
+        details=f"TTN updated to {written_by_manager}",
+    )
+    logger.info(
+        "Adopted TTN %s written by manager in card %s (order %s)",
+        written_by_manager, order.remonline_order_id, order.pk,
+    )
+
+
+def refresh_manager_notes(order: Order, *, adopt_ttn: bool = True) -> bool:
     """
     Перегенерирует заметки менеджера из текущего состояния заказа.
 
@@ -45,6 +87,9 @@ def refresh_manager_notes(order: Order) -> bool:
     """
     if not order.remonline_order_id or not order.client:
         return False
+
+    if adopt_ttn:
+        adopt_manager_ttn(order)
 
     try:
         notes = build_manager_notes(order=order, user=order.client)
@@ -72,4 +117,31 @@ def push_ttn(order: Order) -> bool:
     """
     if not (order.ttn or "").strip():
         return False
-    return refresh_manager_notes(order)
+    # Без подхвата: сюда приходят с номером, который админ только что ввёл в
+    # боте. В карточке в этот момент лежит прежний, и подхват откатил бы ввод.
+    return refresh_manager_notes(order, adopt_ttn=False)
+
+
+def parse_ttn(manager_notes: str):
+    """
+    Номер ТТН из заметок менеджера.
+
+    Заметки менеджера — единственное поле карточки, с которым работает система:
+    там и состав заказа, и суммы, и номер накладной. Менеджер вписывает ТТН
+    туда же, и оттуда мы его забираем.
+
+    Разбор терпим к оформлению: все пробелы и переводы строк убираются, метка
+    ищется как «ТТН:», а номер — следующие 14 символов. Поэтому одинаково
+    читаются и «Номер ТТН: 2045…», как пишет система, и «ттн:2045…», как
+    может написать человек.
+    """
+    notes = (manager_notes or "").replace(" ", "").replace("\n", "")
+    # Метку ищем без учёта регистра: менеджер пишет и «ТТН:», и «ттн:».
+    index = notes.upper().find("ТТН:")
+    if index == -1:
+        return None
+
+    ttn = notes[index + 4 : index + 4 + 14]
+    if len(ttn) < 10:
+        return None
+    return ttn
