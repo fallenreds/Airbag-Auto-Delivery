@@ -68,7 +68,7 @@ def process_order(remonline_order: dict, local_order: Order):
             )
         return
 
-    TTN = parse_engineer_notes(remonline_order.get("engineer_notes", ""))
+    TTN = parse_ttn(remonline_order.get("manager_notes", ""))
 
     if TTN is not None and TTN != local_order.ttn:
         local_order.ttn = TTN
@@ -84,11 +84,15 @@ def process_order(remonline_order: dict, local_order: Order):
         except Exception:
             return local_order.save()
 
+        status_code = parse_status_code(ttn_details.get("StatusCode"))
+        if status_code is None:
+            return local_order.save()
+
         # Правило 7: посылка уже не у нас — карточка должна это показывать.
-        if is_shipped(ttn_details["StatusCode"]):
+        if is_shipped(status_code):
             mark_shipped_in_remonline(local_order)
 
-        if ttn_details["StatusCode"] in DELIVERED_STATUS_CODES and not local_order.is_completed:
+        if status_code in DELIVERED_STATUS_CODES and not local_order.is_completed:
             if not local_order.is_paid:
                 # Посылка вручена — значит деньги получены. Для наложенного
                 # платежа это единственный момент, когда такое известно: до
@@ -112,9 +116,9 @@ def process_order(remonline_order: dict, local_order: Order):
             )
 
         else:
-            announce_delivery_problem(local_order, ttn_details["StatusCode"])
+            announce_delivery_problem(local_order, status_code)
 
-        if ttn_details["StatusCode"] in IN_BRANCH_STATUS_CODES:
+        if status_code in IN_BRANCH_STATUS_CODES:
             if local_order.branch_remember_count == 0 or (
                 local_order.branch_remember_count == 1
                 and one_day_difference(local_order)
@@ -196,6 +200,27 @@ DELIVERY_PROBLEM_EVENTS = {
 }
 
 
+
+def parse_status_code(raw):
+    """
+    Код статуса Новой Почты числом.
+
+    В ответе он приходит **строкой** — `"9"`, а не `9`. Из-за этого сравнения
+    вида `code in (9, 10)` всегда были ложными: заказы не закрывались по факту
+    вручения, а напоминание «прибуло у відділення» не уходило вовсе. Ошибка
+    жила в коде давно и не бросалась в глаза, потому что снаружи всё выглядело
+    работающим.
+
+    Возвращает None, если разобрать не вышло: тогда лучше ничего не делать,
+    чем принимать решение по мусору.
+    """
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        logger.warning("Nova Poshta returned unexpected StatusCode: %r", raw)
+        return None
+
+
 def announce_delivery_problem(order: Order, status_code) -> bool:
     """
     Сообщает о неудачной доставке — один раз на каждый новый код.
@@ -235,9 +260,22 @@ def get_ttn_details(documents: list) -> dict:
     return requests.post(url, json=request).json()
 
 
-def parse_engineer_notes(engineer_notes: str):
-    notes = engineer_notes.replace(" ", "").replace("\n", "")
-    index = notes.find("ТТН:")
+def parse_ttn(manager_notes: str):
+    """
+    Номер ТТН из заметок менеджера.
+
+    Заметки менеджера — единственное поле карточки, с которым работает система:
+    там и состав заказа, и суммы, и номер накладной. Менеджер вписывает ТТН
+    туда же, и оттуда мы его забираем.
+
+    Разбор терпим к оформлению: все пробелы и переводы строк убираются, метка
+    ищется как «ТТН:», а номер — следующие 14 символов. Поэтому одинаково
+    читаются и «Номер ТТН: 2045…», как пишет система, и «ттн:2045…», как
+    может написать человек.
+    """
+    notes = (manager_notes or "").replace(" ", "").replace("\n", "")
+    # Метку ищем без учёта регистра: менеджер пишет и «ТТН:», и «ттн:».
+    index = notes.upper().find("ТТН:")
     if index == -1:
         return None
 

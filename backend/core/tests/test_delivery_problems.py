@@ -15,7 +15,12 @@ from unittest.mock import patch
 from django.test import TestCase, override_settings
 
 from core.models import Client, Order, OrderEvent, OrderEventType, OrderItem
-from core.order_event_handler import announce_delivery_problem, process_order
+from core.order_event_handler import (
+    announce_delivery_problem,
+    parse_status_code,
+    parse_ttn,
+    process_order,
+)
 
 LOCMEM = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 
@@ -127,7 +132,7 @@ class InBranchRemindersTests(TestCase):
             details.return_value = {"data": [{"StatusCode": status_code}]}
             process_order(
                 {"status": {"name": "Відправлений"},
-                 "engineer_notes": f"ТТН: {self.order.ttn}"},
+                 "manager_notes": f"Номер ТТН: {self.order.ttn}"},
                 self.order,
             )
         return list(
@@ -150,3 +155,111 @@ class InBranchRemindersTests(TestCase):
 
     def test_transit_does_not_remind(self, status_api):
         self.assertEqual(self.track(5), [])
+
+
+class StatusCodeIsAStringTests(TestCase):
+    """
+    Новая Почта присылает код статуса строкой: `"9"`, а не `9`.
+
+    Из-за этого сравнения `code in (9, 10)` всегда были ложными — заказы не
+    закрывались по факту вручения, а напоминание «прибуло у відділення» не
+    уходило вовсе. Ошибка жила в коде давно: снаружи всё выглядело работающим,
+    потому что перевод в «Відправлений» проверял обратное условие и случайно
+    срабатывал.
+    """
+
+    def test_string_code_becomes_number(self):
+        self.assertEqual(parse_status_code("9"), 9)
+
+    def test_number_stays_number(self):
+        self.assertEqual(parse_status_code(9), 9)
+
+    def test_garbage_is_rejected(self):
+        """Лучше ничего не делать, чем решать по мусору."""
+        for value in (None, "", "abc", {}):
+            self.assertIsNone(parse_status_code(value))
+
+
+@override_settings(CACHES=LOCMEM, REMONLINE_API_KEY="rem-key")
+@patch("core.services.remonline_status.RemonlineInterface")
+class DeliveryWithStringCodesTests(TestCase):
+    """Полный проход крона с кодами в том виде, в каком их шлёт Новая Почта."""
+
+    def setUp(self):
+        self.order = make_order(remonline_order_id=4242)
+
+    def track(self, raw_code):
+        with patch("core.order_event_handler.get_ttn_details") as details:
+            details.return_value = {"data": [{"StatusCode": raw_code}]}
+            process_order(
+                {"status": {"name": "Відправлений"},
+                 "manager_notes": f"Номер ТТН: {self.order.ttn}"},
+                self.order,
+            )
+        self.order.refresh_from_db()
+
+    @patch("core.services.remonline_notes.RoappInterface")
+    def test_delivery_closes_the_order(self, notes_api, status_api):
+        self.track("9")
+
+        self.assertTrue(self.order.is_completed)
+        self.assertTrue(self.order.is_paid)
+
+    def test_arrival_reminds_the_client(self, status_api):
+        self.track("7")
+
+        self.assertTrue(
+            OrderEvent.objects.filter(
+                order=self.order, type=OrderEventType.IN_BRANCH
+            ).exists()
+        )
+
+    def test_refusal_is_announced(self, status_api):
+        self.track("103")
+
+        self.assertTrue(
+            OrderEvent.objects.filter(
+                order=self.order, type=OrderEventType.DELIVERY_RETURNED
+            ).exists()
+        )
+
+    def test_unreadable_code_changes_nothing(self, status_api):
+        self.track("хтозна")
+
+        self.assertFalse(self.order.is_completed)
+        self.assertEqual(OrderEvent.objects.filter(order=self.order).count(), 0)
+
+
+class TtnIsReadFromManagerNotesTests(TestCase):
+    """
+    Заметки менеджера — единственное поле карточки, с которым работает система.
+
+    Там и состав заказа, и суммы, и номер накладной; менеджер вписывает ТТН
+    туда же. Раньше номер читался из «Заміток інженера» — отдельного поля, куда
+    система при этом ничего не писала, и данные о заказе жили в двух местах.
+    """
+
+    def test_reads_the_format_the_system_writes(self):
+        notes = "Тип платежа: Накладений платіж\nНомер ТТН: 20451528075859\n"
+
+        self.assertEqual(parse_ttn(notes), "20451528075859")
+
+    def test_reads_what_a_human_typed(self):
+        """Менеджер пишет как придётся — лишь бы метка и номер были."""
+        for notes in (
+            "ттн:20451528075859",
+            "ТТН: 20451528075859 на карту",
+            "Замовлення готове\n  ТТН:  20451528075859",
+        ):
+            self.assertEqual(parse_ttn(notes), "20451528075859", notes)
+
+    def test_notes_without_ttn(self):
+        self.assertIsNone(parse_ttn("Тип платежа: Накладений платіж"))
+
+    def test_empty_notes(self):
+        self.assertIsNone(parse_ttn(""))
+        self.assertIsNone(parse_ttn(None))
+
+    def test_too_short_number_is_rejected(self):
+        """Обрывок вместо накладной — не номер."""
+        self.assertIsNone(parse_ttn("ТТН: 204515"))

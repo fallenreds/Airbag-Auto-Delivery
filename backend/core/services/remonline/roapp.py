@@ -93,7 +93,8 @@ class RoappInterface:
 
     def update_order(self, order_id: int, **fields) -> dict:
         """
-        Правит заказ. Принимает `manager_notes`, `engineer_notes`, `custom_fields`.
+        Правит заказ. Система пишет только `manager_notes` — единственное поле
+        карточки, с которым она работает.
 
         Пустой вызов не делаем: PATCH без полей — лишний поход по сети.
         """

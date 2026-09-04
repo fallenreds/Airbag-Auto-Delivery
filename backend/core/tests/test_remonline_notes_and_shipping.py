@@ -77,7 +77,7 @@ class PushTtnTests(TestCase):
 
         sent = roapp.return_value.update_order.call_args.kwargs
         self.assertIn("Номер ТТН: 59000123456789", sent["manager_notes"])
-        self.assertNotIn("engineer_notes", sent)
+        self.assertEqual(list(sent), ["manager_notes"])
 
     def test_notes_keep_the_rest_of_the_order(self, roapp):
         order = make_order(self.owner, remonline_order_id=4242, ttn="59000123456789")
@@ -300,7 +300,7 @@ class DeliveryMarksOrderPaidTests(TestCase):
             details.return_value = {"data": [{"StatusCode": status_code}]}
             process_order(
                 {"status": {"name": "Відправлений"},
-                 "engineer_notes": f"ТТН: {self.order.ttn}"},
+                 "manager_notes": f"Номер ТТН: {self.order.ttn}"},
                 self.order,
             )
         self.order.refresh_from_db()
