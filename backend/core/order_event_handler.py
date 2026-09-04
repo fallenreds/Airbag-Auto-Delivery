@@ -6,7 +6,7 @@ from config.settings import (
     REMONLINE_API_KEY,
 )
 from core.models import CancelReason, Order, OrderEvent, OrderEventType
-from core.services import order_status
+from core.services import order_status, remonline_notes
 from core.services.order_cancel import cancel_order
 from core.services.remonline.api import RemonlineInterface
 
@@ -85,14 +85,25 @@ def process_order(remonline_order: dict, local_order: Order):
             return local_order.save()
 
         # Правило 7: посылка уже не у нас — карточка должна это показывать.
-        # Ориентируемся не на один код, а на весь диапазон «в пути и дальше»:
-        # 4 — у дорозі, 5 — прямує до міста, 6 — у місті одержувача,
-        # 7 — прибув на відділення, 8 — у поштоматі, 9–11 — отримано.
-        # Коды 1–3 (створено, видалено, не знайдено) отправкой не считаем.
-        if ttn_details["StatusCode"] in SHIPPED_STATUS_CODES:
+        if is_shipped(ttn_details["StatusCode"]):
             mark_shipped_in_remonline(local_order)
 
-        if ttn_details["StatusCode"] in (9, 10) and not local_order.is_completed:
+        if ttn_details["StatusCode"] in DELIVERED_STATUS_CODES and not local_order.is_completed:
+            if not local_order.is_paid:
+                # Посылка вручена — значит деньги получены. Для наложенного
+                # платежа это единственный момент, когда такое известно: до
+                # вручения клиент ничего не платил, и пометить заказ
+                # оплаченным раньше означало бы отобрать у него право
+                # отменить заказ самому.
+                #
+                # События PAYMENT_CONFIRMED при этом не создаём: оно шлёт
+                # клиенту «беремо замовлення в роботу», а заказ уже у него на
+                # руках. Заметки в CRM обновляем до закрытия карточки — после
+                # него RemOnline менять её уже не даёт.
+                local_order.is_paid = True
+                local_order.save(update_fields=["is_paid"])
+                remonline_notes.refresh_manager_notes(local_order)
+
             local_order.is_completed = True
             # Заказ вручён — закрываем и карточку в CRM. Решение приняли мы, а
             # не RemOnline, поэтому сообщить ему об этом надо.
@@ -116,7 +127,29 @@ def process_order(remonline_order: dict, local_order: Order):
     return local_order.save()
 
 
-SHIPPED_STATUS_CODES = (4, 5, 6, 7, 8, 9, 10, 11)
+# Коды Новой Почты, при которых посылка ещё у нас. Перечисляем именно их, а не
+# наоборот: список «в пути» у НП длинный и растёт, и белый список молча
+# пропускал бы новые. Так, из первой версии выпали 41 (доставка в пределах
+# города — для Одессы основной случай) и 101 (курьер везёт получателю).
+#
+#   1  — відправник створив накладну, але ще не передав
+#   2  — видалено
+#   3  — номер не знайдено
+#   12 — Нова пошта комплектує відправлення
+NOT_SHIPPED_STATUS_CODES = (1, 2, 3, 12)
+
+# Вручено. Код 11 — «грошовий переказ видано одержувачу», то есть наложенный
+# платёж: без него такой заказ не закрывался вовсе.
+#   9   — відправлення отримано
+#   10  — отримано, переказ надійде до каси
+#   11  — отримано, переказ видано одержувачу
+#   106 — одержано і створено ЕН зворотної доставки
+DELIVERED_STATUS_CODES = (9, 10, 11, 106)
+
+
+def is_shipped(status_code) -> bool:
+    """Посылка передана Новой Почте и больше не у нас."""
+    return status_code not in NOT_SHIPPED_STATUS_CODES
 
 
 def mark_shipped_in_remonline(order: Order) -> None:

@@ -218,17 +218,121 @@ class ShippedStatusTests(TestCase):
         self.assertEqual(len(self.move(SHIPPED, api)), 0)
 
 
-class ShippedCodesTests(TestCase):
-    """Какие коды Новой Почты считаем отправкой."""
+class NovaPoshtaCodesTests(TestCase):
+    """
+    Какие коды Новой Почты что означают.
 
-    def test_in_transit_and_delivered_count_as_shipped(self):
-        from core.order_event_handler import SHIPPED_STATUS_CODES
+    Сверено с документацией `TrackingDocumentGeneral.getStatusDocuments`
+    04.09.2026. Перечисляем «ещё у нас», а не «уже в пути»: список статусов
+    движения у НП длинный и пополняется, и белый список молча пропускал бы
+    новые — так из первой версии выпали 41 и 101.
+    """
 
-        for code in (4, 5, 6, 7, 9):  # эти наблюдались на боевых накладных
-            self.assertIn(code, SHIPPED_STATUS_CODES)
+    def test_order_is_not_shipped_while_it_is_with_us(self):
+        from core.order_event_handler import is_shipped
 
-    def test_created_and_missing_do_not(self):
-        from core.order_event_handler import SHIPPED_STATUS_CODES
+        for code in (1, 2, 3, 12):
+            self.assertFalse(is_shipped(code), f"код {code} не должен считаться отправкой")
 
-        for code in (1, 2, 3):  # створено, видалено, номер не знайдено
-            self.assertNotIn(code, SHIPPED_STATUS_CODES)
+    def test_local_delivery_counts_as_shipped(self):
+        """41 — доставка в пределах города, для Одессы основной случай."""
+        from core.order_event_handler import is_shipped
+
+        self.assertTrue(is_shipped(41))
+
+    def test_courier_delivery_counts_as_shipped(self):
+        """101 — «На шляху до одержувача», курьер везёт на адрес."""
+        from core.order_event_handler import is_shipped
+
+        self.assertTrue(is_shipped(101))
+
+    def test_usual_transit_codes_count_as_shipped(self):
+        from core.order_event_handler import is_shipped
+
+        for code in (4, 5, 6, 7, 8, 9, 10, 11, 15, 104, 107, 111, 112):
+            self.assertTrue(is_shipped(code), f"код {code} должен считаться отправкой")
+
+    def test_delivered_includes_cash_on_delivery(self):
+        """
+        11 — «отримано, грошовий переказ видано одержувачу».
+
+        Это и есть наложенный платёж. Без него такой заказ не закрывался
+        вовсе: система ждала кода 9 или 10, которых у него не бывает.
+        """
+        from core.order_event_handler import DELIVERED_STATUS_CODES
+
+        self.assertIn(11, DELIVERED_STATUS_CODES)
+
+    def test_delivered_codes_are_exactly_the_receipt_ones(self):
+        from core.order_event_handler import DELIVERED_STATUS_CODES
+
+        self.assertEqual(set(DELIVERED_STATUS_CODES), {9, 10, 11, 106})
+
+    def test_in_transit_is_not_delivered(self):
+        from core.order_event_handler import DELIVERED_STATUS_CODES
+
+        for code in (4, 41, 5, 6, 7, 8, 101):
+            self.assertNotIn(code, DELIVERED_STATUS_CODES)
+
+
+@override_settings(**CRM_SETTINGS)
+@patch("core.services.remonline_notes.RoappInterface")
+@patch("core.services.remonline_status.RemonlineInterface")
+class DeliveryMarksOrderPaidTests(TestCase):
+    """
+    Вручение = деньги получены.
+
+    Для наложенного платежа это единственный момент, когда такое известно: до
+    вручения клиент ничего не платил. Пометить заказ оплаченным раньше значило
+    бы отобрать у него право отменить заказ самому.
+    """
+
+    def setUp(self):
+        self.owner = make_client("delivery-owner@example.com")
+        self.order = make_order(
+            self.owner, remonline_order_id=4242, ttn="59000123456789"
+        )
+
+    def deliver(self, status_code):
+        from core.order_event_handler import process_order
+
+        with patch("core.order_event_handler.get_ttn_details") as details:
+            details.return_value = {"data": [{"StatusCode": status_code}]}
+            process_order(
+                {"status": {"name": "Відправлений"},
+                 "engineer_notes": f"ТТН: {self.order.ttn}"},
+                self.order,
+            )
+        self.order.refresh_from_db()
+
+    def test_cash_on_delivery_becomes_paid(self, status_api, notes_api):
+        self.deliver(11)
+
+        self.assertTrue(self.order.is_paid)
+        self.assertTrue(self.order.is_completed)
+
+    def test_plain_receipt_marks_it_too(self, status_api, notes_api):
+        self.deliver(9)
+
+        self.assertTrue(self.order.is_paid)
+
+    def test_notes_are_refreshed_before_closing(self, status_api, notes_api):
+        """После закрытия карточки RemOnline менять её уже не даёт."""
+        self.deliver(10)
+
+        notes_api.return_value.update_order.assert_called()
+
+    def test_transit_does_not_mark_paid(self, status_api, notes_api):
+        self.deliver(7)
+
+        self.assertFalse(self.order.is_paid)
+        self.assertFalse(self.order.is_completed)
+
+    def test_already_paid_order_is_left_alone(self, status_api, notes_api):
+        self.order.is_paid = True
+        self.order.save(update_fields=["is_paid"])
+        notes_api.return_value.update_order.reset_mock()
+
+        self.deliver(9)
+
+        notes_api.return_value.update_order.assert_not_called()
