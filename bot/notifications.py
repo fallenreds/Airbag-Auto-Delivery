@@ -392,10 +392,16 @@ def _refund_rows(order):
 
 
 def _refund_suffix(order) -> str:
-    refund_state = (order or {}).get('refund_state')
-    if refund_state in ('done', 'manual'):
-        return "\nКошти повернуто 💵"
-    if refund_state == 'pending':
+    """
+    Что дописать клиенту к сообщению об отмене.
+
+    Про состоявшийся возврат здесь молчим: деньги возвращаются не мгновенно и
+    не всегда автоматически, а «Кошти повернуто 💵» в ту же секунду, что и
+    «замовлення скасовано», читается как обещание, которого никто не давал.
+    Когда возврат действительно пройдёт, клиент получит отдельное сообщение
+    (`refunded_notifications`).
+    """
+    if (order or {}).get('refund_state') == 'pending':
         return "\nПовернення коштів в обробці ⏳"
     return ""
 

@@ -383,8 +383,6 @@ class TestCancelTexts:
         assert expected in bot_module._cancel_block_text(order)
 
     @pytest.mark.parametrize("refund_state,expected", [
-        ("done", "Кошти повернуто 💵"),
-        ("manual", "Кошти повернуто 💵"),
         ("pending", "в обробці"),
         ("", ""),
         (None, ""),
@@ -393,3 +391,16 @@ class TestCancelTexts:
         """Приписка про возврат переехала в уведомление вместе с рассылкой."""
         import notifications
         assert expected in notifications._refund_suffix({"refund_state": refund_state})
+
+    @pytest.mark.parametrize("refund_state", ["done", "manual"])
+    def test_completed_refund_is_not_announced_with_cancellation(self, refund_state):
+        """
+        Про состоявшийся возврат в сообщении об отмене молчим.
+
+        Деньги возвращаются не мгновенно и не всегда автоматически, а
+        «Кошти повернуто 💵» в ту же секунду, что и «замовлення скасовано»,
+        читается как обещание, которого никто не давал. Когда возврат
+        действительно пройдёт, клиент получит отдельное сообщение.
+        """
+        import notifications
+        assert notifications._refund_suffix({"refund_state": refund_state}) == ""
