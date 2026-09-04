@@ -80,6 +80,20 @@ class BackfillCommandTests(TestCase):
         self.assertEqual(known.telegram_id, 685556241)
         cmd_remonline.return_value.find_or_create_client.assert_not_called()
 
+    def test_completed_orders_are_not_sent_to_crm(self, cmd_remonline, sync_remonline):
+        """
+        На бою таких нашлось одиннадцать — импортированные из старой системы
+        заказы 2023–2025 годов. В CRM они выглядели бы как новые.
+        """
+        cmd_remonline.return_value.find_or_create_client.return_value = {"id": 2}
+        guest = make_client(telegram_id=7, is_guest=True)
+        done = make_order(guest, "0955562228", is_completed=True)
+
+        self.run_command()
+
+        done.refresh_from_db()
+        self.assertIsNone(done.remonline_order_id)
+
     def test_canceled_orders_are_not_sent_to_crm(self, cmd_remonline, sync_remonline):
         """Карточка сразу в «Відмова» менеджеру ничего не сообщает."""
         cmd_remonline.return_value.find_or_create_client.return_value = {"id": 1}
