@@ -1,12 +1,13 @@
 """
-Заметки в карточке RemOnline и статус «Відправлений».
+Заметки в карточке RemOnline и данные Новой Почты.
 
-Правила 3–7: заказ по реквизитам сразу видно как ждущий оплату, подтверждённая
-оплата уводит его в «Новий» и отмечается в заметках, ТТН из бота попадает в
-заметки инженера, а отправку система фиксирует по данным Новой Почты.
+Заказ по реквизитам сразу видно как ждущий оплату, подтверждённая оплата
+уводит его в «Новий» и отмечается в заметках, ТТН из бота попадает в заметки.
 
-Общее для всех: автоматика не перебивает работу менеджера. Если он увёл заказ
-дальше по цепочке, статус остаётся его.
+Продвижение заказа по цепочке — «Відправлений», «Закрито» — система не
+трогает вовсе: это работа менеджера (05.09.2026, решение владельца). Здесь же
+закреплено, что данные Новой Почты читаются по-прежнему: на них держатся
+завершение заказа у нас, напоминания клиенту и сообщения о проблемах.
 """
 from unittest.mock import patch
 
@@ -19,9 +20,6 @@ LOCMEM = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"
 
 NEW = "1445137"
 BANK_TRANSFER = "5673032"
-SHIPPED = "1445143"
-ASSEMBLED = "1445139"          # «Зібрав» — ещё до отправки
-CLOSED = "1445134"
 
 CRM_SETTINGS = dict(
     CACHES=LOCMEM,
@@ -30,8 +28,6 @@ CRM_SETTINGS = dict(
     REMONLINE_ORDER_TYPE_ID="199403",
     REMONLINE_STATUS_NEW=NEW,
     REMONLINE_STATUS_BANK_TRANSFER=BANK_TRANSFER,
-    REMONLINE_STATUS_SHIPPED=SHIPPED,
-    REMONLINE_STATUSES_BEFORE_SHIPPING=[BANK_TRANSFER, NEW, ASSEMBLED],
 )
 
 
@@ -181,41 +177,50 @@ class BankTransferStatusTests(TestCase):
 
 
 @override_settings(**CRM_SETTINGS)
+@patch("core.services.remonline_notes.RoappInterface")
 @patch("core.services.remonline_status.RemonlineInterface")
-class ShippedStatusTests(TestCase):
-    """Правило 7: отправку фиксируем по Новой Почте и только вперёд."""
+class CronNeverTouchesCardStatusTests(TestCase):
+    """
+    Движение посылки не двигает карточку в CRM.
+
+    Раньше крон переводил заказ в «Відправлений» по данным Новой Почты, а при
+    вручении закрывал карточку. Менеджер ведёт эти статусы сам, и автоматика
+    ему мешала. Данные Новой Почты крон читает по-прежнему — меняется только
+    то, что он с ними делает в чужой системе.
+    """
 
     def setUp(self):
         self.owner = make_client("ship-owner@example.com")
         self.order = make_order(self.owner, remonline_order_id=4242, ttn="59000123456789")
 
-    def move(self, current_status, api):
-        from core.order_event_handler import mark_shipped_in_remonline
+    def track(self, status_code):
+        from core.order_event_handler import process_order
 
-        api.return_value.get_orders_by_ids.return_value = [
-            {"id": 4242, "status": {"id": int(current_status)}}
-        ]
-        mark_shipped_in_remonline(self.order)
-        return api.return_value.update_order_status.call_args_list
+        with patch("core.order_event_handler.get_ttn_details") as details:
+            details.return_value = {"data": [{"StatusCode": str(status_code)}]}
+            process_order(
+                {"status": {"id": int(NEW), "name": "Новий"},
+                 "manager_notes": f"Номер ТТН: {self.order.ttn}"},
+                self.order,
+            )
+        self.order.refresh_from_db()
 
-    def test_moves_from_new(self, api):
-        calls = self.move(NEW, api)
+    def test_shipping_does_not_change_status(self, api, notes):
+        self.track(5)
 
-        self.assertEqual(len(calls), 1)
-        self.assertEqual(calls[0].kwargs["status_id"], int(SHIPPED))
+        api.return_value.update_order_status.assert_not_called()
 
-    def test_moves_from_bank_transfer(self, api):
-        self.assertEqual(len(self.move(BANK_TRANSFER, api)), 1)
+    def test_local_delivery_does_not_change_status(self, api, notes):
+        """41 — доставка в пределах города, для Одессы основной случай."""
+        self.track(41)
 
-    def test_moves_from_assembled(self, api):
-        self.assertEqual(len(self.move(ASSEMBLED, api)), 1)
+        api.return_value.update_order_status.assert_not_called()
 
-    def test_does_not_move_from_closed(self, api):
-        """Закрытый заказ автоматика назад не возвращает."""
-        self.assertEqual(len(self.move(CLOSED, api)), 0)
+    def test_delivery_finishes_order_but_leaves_the_card_open(self, api, notes):
+        self.track(9)
 
-    def test_does_not_move_when_already_shipped(self, api):
-        self.assertEqual(len(self.move(SHIPPED, api)), 0)
+        self.assertTrue(self.order.is_completed)
+        api.return_value.update_order_status.assert_not_called()
 
 
 class NovaPoshtaCodesTests(TestCase):
@@ -223,34 +228,8 @@ class NovaPoshtaCodesTests(TestCase):
     Какие коды Новой Почты что означают.
 
     Сверено с документацией `TrackingDocumentGeneral.getStatusDocuments`
-    04.09.2026. Перечисляем «ещё у нас», а не «уже в пути»: список статусов
-    движения у НП длинный и пополняется, и белый список молча пропускал бы
-    новые — так из первой версии выпали 41 и 101.
+    04.09.2026.
     """
-
-    def test_order_is_not_shipped_while_it_is_with_us(self):
-        from core.order_event_handler import is_shipped
-
-        for code in (1, 2, 3, 12):
-            self.assertFalse(is_shipped(code), f"код {code} не должен считаться отправкой")
-
-    def test_local_delivery_counts_as_shipped(self):
-        """41 — доставка в пределах города, для Одессы основной случай."""
-        from core.order_event_handler import is_shipped
-
-        self.assertTrue(is_shipped(41))
-
-    def test_courier_delivery_counts_as_shipped(self):
-        """101 — «На шляху до одержувача», курьер везёт на адрес."""
-        from core.order_event_handler import is_shipped
-
-        self.assertTrue(is_shipped(101))
-
-    def test_usual_transit_codes_count_as_shipped(self):
-        from core.order_event_handler import is_shipped
-
-        for code in (4, 5, 6, 7, 8, 9, 10, 11, 15, 104, 107, 111, 112):
-            self.assertTrue(is_shipped(code), f"код {code} должен считаться отправкой")
 
     def test_delivered_includes_cash_on_delivery(self):
         """
