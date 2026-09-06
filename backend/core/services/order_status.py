@@ -98,27 +98,20 @@ def promote_draft(order: Order) -> None:
 
 def finished(order: Order, *, details: str = "Order finished") -> None:
     """
-    Заказ завершён: событие + закрытие карточки в RemOnline.
+    Заказ завершён у нас: событие для уведомлений, и только оно.
 
-    Зовут два пути, которые решают это сами: админ кнопкой «Виконано» в боте и
-    крон, когда Новая Почта подтвердила вручение. Третий путь — крон увидел в
-    CRM статус «Закрито» — сюда не приходит: там карточка уже закрыта, и
-    сообщать RemOnline о его же решении незачем.
+    Карточку в RemOnline не закрываем. «Відправлений» и «Закрито» менеджер
+    ставит сам, и автоматика, делавшая это за него, мешала работе (05.09.2026,
+    решение владельца). Обратное направление осталось: крон видит в CRM
+    «Закрито» и завершает заказ у нас.
+
+    Зовут два пути: админ кнопкой «Виконано» в боте и крон, когда Новая Почта
+    подтвердила вручение.
     """
     OrderEvent.objects.create(
         type=OrderEventType.FINISHED,
         order=order,
         details=details,
-    )
-
-    transaction.on_commit(lambda: _close_quietly(order))
-
-
-def _close_quietly(order: Order) -> None:
-    remonline_status.set_status(
-        order,
-        getattr(settings, "REMONLINE_STATUS_CLOSED", None),
-        what="«Закрито»",
     )
 
 

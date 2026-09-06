@@ -6,9 +6,10 @@
 оставался в CRM открытым, а отказ клиента выглядел так же, как ошибочно
 созданная карточка.
 
-Здесь зафиксировано поведение общего модуля `remonline_status` и два перехода,
-которые через него пошли: «Закрито» при завершении и «Відмова» при отмене
-(последняя — в test_order_cancel_flow).
+Здесь зафиксировано поведение общего модуля `remonline_status`, переход
+«Новий» после оплаты и то, что завершение заказа карточку больше не закрывает:
+«Закрито» ставит менеджер (05.09.2026, решение владельца). «Відмова» при отмене
+проверяется в test_order_cancel_flow.
 """
 from unittest.mock import patch
 
@@ -140,9 +141,10 @@ class SetStatusTests(TestCase):
 @override_settings(
     CACHES=LOCMEM,
     REMONLINE_API_KEY="rem-key",
-    REMONLINE_STATUS_CLOSED=CLOSED,
 )
-class OrderFinishedClosesCrmCardTests(TestCase):
+class OrderFinishedLeavesCrmCardAloneTests(TestCase):
+    """Кнопка «Виконано» завершает заказ у нас и не трогает карточку."""
+
     def setUp(self):
         self.staff = make_client("finish-staff@example.com", is_staff=True)
         self.owner = make_client("finish-owner@example.com")
@@ -151,7 +153,9 @@ class OrderFinishedClosesCrmCardTests(TestCase):
         self.api.force_authenticate(self.staff)
 
     @patch("core.services.remonline_status.RemonlineInterface")
-    def test_completing_order_closes_the_card(self, remonline_cls):
+    def test_completing_order_does_not_touch_the_card(self, remonline_cls):
+        from core.models import OrderEvent, OrderEventType
+
         with self.captureOnCommitCallbacks(execute=True):
             response = self.api.patch(
                 f"/api/v2/orders/{self.order.id}/",
@@ -160,21 +164,10 @@ class OrderFinishedClosesCrmCardTests(TestCase):
             )
 
         self.assertEqual(response.status_code, 200, response.data)
-        remonline_cls.return_value.update_order_status.assert_called_once_with(
-            order_id=4242, status_id=int(CLOSED)
-        )
-
-    @patch("core.services.remonline_status.RemonlineInterface")
-    def test_repeated_patch_does_not_close_twice(self, remonline_cls):
-        """Повторное нажатие со старой карточки в чате не должно слать в CRM снова."""
-        self.order.is_completed = True
-        self.order.save(update_fields=["is_completed"])
-
-        with self.captureOnCommitCallbacks(execute=True):
-            self.api.patch(
-                f"/api/v2/orders/{self.order.id}/",
-                {"is_completed": True},
-                format="json",
-            )
-
         remonline_cls.return_value.update_order_status.assert_not_called()
+        # Уведомление о завершении при этом никуда не делось.
+        self.assertTrue(
+            OrderEvent.objects.filter(
+                order=self.order, type=OrderEventType.FINISHED
+            ).exists()
+        )
