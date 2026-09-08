@@ -169,3 +169,22 @@ class PaymentConfigViewTests(TestCase):
         self.assertEqual(resp.data["mode"], PaymentSettings.Mode.PRODUCTION)
         self.assertEqual(resp.data["google_pay_environment"], "PRODUCTION")
         self.assertEqual(resp.data["google_pay_merchant_id"], "gp-prod")
+
+
+class PaymentConfigTelegramBotTests(TestCase):
+    """Мини-апп строит ссылку возврата в бота из этого поля (ADR-0022)."""
+
+    def test_bot_username_comes_without_at(self):
+        from unittest.mock import patch
+        import os
+        with patch.dict(os.environ, {"TELEGRAM_BOT_USERNAME": "@airbagshop_bot"}):
+            response = self.client.get(CONFIG_URL)
+        self.assertEqual(response.data["telegram_bot_username"], "airbagshop_bot")
+
+    def test_missing_username_is_null(self):
+        from unittest.mock import patch
+        import os
+        with patch.dict(os.environ, {"TELEGRAM_BOT_USERNAME": "", "BOT_USERNAME": ""}):
+            response = self.client.get(CONFIG_URL)
+        self.assertIsNone(response.data["telegram_bot_username"])
+

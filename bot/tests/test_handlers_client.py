@@ -64,6 +64,21 @@ class TestStartMenu:
         visitor.assert_awaited_once_with(CLIENT_ID)
 
 
+    async def test_return_from_payment_does_not_try_to_link(self, bot_module, fake_bot):
+        """Ссылка возврата с оплаты Monobank: t.me/<bot>?start=order_<id> (ADR-0022)."""
+        msg = make_message("/start order_123", chat_id=CLIENT_ID, first_name="Іван")
+
+        with patch.object(bot_module.api, "link_account_via_code", AsyncMock()) as link, \
+             patch.object(bot_module, "add_new_visitor", AsyncMock()) as visitor:
+            await bot_module.start_message(msg)
+
+        link.assert_not_awaited()
+        visitor.assert_not_awaited()
+        texts = [c.kwargs.get("text") or (c.args[1] if len(c.args) > 1 else "") for c in fake_bot.send_message.await_args_list]
+        assert any("Дякуємо" in t for t in texts)
+        assert any("Вітаю, Іван" in t for t in texts)
+
+
 # ─────────────────────────── A3: статус заказов ──────────────────────────────
 
 class TestCheckStatus:
