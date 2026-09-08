@@ -11,6 +11,7 @@ from unittest.mock import patch
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
+from core.tests.support import link_telegram, telegram_of
 from core.models import CancelReason, Client, Order, OrderEvent, OrderEventType
 from payments.models import Payment
 
@@ -23,10 +24,11 @@ def make_client(email, *, is_staff=False, telegram_id=None):
         phone=f"+3800000{abs(hash(email)) % 100000:05d}",
         id_remonline=1,
         is_staff=is_staff,
-        telegram_id=telegram_id,
     )
     user.set_password("pass")
     user.save()
+    if telegram_id:
+        link_telegram(user, telegram_id)
     return user
 
 

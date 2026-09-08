@@ -89,6 +89,7 @@ def sample_order():
         "ttn": None,
         "is_completed": False,
         "telegram_id": 111111,
+        "client_telegram_ids": [111111],
         "remember_count": 0,
         "branch_remember_count": 0,
         "items": [],
@@ -112,9 +113,8 @@ def sample_client():
         "last_name": "Іваненко",
         "phone": "+380501234567",
         "email": "ivan@test.com",
-        "telegram_id": 111111,
+        "telegram_ids": [111111],
         "is_staff": False,
-        "is_guest": False,
         "nova_post_address": "м. Київ, відд. 5",
     }
 

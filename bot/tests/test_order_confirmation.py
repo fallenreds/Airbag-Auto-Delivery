@@ -39,9 +39,30 @@ class TestOrderConfirmation:
 
         assert card.await_args.args[2] == order["items"]
 
+    async def test_card_goes_to_every_telegram_of_the_account(self, sample_order, sample_client):
+        """Второе устройство того же человека не должно молчать (ADR-0021)."""
+        import notifications
+        order = dict(sample_order, telegram_id=111111, client_telegram_ids=[111111, 222222])
+
+        with patch.object(notifications, "get_client_by_id", AsyncMock(return_value=sample_client)), \
+             patch.object(notifications, "make_order", AsyncMock()) as card:
+            await notifications.new_order_client_notification(AsyncMock(), order)
+
+        assert [c.args[1] for c in card.await_args_list] == [111111, 222222]
+
+    async def test_site_order_without_device_still_reaches_the_account(self, sample_order, sample_client):
+        import notifications
+        order = dict(sample_order, telegram_id=None, client_telegram_ids=[111111])
+
+        with patch.object(notifications, "get_client_by_id", AsyncMock(return_value=sample_client)), \
+             patch.object(notifications, "make_order", AsyncMock()) as card:
+            await notifications.new_order_client_notification(AsyncMock(), order)
+
+        card.assert_awaited_once()
+
     async def test_order_without_telegram_id_is_skipped(self, sample_order):
         import notifications
-        order = dict(sample_order, telegram_id=None)
+        order = dict(sample_order, telegram_id=None, client_telegram_ids=[])
 
         with patch.object(notifications, "make_order", AsyncMock()) as card:
             await notifications.new_order_client_notification(AsyncMock(), order)

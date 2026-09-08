@@ -6,7 +6,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from core.models import Client
-from core.jwt_tokens import PASSWORD_CLAIM, GuestRefreshToken, password_fingerprint
+from core.jwt_tokens import PASSWORD_CLAIM, password_fingerprint
 from .jwt_serializers import MyTokenObtainPairSerializer
 
 
@@ -16,16 +16,19 @@ class MyTokenObtainPairView(TokenObtainPairView):
 
 class CustomTokenRefreshView(TokenRefreshView):
     """
-    Custom token refresh view that handles both regular and guest tokens.
-    For guest clients, it uses GuestRefreshToken which never expires.
-    For regular clients, it uses the standard RefreshToken with normal expiration.
+    Обновление сессии, которое на любой отказ отвечает 401.
+
+    Раньше исчезнувший клиент давал 500: `TokenRefreshSerializer` ищет владельца
+    токена через `.get()`, а `Client.DoesNotExist` — не `APIException`, и DRF
+    отдавал её как падение сервера. Фронт на 500 не разлогинивал, и человек
+    оставался с пустым кабинетом (инцидент 05.09.2026, клиент 36).
     """
-    
+
     def _reject_if_password_changed(self, refresh_token):
         """
         Без этой проверки обновление стало бы дырой в отзыве токенов: сам
         refresh подписан верно, и по нему выдался бы свежий access уже после
-        смены пароля. Токены без клейма пропускаем (см. PasswordAwareJWTAuthentication).
+        смены пароля.
         """
         try:
             token = RefreshToken(refresh_token)
@@ -34,7 +37,9 @@ class CustomTokenRefreshView(TokenRefreshView):
 
         claimed = token.get(PASSWORD_CLAIM)
         if not claimed:
-            return
+            # Токены без клейма выдавались только гостям и входу через Telegram
+            # старой схемы. После смены ключа подписи их не осталось.
+            raise InvalidToken({"code": "token_not_valid", "detail": "Token has no password claim."})
 
         user = Client.objects.filter(id=token.get("user_id")).first()
         if user and claimed != password_fingerprint(user):
@@ -49,37 +54,13 @@ class CustomTokenRefreshView(TokenRefreshView):
         self._reject_if_password_changed(request.data.get("refresh", ""))
 
         serializer = TokenRefreshSerializer(data=request.data)
-
         try:
             serializer.is_valid(raise_exception=True)
         except TokenError as e:
-            # Check if this might be a guest token that's being rejected due to expiration
-            refresh_token = request.data.get('refresh', '')
-            
-            try:
-                # Try to decode the token to get the user_id
-                from rest_framework_simplejwt.tokens import TokenBackend
-                token_backend = TokenBackend(algorithm='HS256')
-                decoded_token = token_backend.decode(refresh_token, verify=False)
-                
-                user_id = decoded_token.get('user_id')
-                if user_id:
-                    # Check if this is a guest user
-                    try:
-                        user = Client.objects.get(id=user_id)
-                        if user.is_guest:
-                            # For guest users, generate a new non-expiring token
-                            refresh = GuestRefreshToken.for_user(user)
-                            return Response({
-                                'refresh': str(refresh),
-                                'access': str(refresh.access_token),
-                            })
-                    except Client.DoesNotExist:
-                        pass
-            except Exception:
-                # If any error occurs during this process, fall back to the original error
-                pass
-                
             raise InvalidToken(e.args[0])
-            
+        except Client.DoesNotExist:
+            raise InvalidToken(
+                {"code": "user_not_found", "detail": "User no longer exists, please log in again."}
+            )
+
         return Response(serializer.validated_data, status=status.HTTP_200_OK)

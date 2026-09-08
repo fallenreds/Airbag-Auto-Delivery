@@ -49,7 +49,7 @@ def make_client(email, **overrides):
         email=email,
         name="Name",
         last_name="Last",
-        phone=f"+38001{next(_phone_seq)}",
+        phone=f"+380{next(_phone_seq):09d}",
         email_confirmed=False,
     )
     fields.update(overrides)
@@ -79,7 +79,7 @@ class RegistrationSendsConfirmationTests(TestCase):
             "confirm_password": PASSWORD,
             "name": "New",
             "last_name": "Bie",
-            "phone": f"+38002{next(_phone_seq)}",
+            "phone": f"+380{next(_phone_seq):09d}",
         }
         payload.update(extra)
         # RemOnline дергается при наличии name+phone — во внешнюю систему не ходим.
@@ -277,14 +277,6 @@ class ResendTests(TestCase):
         confirmed = make_client("done@example.com", email_confirmed=True)
 
         response = self.resend(email=confirmed.email)
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(mail.outbox), 0)
-
-    def test_guest_gets_no_letter(self):
-        Client.objects.create_guest(email="guest-confirm@example.com")
-
-        response = self.resend(email="guest-confirm@example.com")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(mail.outbox), 0)

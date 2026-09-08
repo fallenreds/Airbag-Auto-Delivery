@@ -275,7 +275,7 @@ class TestClientCancelFlow:
         return cb
 
     async def test_foreign_order_is_rejected(self, bot_module, fake_bot, order_factory):
-        order = order_factory(id=5, telegram_id=999999)
+        order = order_factory(id=5, telegram_id=999999, client_telegram_ids=[999999])
         cb = await self._call(bot_module, "cancel_order/5", order=order)
 
         cb.answer.assert_awaited_once()

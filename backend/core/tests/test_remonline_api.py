@@ -172,6 +172,7 @@ class TestRemonlineAPI(TestCase):
     @classmethod
     def tearDownClass(cls):
         pass
+        super().tearDownClass()
 
     @unittest.skip(
         "Ходит в живой RemOnline со 150 захардкоженными прод-id и падает при любом "

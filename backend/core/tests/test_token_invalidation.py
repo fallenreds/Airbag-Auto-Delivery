@@ -42,7 +42,7 @@ def make_client(email, **overrides):
         email=email,
         name="Name",
         last_name="Last",
-        phone=f"+38003{next(_phone_seq)}",
+        phone=f"+380{next(_phone_seq):09d}",
         email_confirmed=True,
     )
     fields.update(overrides)
@@ -114,19 +114,20 @@ class TokenInvalidationTests(TestCase):
         self.assertEqual(login.status_code, 200)
         self.assertEqual(self.auth(login.data["access"]).get(ME_URL).status_code, 200)
 
-    def test_token_without_claim_is_still_accepted(self):
-        # Токени, видані до появи клейма, мають доживати свій строк: інакше
-        # на деплої разом розлогінилися б усі активні користувачі.
+    def test_token_without_claim_is_rejected(self):
+        # Клейм обязателен: исключение для токенов без него держали ради гостей
+        # и старого входа через Telegram. После смены ключа подписи при выкате
+        # таких токенов не осталось, и лазейка закрыта.
         from rest_framework_simplejwt.tokens import RefreshToken
 
         from core.jwt_tokens import PASSWORD_CLAIM
 
-        legacy = RefreshToken.for_user(self.user)
-        self.assertNotIn(PASSWORD_CLAIM, legacy.payload)
+        bare = RefreshToken.for_user(self.user)
+        self.assertNotIn(PASSWORD_CLAIM, bare.payload)
 
-        response = self.auth(str(legacy.access_token)).get(ME_URL)
+        response = self.auth(str(bare.access_token)).get(ME_URL)
 
-        self.assertEqual(response.status_code, 200)
+        self.assertIn(response.status_code, (401, 403))
 
     def test_reset_password_flow_kills_old_tokens(self):
         # Наскрізна перевірка: саме заради цього сценарію все й робилось.

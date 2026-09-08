@@ -25,3 +25,6 @@ downloads/
 !.docgen/doc-structure.json
 # Safety net: doc-gen screenshots accidentally left in repo root
 screen-*.png
+
+# локальный override для стенда (Funnel), не коммитить
+docker-compose.override.yml

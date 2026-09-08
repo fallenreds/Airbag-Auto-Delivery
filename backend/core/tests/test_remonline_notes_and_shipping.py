@@ -34,7 +34,7 @@ CRM_SETTINGS = dict(
 def make_client(email, **fields):
     fields.setdefault("name", "Іван")
     fields.setdefault("last_name", "Петренко")
-    fields.setdefault("phone", f"+3806300{abs(hash(email)) % 10000:04d}")
+    fields.setdefault("phone", f"+380630{abs(hash(email)) % 1000000:06d}")
     user = Client(email=email, **fields)
     user.set_password("pass")
     user.save()

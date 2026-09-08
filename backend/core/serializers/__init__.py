@@ -6,7 +6,6 @@ from .clients import (
     ClientEventSerializer,
     ClientProfileSerializer,
 )
-from .guest_clients import GuestClientSerializer
 from .goods import GoodCategorySerializer, GoodSerializer
 from .discounts import DiscountSerializer
 from .orders import (
@@ -35,7 +34,6 @@ __all__ = [
     'ClientSerializer',
     'ClientEventSerializer',
     'ClientProfileSerializer',
-    'GuestClientSerializer',
     'GoodCategorySerializer',
     'GoodSerializer',
     'DiscountSerializer',

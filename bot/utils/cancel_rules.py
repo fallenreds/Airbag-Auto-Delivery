@@ -59,4 +59,9 @@ def is_order_owner(order: dict, telegram_id: int) -> bool:
     """
     if not order:
         return False
+    # Любой из привязанных Telegram аккаунта — владелец (ADR-0021). Снимок
+    # `telegram_id` остаётся запасным для ответов без списка.
+    linked = order.get("client_telegram_ids") or []
+    if linked:
+        return str(telegram_id) in {str(x) for x in linked}
     return str(order.get("telegram_id") or "") == str(telegram_id)

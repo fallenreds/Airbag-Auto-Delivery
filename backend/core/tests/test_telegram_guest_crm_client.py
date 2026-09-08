@@ -1,16 +1,10 @@
 """
-Клиент без контрагента в RemOnline.
+Контрагент в RemOnline — по телефону аккаунта.
 
-Контрагента заводили только в момент создания записи клиента, а авто-логин
-Telegram WebApp телефона не имеет — Telegram его в `init_data` не передаёт.
-Такой клиент оставался без `id_remonline` навсегда, и каждый его заказ
-отваливался с «Client has no remonline id»: в CRM карточки нет, менеджер о
-заказе не знает. На 03.09.2026 таких записей было 20 из 20 Telegram-гостей, и
-трое заказов уже сломались (№113274, №113275, №113284).
-
-Телефон впервые появляется в заказе — он обязательное поле формы. По нему и
-заводим контрагента, а если такой телефон уже есть у другого клиента —
-сливаем записи: это тот же человек, просто получивший вторую, пустую.
+У старых Telegram-записей телефона нет: Telegram его в `init_data` не передаёт.
+Он впервые появляется в заказе — и становится телефоном аккаунта. Раньше при
+совпадении с чужим телефоном записи молча сливались (ADR-0017); теперь это
+отказ (ADR-0021).
 """
 from unittest.mock import patch
 
@@ -18,6 +12,7 @@ from django.test import TestCase, override_settings
 
 from core.models import Client, Order, OrderItem
 from core.services import order_sync
+from core.tests.support import link_telegram
 
 LOCMEM = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 
@@ -50,86 +45,70 @@ def make_order(client, **fields):
 @patch("core.services.order_sync.RemonlineInterface")
 class EnsureClientInRemonlineTests(TestCase):
     def setUp(self):
-        # Телеграм-гость: ни почты, ни телефона — их неоткуда взять.
-        self.guest = make_client(telegram_id=6693351197, is_guest=True)
+        # Старая Telegram-запись: ни почты, ни телефона.
+        self.legacy = make_client()
+        link_telegram(self.legacy, 6693351197)
 
-    def test_creates_counterparty_by_order_phone(self, remonline_cls):
+    def test_creates_counterparty_by_order_phone_and_keeps_it(self, remonline_cls):
         remonline_cls.return_value.find_or_create_client.return_value = {"id": 30343658}
-        order = make_order(self.guest)
+        order = make_order(self.legacy)
 
         order_sync.ensure_client_in_remonline(order)
 
-        self.guest.refresh_from_db()
-        self.assertEqual(self.guest.id_remonline, 30343658)
-        remonline_cls.return_value.find_or_create_client.assert_called_once()
+        self.legacy.refresh_from_db()
+        self.assertEqual(self.legacy.id_remonline, 30343658)
+        self.assertEqual(self.legacy.phone, PHONE)
         self.assertEqual(
-            remonline_cls.return_value.find_or_create_client.call_args.kwargs["phone"],
-            PHONE,
+            remonline_cls.return_value.find_or_create_client.call_args.kwargs["phone"], PHONE
         )
+
+    def test_order_phone_is_normalized_before_it_becomes_the_account_phone(self, remonline_cls):
+        remonline_cls.return_value.find_or_create_client.return_value = {"id": 1}
+        order = make_order(self.legacy, phone="0664825935")
+
+        order_sync.ensure_client_in_remonline(order)
+
+        self.legacy.refresh_from_db()
+        self.assertEqual(self.legacy.phone, PHONE)
 
     def test_existing_counterparty_is_left_alone(self, remonline_cls):
-        self.guest.id_remonline = 111
-        self.guest.save(update_fields=["id_remonline"])
-        order = make_order(self.guest)
+        self.legacy.id_remonline = 111
+        self.legacy.save(update_fields=["id_remonline"])
+        order = make_order(self.legacy)
 
         order_sync.ensure_client_in_remonline(order)
 
         remonline_cls.return_value.find_or_create_client.assert_not_called()
 
-    def test_phone_of_another_client_merges_records(self, remonline_cls):
-        """
-        Тот же человек: телефон в системе уникален.
+    def test_account_phone_wins_over_order_phone(self, remonline_cls):
+        """Заказ для другого получателя не меняет контрагента."""
+        remonline_cls.return_value.find_or_create_client.return_value = {"id": 5}
+        self.legacy.phone = "+380670000009"
+        self.legacy.save(update_fields=["phone"])
+        order = make_order(self.legacy, phone=PHONE)
 
-        Дописать телефон гостю нельзя — UNIQUE не даст. Второго контрагента
-        заводить тоже нельзя: в CRM появился бы дубль.
-        """
-        known = make_client(
-            email="known@example.com", phone=PHONE, id_remonline=30343658
-        )
-        known_order = make_order(known)
-        guest_order = make_order(self.guest)
+        order_sync.ensure_client_in_remonline(order)
 
-        order_sync.ensure_client_in_remonline(guest_order)
-
-        remonline_cls.return_value.find_or_create_client.assert_not_called()
-        self.assertFalse(Client.objects.filter(pk=self.guest.pk).exists())
-
-        known.refresh_from_db()
-        self.assertEqual(known.telegram_id, 6693351197)
-        self.assertEqual(known.id_remonline, 30343658)
-        # Заказы гостя переехали к нему.
         self.assertEqual(
-            set(Order.objects.filter(client=known).values_list("pk", flat=True)),
-            {known_order.pk, guest_order.pk},
+            remonline_cls.return_value.find_or_create_client.call_args.kwargs["phone"],
+            "+380670000009",
         )
 
-    def test_merge_target_without_counterparty_still_gets_one(self, remonline_cls):
-        """Слились — но контрагента всё равно нет: заводим."""
-        remonline_cls.return_value.find_or_create_client.return_value = {"id": 555}
-        make_client(email="known2@example.com", phone=PHONE)
-        order = make_order(self.guest)
+    def test_phone_of_another_client_is_an_error_not_a_merge(self, remonline_cls):
+        known = make_client(email="known@example.com", phone=PHONE, id_remonline=30343658)
+        order = make_order(self.legacy)
 
-        order_sync.ensure_client_in_remonline(order)
+        with self.assertRaises(ValueError):
+            order_sync.ensure_client_in_remonline(order)
 
-        remonline_cls.return_value.find_or_create_client.assert_called_once()
-
-    def test_merge_does_not_touch_login_of_the_target(self, remonline_cls):
-        """У гостя нет входа — почта и пароль живого клиента остаются его."""
-        known = make_client(
-            email="login@example.com", phone=PHONE, id_remonline=1, email_confirmed=True
-        )
-        password_before = known.password
-        order = make_order(self.guest)
-
-        order_sync.ensure_client_in_remonline(order)
-
+        remonline_cls.return_value.find_or_create_client.assert_not_called()
+        self.assertTrue(Client.objects.filter(pk=self.legacy.pk).exists())
         known.refresh_from_db()
-        self.assertEqual(known.email, "login@example.com")
-        self.assertTrue(known.email_confirmed)
-        self.assertEqual(known.password, password_before)
+        self.assertEqual(known.telegram_ids, [])
+        self.assertEqual(Order.objects.filter(client=known).count(), 0)
 
     def test_no_phone_anywhere_is_an_error(self, remonline_cls):
-        order = make_order(self.guest, phone="")
+        order = make_order(self.legacy, phone="")
 
         with self.assertRaises(ValueError):
             order_sync.ensure_client_in_remonline(order)

@@ -1,43 +1,23 @@
 """
-Слияние двух записей одного и того же человека.
+Объединение двух записей одного человека — только руками администратора.
 
-Клиенты, приехавшие из старой системы, попадают в базу без почты. Часть из них
-не станет разбираться с персональной ссылкой, а просто зарегистрируется на
-сайте заново — и получит пустой аккаунт, пока вся история заказов и накопленная
-скидка остаются на импортированной записи.
+Автоматических слияний больше нет (ADR-0021). Они склеивали записи по
+совпадению Telegram или телефона, и на бою это дало обратное задуманному:
+удалялась запись, под которой человек сидел (токен умирал, заказ не
+проходил), а вход старой записи стирался пустыми полями гостя.
 
-Момент, когда это можно поймать, — привязка Telegram: тот же telegram_id уже
-числится за старой записью. Раньше система молча отбирала у неё telegram_id,
-и запись становилась недостижимой навсегда — ни с сайта, ни из бота, который
-ищет клиента именно по telegram_id.
-
-Теперь записи сливаются: почта и пароль нового аккаунта переезжают в старый,
-пустой новый удаляется. Сохраняются `Client.id`, `id_remonline`, заказы и
-скидка — то есть всё, ради чего слияние и затевается.
+Здесь та же операция, но вызываемая осознанно: `manage.py merge_clients`.
 """
 import logging
 
 from django.db import transaction
 
-from core.models import Cart, CartItem, Client, ClientEvent, Order
+from core.models import AccountClaimCode, Cart, CartItem, Client, ClientEvent, ClientTelegram, Order
 
 logger = logging.getLogger(__name__)
 
-# Поля, которые переносим из новой записи в старую, если в старой пусто.
-# Почта и пароль переносятся всегда — они и есть причина слияния.
+# Поля-снимки, которые переносим, если у цели пусто.
 OPTIONAL_FIELDS = ("name", "last_name", "phone", "nova_post_address", "login")
-
-
-def is_mergeable_target(client):
-    """
-    В эту запись можно влить другую.
-
-    Только пока она недостижима сама по себе: без подтверждённой почты в неё
-    нельзя войти, а значит и отобрать чужой аккаунт таким слиянием невозможно.
-    Полноценный аккаунт с подтверждённой почтой — уже чей-то рабочий вход, и
-    трогать его нельзя даже владельцу того же Telegram.
-    """
-    return bool(client and client.is_active and not client.is_guest and not client.email_confirmed)
 
 
 def _move_cart(source, target):
@@ -64,11 +44,13 @@ def _move_cart(source, target):
 @transaction.atomic
 def merge_clients(source, target):
     """
-    Переносит всё из `source` в `target` и удаляет `source`.
+    Переносит всё из `source` в `target` и удаляет `source`. Возвращает `target`.
 
-    Возвращает `target`. Вызывающая сторона обязана учесть, что токены доступа
-    `source` после этого мертвы — человеку нужно войти заново, уже своей
-    почтой, и он попадёт в объединённый аккаунт.
+    Вход (почта, пароль) переезжает только когда он есть у источника: запись
+    без почты не должна стирать рабочий вход цели — именно так клиент 36
+    остался без почты после четырёх слияний 05.09.2026.
+
+    Токены `source` после этого мертвы; обновление сессии ответит 401.
     """
     if source.pk == target.pk:
         return target
@@ -76,13 +58,17 @@ def merge_clients(source, target):
     Order.objects.filter(client=source).update(client=target)
     Order.objects.filter(canceled_by=source).update(canceled_by=target)
     ClientEvent.objects.filter(client=source).update(client=target)
+    ClientTelegram.objects.filter(client=source).update(client=target)
     _move_cart(source, target)
+    if not AccountClaimCode.objects.filter(client=target).exists():
+        AccountClaimCode.objects.filter(client=source).update(client=target)
 
-    # Вход переезжает целиком: ради него всё и делается.
-    target.email = source.email
-    target.email_confirmed = source.email_confirmed
-    target.password = source.password
-    updated = ["email", "email_confirmed", "password"]
+    updated = []
+    if source.email:
+        target.email = source.email
+        target.email_confirmed = source.email_confirmed
+        target.password = source.password
+        updated += ["email", "email_confirmed", "password"]
 
     for field in OPTIONAL_FIELDS:
         incoming = getattr(source, field, None)
@@ -97,70 +83,9 @@ def merge_clients(source, target):
     # Освобождаем уникальные поля до сохранения цели: иначе UNIQUE на email
     # и phone сработает на живой ещё записи-источнике.
     Client.objects.filter(pk=source.pk).update(email=None, phone=None, login=None)
-    target.save(update_fields=updated)
-
-    logger.info("Merged client %s into %s", source.pk, target.pk)
-    source.delete()
-    return target
-
-
-def absorb_guest(guest, target):
-    """
-    Вливает пустого Telegram-гостя в существующую запись того же человека.
-
-    Отличается от `merge_clients` направлением переносимого: там переезжает
-    вход (почта и пароль нового аккаунта), здесь — `telegram_id` гостя. Гость
-    входа не имеет вовсе: Telegram в `init_data` ни почты, ни телефона не
-    передаёт, поэтому запись создаётся пустой. Трогать почту и пароль цели
-    нельзя — это рабочий вход живого клиента.
-
-    Опознаём одного человека по телефону: он в системе уникален
-    (`Client.phone` — `unique=True`), и другого признака у Telegram-гостя нет.
-
-    Возвращает `target`.
-    """
-    if guest.pk == target.pk:
-        return target
-
-    Order.objects.filter(client=guest).update(client=target)
-    Order.objects.filter(canceled_by=guest).update(canceled_by=target)
-    ClientEvent.objects.filter(client=guest).update(client=target)
-    _move_cart(guest, target)
-
-    updated = []
-    if guest.telegram_id and not target.telegram_id:
-        target.telegram_id = guest.telegram_id
-        updated.append("telegram_id")
-    elif guest.telegram_id and target.telegram_id != guest.telegram_id:
-        # У цели свой Telegram — перетирать его нельзя, это чужая привязка.
-        # Но тогда telegram_id гостя после удаления не закреплён ни за кем, и
-        # следующий вход из мини-аппа создаст новую пустую запись. Случай
-        # редкий (два Telegram-аккаунта на один телефон или ошибка в номере),
-        # но молча он выглядит как «слияние не помогло».
-        logger.warning(
-            "Guest %s had telegram_id %s, but target %s already has %s — "
-            "the guest's Telegram will create a fresh record on next login",
-            guest.pk, guest.telegram_id, target.pk, target.telegram_id,
-        )
-
-    for field in OPTIONAL_FIELDS:
-        incoming = getattr(guest, field, None)
-        if incoming and not getattr(target, field, None):
-            setattr(target, field, incoming)
-            updated.append(field)
-
-    if guest.id_remonline and not target.id_remonline:
-        target.id_remonline = guest.id_remonline
-        updated.append("id_remonline")
-
-    # Уникальные поля освобождаем до сохранения цели: иначе UNIQUE сработает
-    # на ещё живой записи-источнике.
-    Client.objects.filter(pk=guest.pk).update(
-        email=None, phone=None, login=None, telegram_id=None
-    )
     if updated:
         target.save(update_fields=updated)
 
-    logger.info("Absorbed guest client %s into %s", guest.pk, target.pk)
-    guest.delete()
+    logger.info("Merged client %s into %s", source.pk, target.pk)
+    source.delete()
     return target

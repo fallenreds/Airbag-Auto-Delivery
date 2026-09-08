@@ -34,6 +34,7 @@ from core.models import (
     Cart,
     CartItem,
     Client,
+    ClientTelegram,
     Discount,
     Good,
     Order,
@@ -350,9 +351,9 @@ class Command(BaseCommand):
         Ищем по убыванию надёжности признака: telegram_id → remonline → телефон.
         """
         if row_tg:
-            found = Client.objects.filter(telegram_id=row_tg).first()
-            if found:
-                return found, "telegram_id"
+            link = ClientTelegram.objects.select_related("client").filter(telegram_id=row_tg).first()
+            if link:
+                return link.client, "telegram_id"
         if row_remonline:
             found = Client.objects.filter(id_remonline=row_remonline).first()
             if found:
@@ -386,10 +387,11 @@ class Command(BaseCommand):
             existing, matched_by = self._find_client(tg, remonline, phone)
             if existing:
                 self.client_map[legacy_id] = existing
+                if tg and self._link_telegram(existing, tg):
+                    st.detail("привязан Telegram к существующему клиенту")
                 changed = self._fill_blanks(
                     existing,
                     {
-                        "telegram_id": tg,
                         "id_remonline": remonline,
                         "name": (row["name"] or "").strip() or None,
                         "last_name": (row["last_name"] or "").strip() or None,
@@ -418,7 +420,6 @@ class Command(BaseCommand):
 
             client = Client(
                 id_remonline=remonline,
-                telegram_id=tg,
                 name=(row["name"] or "").strip() or None,
                 last_name=(row["last_name"] or "").strip() or None,
                 login=login,
@@ -428,7 +429,6 @@ class Command(BaseCommand):
                 # Подтверждать нечего, поэтому флаг остаётся снятым: клиент
                 # подтвердит почту в тот момент, когда впервые её укажет.
                 email_confirmed=False,
-                is_guest=False,
                 is_active=True,
             )
             if self.with_passwords and row["password"]:
@@ -448,12 +448,23 @@ class Command(BaseCommand):
             if phone:
                 used_phones.add(phone)
             st.create += 1
-            if tg:
+            if tg and self._link_telegram(client, tg):
                 st.detail("из них с привязанным Telegram")
             if phone:
                 st.detail("из них с телефоном")
 
         self.stats.append(st)
+
+    @staticmethod
+    def _link_telegram(client, telegram_id):
+        """Привязка Telegram, если номер ещё ничей. Занятый чужим — не трогаем."""
+        if ClientTelegram.objects.filter(telegram_id=telegram_id).exists():
+            return False
+        ClientTelegram.objects.create(
+            client=client, telegram_id=telegram_id,
+            username=client.login, first_name=client.name, last_name=client.last_name,
+        )
+        return True
 
     def _fill_blanks(self, obj, values, used_logins, used_phones):
         """
@@ -709,8 +720,8 @@ class Command(BaseCommand):
 
         goods = {g.id_remonline: g for g in Good.objects.all()}
         clients_by_tg = {
-            c.telegram_id: c
-            for c in Client.objects.exclude(telegram_id=None)
+            link.telegram_id: link.client
+            for link in ClientTelegram.objects.select_related("client")
         }
         carts = {}
 

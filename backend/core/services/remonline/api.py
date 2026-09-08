@@ -1,3 +1,4 @@
+from core.phone import try_normalize_phone
 import json
 import logging
 import os
@@ -241,15 +242,8 @@ class RemonlineInterface:
 
     @staticmethod
     def _normalize_phone(phone: str) -> str:
-        """Normalize phone to +380XXXXXXXXX format"""
-        phone = (phone or "").replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
-        if phone.startswith("+380"):
-            return phone
-        if phone.startswith("380"):
-            return "+" + phone
-        if phone.startswith("0") and len(phone) == 10:
-            return "+38" + phone
-        return phone
+        """Тот же формат, что и во всей системе: `+380XXXXXXXXX` (core.phone)."""
+        return try_normalize_phone(phone) or (phone or "")
 
     def create_client(self, first_name: str, phone: str, last_name: str = "", address: str = "", email: str = "") -> dict:
         """Создает клиента в Remonline. Поля: first_name, last_name, phone[], address, email"""

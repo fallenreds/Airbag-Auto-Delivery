@@ -14,16 +14,16 @@ class PasswordAwareJWTAuthentication(JWTAuthentication):
     сброса пароля старый access жил бы ещё сутки, а refresh — двое. Здесь в
     токене лежит отпечаток хеша пароля, и он сверяется с текущим.
 
-    Токены без клейма пропускаются намеренно: иначе на деплое разом
-    разлогинились бы все, у кого уже есть валидный токен. Такие токены
-    доживают максимум двое суток и вымываются сами.
+    Клейм обязателен. Исключение для токенов без него существовало ради
+    гостей и старого входа через Telegram; после смены ключа подписи при выкате
+    таких токенов не осталось, и держать лазейку незачем.
     """
 
     def get_user(self, validated_token):
         user = super().get_user(validated_token)
 
         claimed = validated_token.get(PASSWORD_CLAIM)
-        if claimed and claimed != password_fingerprint(user):
+        if not claimed or claimed != password_fingerprint(user):
             raise AuthenticationFailed(
                 {
                     "code": "password_changed",

@@ -17,7 +17,6 @@ from django.core.management.base import BaseCommand
 from django.db.models import Q
 
 from core.models import Client, Order
-from core.services import client_merge
 from core.services.order_sync import sync_order_to_remonline
 from core.services.remonline import RemonlineInterface
 
@@ -46,7 +45,6 @@ class Command(BaseCommand):
 
         self.stats = {
             "clients": 0,
-            "merged": 0,
             "created": 0,
             "skipped_no_phone": 0,
             "failed": 0,
@@ -98,34 +96,10 @@ class Command(BaseCommand):
         return last_order.phone.strip() if last_order else None
 
     def attach_remonline_client(self, client, phone):
-        twin = Client.objects.filter(phone=phone).exclude(pk=client.pk).first()
-
-        if twin is not None:
-            # Тот же человек: телефон в системе уникален. Второго контрагента
-            # не заводим, записи сливаем в старую — с заказами и id_remonline.
-            if self.dry_run:
-                self.stats["merged"] += 1
-                self.stdout.write(
-                    f"  клиент {client.id}: слить с {twin.id} "
-                    f"(id_remonline={twin.id_remonline})"
-                )
-                if twin.id_remonline is None:
-                    self.stats["created"] += 1
-                    self.stdout.write(
-                        f"  клиент {client.id}: и завести контрагента по {phone}"
-                    )
-                return
-            merged = client_merge.absorb_guest(client, twin)
-            self.stats["merged"] += 1
-            self.stdout.write(
-                self.style.SUCCESS(
-                    f"  клиент {client.id} → слит в {merged.id} "
-                    f"(id_remonline={merged.id_remonline})"
-                )
-            )
-            if merged.id_remonline is not None:
-                return
-            client = merged
+        # Слияний по телефону больше нет (ADR-0021): чужой номер — это ошибка,
+        # которую разбирает администратор, а не повод склеить записи.
+        if Client.objects.filter(phone=phone).exclude(pk=client.pk).exists():
+            raise ValueError(f"телефон {phone} принадлежит другому клиенту — разобрать вручную")
 
         if self.dry_run:
             self.stats["created"] += 1
@@ -199,7 +173,6 @@ class Command(BaseCommand):
         s = self.stats
         self.stdout.write("\n" + "─" * 52)
         self.stdout.write(f"Клиентов просмотрено      : {s['clients']}")
-        self.stdout.write(f"  слито с существующими   : {s['merged']}")
         self.stdout.write(f"  заведено контрагентов   : {s['created']}")
         self.stdout.write(f"  пропущено без телефона  : {s['skipped_no_phone']}")
         self.stdout.write(f"  сорвалось               : {s['failed']}")

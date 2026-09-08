@@ -3,6 +3,7 @@ from unittest.mock import patch
 from django.test import TestCase
 from rest_framework.test import APIRequestFactory, force_authenticate
 
+from core.tests.support import telegram_of
 from core.models import Client, Good, GoodCategory, Order, OrderEvent, OrderEventType
 from core.views.orders import OrderViewSet
 
@@ -79,7 +80,7 @@ class OrderPaymentTypeBranchingTests(TestCase):
     def test_admin_patch_switches_to_postpayment_and_emits_event(self, sync_mock):
         order = Order.objects.create(
             client=self.user,
-            telegram_id=self.user.telegram_id,
+            telegram_id=telegram_of(self.user),
             name="n",
             last_name="l",
             phone="+380000000004",
@@ -110,7 +111,7 @@ class OrderPaymentTypeBranchingTests(TestCase):
     def test_non_admin_cannot_change_payment_type(self, sync_mock):
         order = Order.objects.create(
             client=self.user,
-            telegram_id=self.user.telegram_id,
+            telegram_id=telegram_of(self.user),
             name="n",
             last_name="l",
             phone="+380000000005",

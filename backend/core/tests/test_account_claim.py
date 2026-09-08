@@ -14,6 +14,7 @@ from django.core import mail
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
+from core.tests.support import link_telegram
 from core.models import AccountClaimCode, Client, Order
 from core.services.account_claim import (
     build_claim_url,
@@ -35,12 +36,12 @@ CLAIM_SETTINGS = dict(
 
 
 def legacy_client(**overrides):
+    telegram_id = overrides.pop("telegram_id", 8884545351)
     """Клиент, каким его создаёт импортёр: телефон и Telegram есть, почты нет."""
     fields = dict(
         name="Сергій",
         last_name="Киришун",
         phone="+380977626200",
-        telegram_id=8884545351,
         id_remonline=27258851,
         email=None,
         email_confirmed=False,
@@ -49,6 +50,8 @@ def legacy_client(**overrides):
     client = Client(**fields)
     client.set_unusable_password()
     client.save()
+    if telegram_id:
+        link_telegram(client, telegram_id)
     return client
 
 
@@ -57,11 +60,11 @@ class ClaimCodeIssuingTests(TestCase):
     def test_only_unreachable_accounts_need_a_code(self):
         legacy = legacy_client()
         confirmed = Client.objects.create_user(
-            email="ok@airbag.local", password="pass", telegram_id=1,
+            email="ok@airbag.local", password="pass", phone="+380670000001",
         )
+        link_telegram(confirmed, 1)
         confirmed.email_confirmed = True
         confirmed.save(update_fields=["email_confirmed"])
-        Client.objects.create_guest(telegram_id=2)
         Client.objects.create_user(email="no-tg@airbag.local", password="pass")
 
         eligible = list(claimable_clients())

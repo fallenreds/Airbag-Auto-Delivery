@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, patch
 from django.core.management import call_command
 from django.test import TestCase, override_settings
 
+from core.tests.support import link_telegram, telegram_of
 from core.models import AccountClaimCode, Client
 
 LOCMEM = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
@@ -22,12 +23,12 @@ def legacy_client(index):
     client = Client(
         name=f"Клієнт{index}",
         phone=f"+38097000{index:04d}",
-        telegram_id=900000 + index,
         email=None,
         email_confirmed=False,
     )
     client.set_unusable_password()
     client.save()
+    link_telegram(client, 900000 + index)
     return client
 
 
@@ -99,7 +100,7 @@ class SendClaimInvitesTests(TestCase):
 
         links = set()
         for client in self.clients:
-            text = captured[client.telegram_id]
+            text = captured[telegram_of(client)]
             code = AccountClaimCode.objects.get(client=client).code
             self.assertIn(f"https://airbagad.com/uk/claim/{code}/", text)
             links.add(code)
@@ -116,7 +117,7 @@ class SendClaimInvitesTests(TestCase):
         self.assertIn("уже отправляли", output)
 
     def test_blocked_users_are_counted_not_treated_as_failure(self):
-        blocked = [self.clients[0].telegram_id, self.clients[1].telegram_id]
+        blocked = [telegram_of(self.clients[0]), telegram_of(self.clients[1])]
         telegram = Telegram(blocked=blocked)
 
         output = self._run(telegram, "--apply")
@@ -126,7 +127,7 @@ class SendClaimInvitesTests(TestCase):
 
     def test_blocked_users_are_retried_next_time(self):
         """Человек мог разблокировать бота — метка отправки ему не ставится."""
-        blocked = [self.clients[0].telegram_id]
+        blocked = [telegram_of(self.clients[0])]
         self._run(Telegram(blocked=blocked), "--apply")
 
         second = Telegram()
@@ -143,7 +144,7 @@ class SendClaimInvitesTests(TestCase):
 
         self._run(telegram, "--apply")
 
-        self.assertNotIn(activated.telegram_id, telegram.sent)
+        self.assertNotIn(telegram_of(activated), telegram.sent)
         self.assertEqual(len(telegram.sent), 4)
 
     def test_limit_allows_a_trial_run(self):

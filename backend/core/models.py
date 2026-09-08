@@ -38,24 +38,6 @@ class ClientManager(BaseUserManager):
         user.save(using=self._db)
         return user
 
-    def create_guest(self, **extra_fields):
-        """
-        Create a guest client with no email and no password.
-        Guest clients can be created with just an ID - no other fields required.
-        Guest clients can be converted to regular clients later.
-        """
-        # Set minimal defaults but allow them to be null/blank
-        extra_fields.setdefault("is_guest", True)
-        extra_fields.setdefault("is_active", True)
-
-        # Create with just the required fields
-        # Skip email validation for guest users
-        user = self.model(**extra_fields)
-        user._skip_email_validation = True  # Add a flag to skip validation
-        user.set_unusable_password()  # Set an unusable password
-        user.save(using=self._db)
-        return user
-
     def create_superuser(self, email, password=None, **extra_fields):
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
@@ -70,13 +52,16 @@ class ClientManager(BaseUserManager):
 class Client(AbstractBaseUser, PermissionsMixin):
     id = models.BigAutoField(primary_key=True)
     id_remonline = models.BigIntegerField(null=True, blank=True)
-    telegram_id = models.BigIntegerField(null=True, blank=True, db_index=True)
 
     name = models.CharField(max_length=255, null=True, blank=True)
     last_name = models.CharField(max_length=255, null=True, blank=True)
     login = models.CharField(max_length=128, unique=True, null=True, blank=True)
 
+    # Почта и пароль могут отсутствовать: клиенты из старой системы приехали без
+    # них и входят только через Telegram или по claim-ссылке.
     email = models.EmailField(unique=True, max_length=100, null=True, blank=True)
+    # Только `+380XXXXXXXXX` — формат стережёт ограничение в Meta. Телефон здесь
+    # ключ: по нему заводится контрагент в RemOnline и ищется дубль.
     phone = models.CharField(max_length=20, blank=True, null=True, unique=True)
     nova_post_address = models.TextField(blank=True, null=True)
 
@@ -84,7 +69,6 @@ class Client(AbstractBaseUser, PermissionsMixin):
 
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
-    is_guest = models.BooleanField(default=False)
     # Подтверждение почты при регистрации. Новые аккаунты создаются
     # неподтверждёнными и не могут войти, пока не пройдут по ссылке из письма.
     # Существующие на момент миграции аккаунты помечены подтверждёнными —
@@ -110,20 +94,26 @@ class Client(AbstractBaseUser, PermissionsMixin):
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []
 
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(phone__isnull=True)
+                | models.Q(phone__regex=r"^\+380\d{9}$"),
+                name="client_phone_ua_format",
+            ),
+        ]
+
     def generate_api_key(self):
         self.api_key = secrets.token_urlsafe(32)
 
     def save(self, *args, **kwargs):
-        # Allow saving without email only for guest clients
         if not self.pk:
             self.generate_api_key()
+        super().save(*args, **kwargs)
 
-        if getattr(self, "_skip_email_validation", False) or self.is_guest:
-            # Skip the email validation for guest clients
-            super(AbstractBaseUser, self).save(*args, **kwargs)
-        else:
-            # Normal save with validation for regular clients
-            super().save(*args, **kwargs)
+    @property
+    def telegram_ids(self):
+        return list(self.telegram_links.values_list("telegram_id", flat=True))
 
     def __str__(self):
         name = self.name or ""
@@ -132,7 +122,37 @@ class Client(AbstractBaseUser, PermissionsMixin):
 
         if name or last_name:
             return f"{name} {last_name}{email_part}"
-        return f"Guest{email_part}" if self.is_guest else "Client"
+        return f"Client #{self.pk}{email_part}"
+
+
+class ClientTelegram(models.Model):
+    """
+    Привязка Telegram-аккаунта к клиенту.
+
+    Один клиент — сколько угодно Telegram (телефон и планшет, рабочий и личный),
+    но один Telegram — ровно один клиент: `telegram_id` уникален. Раньше номер
+    лежал прямо в `Client.telegram_id` без уникальности, и дубль ничем не
+    ловился — везде стояло `.first()`, а вторая запись становилась невидимой.
+
+    Никаких слияний при конфликте: занятый Telegram — это 409 с почтой
+    владельца, и дальше решает человек или администратор.
+    """
+
+    client = models.ForeignKey(
+        Client, on_delete=models.CASCADE, related_name="telegram_links"
+    )
+    telegram_id = models.BigIntegerField(unique=True)
+    # Снимок профиля Telegram на момент привязки — для админки и бота.
+    username = models.CharField(max_length=64, null=True, blank=True)
+    first_name = models.CharField(max_length=255, null=True, blank=True)
+    last_name = models.CharField(max_length=255, null=True, blank=True)
+    linked_at = models.DateTimeField(default=timezone.now, editable=False)
+
+    class Meta:
+        ordering = ("id",)
+
+    def __str__(self):
+        return f"tg {self.telegram_id} → client {self.client_id}"
 
 
 class ClientEventType:
