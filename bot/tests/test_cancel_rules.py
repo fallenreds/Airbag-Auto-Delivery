@@ -92,6 +92,16 @@ class TestOwnership:
     def test_order_without_telegram_id(self):
         assert is_order_owner(order(telegram_id=None), 111111) is False
 
+    def test_any_linked_telegram_of_the_account_is_the_owner(self):
+        """У аккаунта может быть несколько Telegram — заказ с одного отменяют и с другого."""
+        linked = order(telegram_id=111111, client_telegram_ids=[111111, 222222])
+        assert is_order_owner(linked, 222222) is True
+        assert is_order_owner(linked, 333333) is False
+
+    def test_site_order_belongs_to_the_account_not_the_device(self):
+        """Заказ с сайта: снимка устройства нет, владелец — по привязкам аккаунта."""
+        assert is_order_owner(order(telegram_id=None, client_telegram_ids=[111111]), 111111) is True
+
 
 class TestStateHelpers:
     def test_is_canceled(self):

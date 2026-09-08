@@ -4,6 +4,7 @@ from typing import Any, cast
 from django.test import TestCase
 from django.utils import timezone
 
+from core.tests.support import telegram_of
 from core.models import Client, Order, OrderEvent, OrderEventType
 from payments.mono import MonobankPaymentService
 from payments.models import Payment
@@ -26,7 +27,7 @@ class PaymentConfirmationFlowTests(TestCase):
     def test_mark_order_paid_triggers_sync_for_prepayment(self, sync_mock):
         order = Order.objects.create(
             client=self.client_user,
-            telegram_id=self.client_user.telegram_id,
+            telegram_id=telegram_of(self.client_user),
             name="N",
             last_name="L",
             phone="+380000100002",
@@ -56,7 +57,7 @@ class PaymentConfirmationFlowTests(TestCase):
     def test_mark_order_paid_does_not_trigger_sync_for_postpayment(self, sync_mock):
         order = Order.objects.create(
             client=self.client_user,
-            telegram_id=self.client_user.telegram_id,
+            telegram_id=telegram_of(self.client_user),
             name="N",
             last_name="L",
             phone="+380000100003",
@@ -76,7 +77,7 @@ class PaymentConfirmationFlowTests(TestCase):
     def test_process_invoice_event_saves_failure_reason_for_failed_status(self):
         order = Order.objects.create(
             client=self.client_user,
-            telegram_id=self.client_user.telegram_id,
+            telegram_id=telegram_of(self.client_user),
             name="N",
             last_name="L",
             phone="+380000100004",
@@ -115,7 +116,7 @@ class PaymentConfirmationFlowTests(TestCase):
     def test_payment_serializer_returns_failure_reason(self):
         order = Order.objects.create(
             client=self.client_user,
-            telegram_id=self.client_user.telegram_id,
+            telegram_id=telegram_of(self.client_user),
             name="N",
             last_name="L",
             phone="+380000100005",

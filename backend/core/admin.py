@@ -10,6 +10,7 @@ from .models import (
     Cart,
     CartItem,
     Client,
+    ClientTelegram,
     ClientEvent,
     Discount,
     Good,
@@ -40,6 +41,12 @@ class GoodCategoryAdmin(admin.ModelAdmin):
     search_fields = ("title",)
 
 
+class ClientTelegramInline(admin.TabularInline):
+    model = ClientTelegram
+    extra = 0
+    readonly_fields = ("linked_at",)
+
+
 @admin.register(Client)
 class ClientAdmin(UserAdmin):
     model = Client
@@ -48,13 +55,13 @@ class ClientAdmin(UserAdmin):
         "email",
         "name",
         "last_name",
-        "telegram_id",
         "api_key",
         "is_active",
         "is_staff",
         "is_superuser",
     )
-    search_fields = ("email", "name", "last_name", "telegram_id")
+    search_fields = ("email", "name", "last_name", "phone", "telegram_links__telegram_id")
+    inlines = (ClientTelegramInline,)
     ordering = ("id",)
     readonly_fields = ('api_key', 'regenerate_api_key_button')
     fieldsets = (
@@ -65,7 +72,6 @@ class ClientAdmin(UserAdmin):
                 "fields": (
                     "name",
                     "last_name",
-                    "telegram_id",
                     "phone",
                     "id_remonline",
                 )
@@ -101,7 +107,6 @@ class ClientAdmin(UserAdmin):
                     "password2",
                     "name",
                     "last_name",
-                    "telegram_id",
                     "phone",
                     "id_remonline",
                     "is_active",

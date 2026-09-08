@@ -13,6 +13,7 @@ from unittest.mock import patch
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
+from core.tests.support import link_telegram
 from core.models import (
     Client,
     ClientEvent,
@@ -29,6 +30,7 @@ HOST = {"SERVER_NAME": "testserver"}
 
 
 def make_client(email, **extra):
+    telegram_id = extra.pop("telegram_id", None)
     user = Client(
         email=email,
         name="N",
@@ -38,6 +40,8 @@ def make_client(email, **extra):
     )
     user.set_password("pass")
     user.save()
+    if telegram_id:
+        link_telegram(user, telegram_id)
     return user
 
 

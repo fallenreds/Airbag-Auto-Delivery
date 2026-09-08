@@ -19,6 +19,7 @@ from core.management.commands.import_legacy_db import (
     parse_dt,
     parse_goods_list,
 )
+from core.tests.support import link_telegram
 from core.models import (
     BotVisitor,
     Cart,
@@ -209,47 +210,45 @@ class ImportTests(LegacyDBMixin, TestCase):
     def test_clients_are_created_with_normalized_phone(self):
         self.run_import(self.source, "--apply")
 
-        client = Client.objects.get(telegram_id=575926846)
+        client = Client.objects.get(telegram_links__telegram_id=575926846)
         self.assertEqual(client.phone, "+380990259152")
         self.assertEqual(client.name, "Дима")
-        self.assertFalse(client.is_guest)
 
     def test_passwords_are_not_carried_over_by_default(self):
         """В старой базе пароль лежит открытым текстом — по умолчанию не переносим."""
         self.run_import(self.source, "--apply")
 
-        client = Client.objects.get(telegram_id=516842877)
+        client = Client.objects.get(telegram_links__telegram_id=516842877)
         self.assertFalse(client.has_usable_password())
 
     def test_passwords_are_hashed_when_asked(self):
         self.run_import(self.source, "--apply", "--with-passwords")
 
-        client = Client.objects.get(telegram_id=516842877)
+        client = Client.objects.get(telegram_links__telegram_id=516842877)
         self.assertTrue(client.check_password("pwd"))
         self.assertNotIn("pwd", client.password)
 
     def test_existing_client_is_matched_not_duplicated(self):
-        existing = Client.objects.create_user(
-            email="a@b.c", password="x", telegram_id=516842877
-        )
+        existing = Client.objects.create_user(email="a@b.c", password="x")
+        link_telegram(existing, 516842877)
 
         self.run_import(self.source, "--apply")
 
-        self.assertEqual(Client.objects.filter(telegram_id=516842877).count(), 1)
+        self.assertEqual(Client.objects.filter(telegram_links__telegram_id=516842877).count(), 1)
         existing.refresh_from_db()
         self.assertEqual(existing.name, "Артур", "пустые поля дополняются из старой базы")
         self.assertEqual(existing.email, "a@b.c")
 
     def test_existing_data_is_never_overwritten(self):
         """Новая база — источник истины: заполненные поля старая не перебивает."""
-        Client.objects.create_user(
-            email="a@b.c", password="x", telegram_id=516842877,
-            name="Актуальное", phone="+380000000000",
+        existing = Client.objects.create_user(
+            email="a@b.c", password="x", name="Актуальное", phone="+380000000000",
         )
+        link_telegram(existing, 516842877)
 
         self.run_import(self.source, "--apply")
 
-        client = Client.objects.get(telegram_id=516842877)
+        client = Client.objects.get(telegram_links__telegram_id=516842877)
         self.assertEqual(client.name, "Актуальное")
         self.assertEqual(client.phone, "+380000000000")
 
@@ -277,7 +276,7 @@ class ImportTests(LegacyDBMixin, TestCase):
         self.run_import(self.source, "--apply")
 
         order = Order.objects.get(remonline_order_id=62315329)
-        self.assertEqual(order.client, Client.objects.get(telegram_id=516842877))
+        self.assertEqual(order.client, Client.objects.get(telegram_links__telegram_id=516842877))
 
     def test_order_fields_are_carried_over(self):
         self.run_import(self.source, "--apply")
@@ -350,7 +349,7 @@ class ImportTests(LegacyDBMixin, TestCase):
         self.run_import(self.source, "--apply")
 
         cart = Cart.objects.get(telegram_id=516842877)
-        self.assertEqual(cart.client, Client.objects.get(telegram_id=516842877))
+        self.assertEqual(cart.client, Client.objects.get(telegram_links__telegram_id=516842877))
         item = CartItem.objects.get(cart=cart)
         self.assertEqual(item.good, self.good)
 

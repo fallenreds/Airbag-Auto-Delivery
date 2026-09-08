@@ -4,6 +4,8 @@ from typing import TypedDict
 from django.db import transaction
 from rest_framework import serializers
 
+from core.phone import INVALID_PHONE_MESSAGE, try_normalize_phone
+from core.services.telegram import validate_telegram_init_data
 from core.models import Client, Good, Order, OrderEvent, OrderEventType, OrderItem
 from core.services import order_cancel
 from core.services.discount_service import DiscountService
@@ -95,6 +97,9 @@ class OrderCreateSerializer(serializers.ModelSerializer):
     description = serializers.CharField(
         required=False, allow_blank=True, allow_null=True
     )
+    # Из мини-аппа фронт присылает initData — по нему заполняется
+    # `Order.telegram_id`: с какого устройства оформили. Для сайта поля нет.
+    init_data = serializers.CharField(required=False, allow_blank=True, write_only=True)
 
     class Meta:
         model = Order
@@ -107,7 +112,39 @@ class OrderCreateSerializer(serializers.ModelSerializer):
             "bank_transfer",
             "description",
             "items",
+            "init_data",
         ]
+
+    PHONE_TAKEN_CODE = "phone_belongs_to_other_account"
+
+    def validate_phone(self, value):
+        """
+        Телефон в заказе — либо свой, либо ничей.
+
+        Своего телефона у аккаунта может не быть (старые Telegram-записи) — тогда
+        номер из первого заказа станет телефоном аккаунта. Чужой номер — отказ:
+        раньше в этом месте записи молча сливались (ADR-0017), и это дало дубли
+        и стёртые почты. Текст ошибки — на фронте, здесь только код.
+        """
+        normalized = try_normalize_phone(value)
+        if normalized is None:
+            raise serializers.ValidationError(INVALID_PHONE_MESSAGE)
+
+        user = self.context["request"].user
+        if normalized != user.phone and Client.objects.filter(phone=normalized).exclude(pk=user.pk).exists():
+            raise serializers.ValidationError(self.PHONE_TAKEN_CODE, code=self.PHONE_TAKEN_CODE)
+        return normalized
+
+    def _telegram_id_from_init_data(self, user, init_data):
+        """Заказ из мини-аппа: устройство, с которого оформили, если оно привязано к аккаунту."""
+        if not init_data:
+            return None
+        try:
+            payload = validate_telegram_init_data(init_data)
+        except serializers.ValidationError:
+            return None
+        telegram_id = payload["telegram_user"]["id"]
+        return telegram_id if telegram_id in user.telegram_ids else None
 
     class BasePriceCalculationResult(TypedDict):
         line_total_minor: int
@@ -205,8 +242,15 @@ class OrderCreateSerializer(serializers.ModelSerializer):
     def create(self, validated_data: dict):
         user: Client = self.context["request"].user
         items_data = validated_data.pop("items")
+        init_data = validated_data.pop("init_data", None)
         # Get client's discount info
         discount_info = DiscountService.get_client_discount_info(user)
+
+        if not user.phone:
+            # Первый заказ старой Telegram-записи: телефон становится телефоном
+            # аккаунта. Что он ничей — проверено в validate_phone.
+            user.phone = validated_data["phone"]
+            user.save(update_fields=["phone"])
 
         order: Order = Order.objects.create(
             **validated_data,
@@ -214,7 +258,7 @@ class OrderCreateSerializer(serializers.ModelSerializer):
             discount_total_minor=0,
             grand_total_minor=0,
             client=user,
-            telegram_id=user.telegram_id,
+            telegram_id=self._telegram_id_from_init_data(user, init_data),
             discount_percent=discount_info["discount_percentage"],
             remonline_sync_status=Order.RemonlineSyncStatus.PENDING,
         )
@@ -302,6 +346,9 @@ class OrderCreateSerializer(serializers.ModelSerializer):
 
 class OrderSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)
+    # Все Telegram аккаунта: бот шлёт уведомления по этому списку, а не по
+    # снимку `telegram_id` — иначе второе устройство того же человека молчало бы.
+    client_telegram_ids = serializers.SerializerMethodField()
     last_payment_status = serializers.SerializerMethodField()
     last_payment_failure_code = serializers.SerializerMethodField()
     last_payment_failure_reason = serializers.SerializerMethodField()
@@ -325,6 +372,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "remonline_order_id",
             "client",
             "telegram_id",
+            "client_telegram_ids",
             "name",
             "last_name",
             "prepayment",
@@ -401,6 +449,9 @@ class OrderSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         user = getattr(request, "user", None)
         return user if user is not None and user.is_authenticated else None
+
+    def get_client_telegram_ids(self, obj):
+        return obj.client.telegram_ids if obj.client_id else []
 
     def get_can_cancel(self, obj: Order):
         allowed, _ = order_cancel.can_cancel(obj, self._actor())

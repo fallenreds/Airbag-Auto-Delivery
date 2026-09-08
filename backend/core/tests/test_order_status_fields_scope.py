@@ -18,6 +18,7 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
+from core.tests.support import link_telegram, telegram_of
 from core.models import Client, Order, OrderEvent, OrderEventType
 
 LOCMEM = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
@@ -30,10 +31,11 @@ def make_client(email, *, is_staff=False, telegram_id=None):
         last_name="L",
         phone=f"+3800000{abs(hash(email)) % 100000:05d}",
         is_staff=is_staff,
-        telegram_id=telegram_id,
     )
     user.set_password("pass")
     user.save()
+    if telegram_id:
+        link_telegram(user, telegram_id)
     return user
 
 
@@ -44,7 +46,7 @@ class OrderStatusFieldsScopeTests(TestCase):
         self.customer = make_client("customer@airbag.local", telegram_id=222)
         self.order = Order.objects.create(
             client=self.customer,
-            telegram_id=self.customer.telegram_id,
+            telegram_id=telegram_of(self.customer),
             name="N",
             last_name="L",
             phone="+380000000000",
@@ -141,7 +143,7 @@ class ManualStatusEventsTests(TestCase):
         self.customer = make_client("customer@airbag.local", telegram_id=222)
         self.order = Order.objects.create(
             client=self.customer,
-            telegram_id=self.customer.telegram_id,
+            telegram_id=telegram_of(self.customer),
             name="N",
             last_name="L",
             phone="+380000000000",
@@ -251,7 +253,7 @@ class ManualPaymentSyncsRemonlineTests(TestCase):
     def make_order(self, **overrides):
         fields = dict(
             client=self.customer,
-            telegram_id=self.customer.telegram_id,
+            telegram_id=telegram_of(self.customer),
             name="N",
             last_name="L",
             phone="+380000000000",

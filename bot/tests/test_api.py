@@ -37,7 +37,7 @@ ORDER = {
 CLIENT = {
     "id": 1, "name": "Test", "last_name": "User",
     "phone": "+380501234567", "email": "t@t.com", "telegram_id": 111111,
-    "is_staff": False, "is_guest": False, "nova_post_address": "Kyiv",
+    "is_staff": False, "nova_post_address": "Kyiv",
 }
 TEMPLATE = {"id": 1, "name": "Promo", "text": "Hello!"}
 DISCOUNT = {"id": 1, "percentage": "10.00", "month_payment": 100000}

@@ -87,7 +87,13 @@ class Command(BaseCommand):
                 stats["будет отправлено"] += 1
                 continue
 
-            outcome = self._send(token, client.telegram_id, MESSAGE.format(url=url))
+            # У аккаунта может быть несколько Telegram — ссылка уходит в каждый,
+            # достаточно одного доставленного.
+            outcomes = [
+                self._send(token, telegram_id, MESSAGE.format(url=url))
+                for telegram_id in client.telegram_ids
+            ]
+            outcome = "отправлено" if "отправлено" in outcomes else (outcomes[0] if outcomes else "нет Telegram")
             stats[outcome] += 1
             if outcome == "отправлено":
                 claim_code.sent_at = timezone.now()

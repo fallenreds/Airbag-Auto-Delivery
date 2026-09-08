@@ -4,7 +4,7 @@ from django.conf import settings
 
 from core.models import Client, Good, Order, OrderEvent, OrderEventType
 from core.models import OrderItem
-from core.services import client_merge
+from core.phone import try_normalize_phone
 from core.services.remonline import RemonlineInterface
 
 logger = logging.getLogger(__name__)
@@ -79,14 +79,13 @@ def ensure_client_in_remonline(order: Order):
     """
     Гарантирует, что у клиента заказа есть контрагент в RemOnline.
 
-    Контрагента заводили только в момент создания записи клиента, и один из
-    путей — авто-логин Telegram WebApp — телефона не имеет: Telegram его в
-    `init_data` не передаёт. Такой клиент оставался без `id_remonline`
-    навсегда, и каждый его заказ отваливался с «Client has no remonline id».
-    На 03.09.2026 таких записей было 20 из 20 Telegram-гостей.
+    Контрагент — по телефону аккаунта. У старых Telegram-записей телефона нет,
+    и он впервые появляется в заказе: тогда он же становится телефоном аккаунта.
+    Чужим он быть не может — `OrderCreateSerializer.validate_phone` отказал бы
+    раньше; здесь проверка повторена на случай прямого вызова.
 
-    Телефон впервые появляется в заказе — он обязательное поле формы. По нему
-    и заводим контрагента.
+    Слияния по телефону убраны (ADR-0021): совпадение с другим клиентом — это
+    ошибка, а не «тот же человек».
 
     Возвращает клиента с проставленным `id_remonline`.
     """
@@ -94,22 +93,15 @@ def ensure_client_in_remonline(order: Order):
     if client.id_remonline is not None:
         return client
 
-    phone = (order.phone or client.phone or "").strip()
+    phone = client.phone or try_normalize_phone(order.phone)
     if not phone:
-        raise ValueError("Client has no remonline id and order has no phone")
+        raise ValueError("Client has no remonline id and no usable phone")
 
-    # Телефон уже принадлежит другому клиенту — значит это тот же человек,
-    # просто зашедший через Telegram и получивший вторую, пустую запись.
-    # Второго контрагента в CRM заводить нельзя, а дописать телефон гостю
-    # мешает UNIQUE на поле. Сливаем записи в старую — ту, где заказы и
-    # id_remonline (ADR-0003 про то же слияние при конфликте Telegram).
-    twin = Client.objects.filter(phone=phone).exclude(pk=client.pk).first()
-    if twin is not None:
-        client = client_merge.absorb_guest(client, twin)
-        order.client = client
-        order.refresh_from_db(fields=["client"])
-        if client.id_remonline is not None:
-            return client
+    if not client.phone:
+        if Client.objects.filter(phone=phone).exclude(pk=client.pk).exists():
+            raise ValueError(f"Phone {phone} belongs to another client")
+        client.phone = phone
+        client.save(update_fields=["phone"])
 
     remonline = RemonlineInterface(getattr(settings, "REMONLINE_API_KEY", None))
     created = remonline.find_or_create_client(
@@ -121,8 +113,8 @@ def ensure_client_in_remonline(order: Order):
     client.id_remonline = created["id"]
     client.save(update_fields=["id_remonline"])
     logger.info(
-        "Created RemOnline client %s for local client %s by order %s phone",
-        client.id_remonline, client.pk, order.pk,
+        "Created RemOnline client %s for local client %s by phone %s",
+        client.id_remonline, client.pk, phone,
     )
     return client
 

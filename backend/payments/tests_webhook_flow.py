@@ -16,6 +16,7 @@ import ecdsa
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
+from core.tests.support import telegram_of
 from core.models import Client, Order, OrderEvent, OrderEventType
 from payments.models import MonobankInvoiceEvent, Payment
 
@@ -55,7 +56,7 @@ class MonobankWebhookTests(TestCase):
 
         self.order = Order.objects.create(
             client=self.user,
-            telegram_id=self.user.telegram_id,
+            telegram_id=telegram_of(self.user),
             name="N",
             last_name="L",
             phone="+380000300002",

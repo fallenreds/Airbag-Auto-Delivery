@@ -55,7 +55,7 @@ def make_client(email, *, is_active=True, password=OLD_PASSWORD, email_confirmed
         email=email,
         name="Name",
         last_name="Last",
-        phone=f"+38000{next(_phone_seq)}",
+        phone=f"+380{next(_phone_seq):09d}",
         is_active=is_active,
         email_confirmed=email_confirmed,
     )
@@ -122,14 +122,6 @@ class PasswordResetRequestTests(TestCase):
 
         self.assertEqual(unknown.status_code, 200)
         self.assertEqual(unknown.data["message"], known.data["message"])
-        self.assertEqual(len(mail.outbox), 0)
-
-    def test_guest_gets_no_letter(self):
-        Client.objects.create_guest(email="guest@example.com")
-
-        response = self.api.post(REQUEST_URL, {"email": "guest@example.com"}, format="json")
-
-        self.assertEqual(response.status_code, 200)
         self.assertEqual(len(mail.outbox), 0)
 
     def test_inactive_user_gets_no_letter(self):

@@ -30,11 +30,10 @@ INVALID_TOKEN_MESSAGE = "This password reset link is invalid or has expired."
 
 
 def _is_resettable(user):
-    """Гості, деактивовані і акаунти без email/пароля скидати пароль не можуть."""
+    """Деактивовані і акаунти без email/пароля скидати пароль не можуть."""
     return bool(
         user
         and user.is_active
-        and not user.is_guest
         and user.email
         and user.has_usable_password()
     )

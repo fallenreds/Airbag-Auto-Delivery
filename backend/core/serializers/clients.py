@@ -4,9 +4,23 @@ from config.settings import REMONLINE_API_KEY
 from core.models import Client, ClientEvent
 from core.services.discount_service import DiscountService
 from core.services.remonline import RemonlineInterface
+from core.phone import INVALID_PHONE_MESSAGE, try_normalize_phone
+from core.services.telegram import validate_telegram_init_data
+from core.services.telegram_links import TelegramTaken, fill_profile_from_telegram, find_client_by_telegram, link_telegram
 from core.validators import validate_email
 import logging
 from requests import HTTPError
+
+
+def normalized_phone_or_error(value):
+    """`+380XXXXXXXXX` или ошибка валидации. Пустое значение — NULL, не «»: constraint на модели пустую строку не пропустит."""
+    if value in (None, ""):
+        return None
+    normalized = try_normalize_phone(value)
+    if normalized is None:
+        raise serializers.ValidationError(INVALID_PHONE_MESSAGE)
+    return normalized
+
 
 class ClientRegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, help_text="User password")
@@ -18,10 +32,11 @@ class ClientRegisterSerializer(serializers.ModelSerializer):
         allow_blank=True,
         help_text="Nova Poshta branch address (optional)",
     )
-    guest_id = serializers.IntegerField(
-        required=False,
-        write_only=True,
-        help_text="ID of guest client to convert to registered client",
+    # Регистрация внутри мини-аппа: Telegram привязывается здесь же, до
+    # подтверждения почты (ADR-0021). Вход по паролю до подтверждения закрыт, а по
+    # Telegram — открыт, поэтому фронт после регистрации входит через /telegram/auth.
+    init_data = serializers.CharField(
+        required=False, allow_blank=True, write_only=True, help_text="Telegram WebApp initData"
     )
 
     class Meta:
@@ -34,12 +49,13 @@ class ClientRegisterSerializer(serializers.ModelSerializer):
             "last_name",
             "phone",
             "nova_post_address",
-            "guest_id",
+            "init_data",
         ]
         extra_kwargs = {
             "name": {"required": False, "allow_blank": True},
             "last_name": {"required": False, "allow_blank": True},
-            "phone": {"required": False, "allow_blank": True},
+            # Телефон — ключ аккаунта: по нему контрагент в RemOnline и поиск дубля.
+            "phone": {"required": True, "allow_blank": False},
             "nova_post_address": {"required": False, "allow_blank": True},
         }
 
@@ -50,10 +66,22 @@ class ClientRegisterSerializer(serializers.ModelSerializer):
         return value
 
     def validate_phone(self, value):
+        value = normalized_phone_or_error(value)
         if value and Client.objects.filter(phone=value).exists():
             raise serializers.ValidationError(
                 "A user with this phone number already exists."
             )
+        return value
+
+    def validate_init_data(self, value):
+        if not value:
+            return ""
+        tg_user = validate_telegram_init_data(value)["telegram_user"]
+        owner = find_client_by_telegram(tg_user["id"])
+        if owner is not None:
+            # Слияний нет: этот Telegram уже за аккаунтом — человек входит в него.
+            raise serializers.ValidationError(TelegramTaken(owner).detail["detail"], code="telegram_taken")
+        self._telegram_user = tg_user
         return value
 
     def validate(self, data):
@@ -66,35 +94,15 @@ class ClientRegisterSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data):
-        guest_id = validated_data.pop("guest_id", None)
-
-        if guest_id:
-            try:
-                # Try to find the guest client
-                guest_client = Client.objects.get(id=guest_id, is_guest=True)
-
-                # Update the guest client with the new data
-                for key, value in validated_data.items():
-                    setattr(guest_client, key, value)
-
-                # Convert from guest to regular client
-                guest_client.is_guest = False
-
-                # Set the password
-                password = validated_data.get("password")
-                if password:
-                    guest_client.set_password(password)
-
-                guest_client.save()
-                return guest_client
-            except Client.DoesNotExist:
-                # If guest client not found, proceed with normal registration
-                pass
-
-        # Normal registration flow - create user in Django
+        validated_data.pop("init_data", None)
         client = Client.objects.create_user(**validated_data)
 
-        # Create client in Remonline (only for new registrations, not for guest conversions)
+        tg_user = getattr(self, "_telegram_user", None)
+        if tg_user:
+            link_telegram(client, tg_user)
+            fill_profile_from_telegram(client, tg_user)
+
+        # Контрагент в RemOnline заводится сразу — по телефону аккаунта.
         first_name = validated_data.get("name", "")
         last_name = validated_data.get("last_name", "")
         phone = validated_data.get("phone", "")
@@ -128,6 +136,7 @@ class ClientRegisterSerializer(serializers.ModelSerializer):
 
 class ClientSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(validators=[validate_email])
+    telegram_ids = serializers.ListField(child=serializers.IntegerField(), read_only=True)
 
     class Meta:
         model = Client
@@ -137,20 +146,19 @@ class ClientSerializer(serializers.ModelSerializer):
         fields = (
             "id",
             "id_remonline",
-            "telegram_id",
+            "telegram_ids",
             "name",
             "last_name",
             "login",
             "email",
             "phone",
             "nova_post_address",
-            "is_guest",
             "is_active",
             "email_confirmed",
         )
         # AIRBAG: login управляется flow регистрации/telegram; профиль-апдейт из
         # чекаута не должен его переписывать (иначе UNIQUE constraint failed: login).
-        read_only_fields = ("login", "is_active", "email_confirmed")
+        read_only_fields = ("login", "is_active", "email_confirmed", "telegram_ids")
 
     def validate_email(self, value):
         # Check if email exists but exclude the current instance
@@ -163,13 +171,12 @@ class ClientSerializer(serializers.ModelSerializer):
         return value
 
     def validate_phone(self, value):
-        # Check if phone exists but exclude the current instance
+        value = normalized_phone_or_error(value)
         instance = getattr(self, "instance", None)
-        if value and instance and instance.phone != value:
-            if Client.objects.filter(phone=value).exists():
-                raise serializers.ValidationError(
-                    "A user with this phone number already exists."
-                )
+        if value and Client.objects.filter(phone=value).exclude(pk=getattr(instance, "pk", None)).exists():
+            raise serializers.ValidationError(
+                "A user with this phone number already exists."
+            )
         return value
 
 
@@ -181,6 +188,7 @@ class ClientEventSerializer(serializers.ModelSerializer):
 
 class ClientProfileSerializer(serializers.ModelSerializer):
     discount_percentage = serializers.SerializerMethodField(read_only=True)
+    telegram_ids = serializers.ListField(child=serializers.IntegerField(), read_only=True)
 
     def get_discount_percentage(self, obj):
         try:
@@ -194,7 +202,7 @@ class ClientProfileSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "id_remonline",
-            "telegram_id",
+            "telegram_ids",
             "name",
             "last_name",
             "email",
@@ -204,7 +212,6 @@ class ClientProfileSerializer(serializers.ModelSerializer):
             "email_confirmed",
             "is_staff",
             "is_superuser",
-            "is_guest",
             "groups",
             "user_permissions",
         ]

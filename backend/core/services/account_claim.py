@@ -30,13 +30,11 @@ EMAIL_TAKEN_MESSAGE = "Ця пошта вже використовується �
 def claimable_clients():
     """
     Кому нужна ссылка: есть Telegram, но нет рабочего входа на сайт.
-
-    Гости исключены — у них нет ни истории, ни привязки к RemOnline, забирать
-    им нечего.
     """
     return (
-        Client.objects.filter(telegram_id__isnull=False, is_active=True, is_guest=False)
+        Client.objects.filter(telegram_links__isnull=False, is_active=True)
         .filter(Q(email__isnull=True) | Q(email="") | Q(email_confirmed=False))
+        .distinct()
         .order_by("id")
     )
 

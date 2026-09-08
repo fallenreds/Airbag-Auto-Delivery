@@ -7,6 +7,7 @@ from unittest.mock import patch
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
+from core.tests.support import telegram_of
 from core.models import Client, Order
 from payments.models import Payment
 from payments.services.monobank.api import (
@@ -49,7 +50,7 @@ class PaymentCreateTests(TestCase):
     def _make_order(self, *, phone, owner=None, prepayment=True, is_paid=False):
         return Order.objects.create(
             client=owner or self.user,
-            telegram_id=(owner or self.user).telegram_id,
+            telegram_id=telegram_of(owner or self.user),
             name="N",
             last_name="L",
             phone=phone,

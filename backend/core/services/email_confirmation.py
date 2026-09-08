@@ -36,7 +36,6 @@ def needs_confirmation(user):
     return bool(
         user
         and user.is_active
-        and not user.is_guest
         and user.email
         and not user.email_confirmed
     )
@@ -64,7 +63,7 @@ def resolve_token(token):
         return None
 
     user = Client.objects.filter(pk=payload.get("pk")).first()
-    if user is None or user.is_guest or not user.is_active:
+    if user is None or not user.is_active:
         return None
 
     # Пошту змінили після видачі посилання — старе посилання не має спрацювати.

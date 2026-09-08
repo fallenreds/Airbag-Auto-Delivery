@@ -10,6 +10,7 @@ from unittest.mock import patch
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
+from core.tests.support import telegram_of
 from core.models import Client, Order
 from payments.models import Payment, PaymentSettings
 from payments.tests_factories import build_gtoken
@@ -37,7 +38,7 @@ class GooglePayEndpointTests(TestCase):
 
         self.order = Order.objects.create(
             client=self.user,
-            telegram_id=self.user.telegram_id,
+            telegram_id=telegram_of(self.user),
             name="N",
             last_name="L",
             phone="+380000200002",

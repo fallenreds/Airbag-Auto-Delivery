@@ -1,37 +1,38 @@
 from django.core.cache import cache
-from django.db import IntegrityError
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework_simplejwt.tokens import RefreshToken
 
-from core.jwt_tokens import GuestRefreshToken
+from core.jwt_tokens import issue_tokens
 from core.models import Client
-from core.services.client_merge import is_mergeable_target, merge_clients
 from core.serializers import ClientProfileSerializer
 from core.serializers.telegram import TelegramAuthSerializer, TelegramAutoLinkSerializer
 from core.services.telegram import build_telegram_bot_link, generate_telegram_link_code_for_user
-
-
-def _issue_tokens_for_user(user):
-    if getattr(user, "is_guest", False):
-        refresh = GuestRefreshToken.for_user(user)
-    else:
-        refresh = RefreshToken.for_user(user)
-    return {"refresh": str(refresh), "access": str(refresh.access_token)}
+from core.services.telegram_links import TelegramTaken, fill_profile_from_telegram, link_telegram
 
 
 class TelegramAuthView(APIView):
+    # Сюда приходят с протухшим Bearer в заголовке — так фронт переживает истёкшую
+    # сессию в мини-аппе. Аутентификацию отключаем, иначе DRF ответит 401 раньше,
+    # чем дойдёт до подписи initData.
+    authentication_classes = []
     permission_classes = [AllowAny]
 
     def post(self, request):
         serializer = TelegramAuthSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        user, _created = serializer.get_or_create_client()
-        tokens = _issue_tokens_for_user(user)
+        user = serializer.find_client()
+        if user is None:
+            # Не ошибка, а состояние: фронт остаётся анонимом и не блокирует
+            # страницу. Регистрация внутри мини-аппа привяжет Telegram сама.
+            return Response(
+                {"code": "telegram_unknown", "detail": "This Telegram is not linked to any account."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
 
+        tokens = issue_tokens(user)
         return Response(
             {
                 "access": tokens["access"],
@@ -66,17 +67,11 @@ class TelegramAutoLinkView(APIView):
     def post(self, request):
         serializer = TelegramAutoLinkSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
-        merged = serializer.validated_data.get("merge_into") is not None
         user = serializer.save()
         return Response(
             {
-                "detail": (
-                    "Accounts merged; please sign in again"
-                    if merged
-                    else "Telegram account linked successfully"
-                ),
-                "merged": merged,
-                "telegram_id": user.telegram_id,
+                "detail": "Telegram account linked successfully",
+                "telegram_ids": user.telegram_ids,
                 "user": ClientProfileSerializer(user).data,
             },
             status=status.HTTP_200_OK,
@@ -128,60 +123,20 @@ class TelegramLinkConsumeView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # Тем же telegram_id может владеть запись, приехавшая из старой
-        # системы: у неё вся история заказов и накопленная скидка. Раньше мы
-        # молча отбирали у неё номер, и она становилась недостижимой навсегда —
-        # ни с сайта, ни из бота, который ищет клиента именно по telegram_id.
-        conflicting = (
-            Client.objects.exclude(id=user.id).filter(telegram_id=telegram_id).first()
-        )
-        if conflicting is not None:
-            if not is_mergeable_target(conflicting):
-                # У той записи есть рабочий вход — это чужой (или второй свой)
-                # полноценный аккаунт, и присваивать его нельзя.
-                return Response(
-                    {
-                        "message": (
-                            "⚠️ Цей Telegram вже прив'язаний до іншого акаунта. "
-                            "Увійдіть у нього або зверніться до підтримки."
-                        )
-                    },
-                    status=status.HTTP_409_CONFLICT,
-                )
-            merge_clients(source=user, target=conflicting)
-            cache.delete(cache_key)
-            return Response(
-                {
-                    "message": (
-                        "✅ Ми знайшли ваш давній акаунт і об'єднали його з новим.\n"
-                        "Історія замовлень і знижка на місці — увійдіть на сайт "
-                        "заново своєю поштою."
-                    )
-                },
-                status=status.HTTP_200_OK,
-            )
-
-        update_fields = ["telegram_id"]
-        user.telegram_id = telegram_id
-
-        # Populate optional profile fields from Telegram user data if not set
-        field_map = {"username": "login", "first_name": "name", "last_name": "last_name"}
-        for tg_attr, model_field in field_map.items():
-            value = (request.data.get(tg_attr) or "").strip()
-            if value and not getattr(user, model_field):
-                setattr(user, model_field, value)
-                update_fields.append(model_field)
-
+        tg_user = {
+            "id": telegram_id,
+            "username": request.data.get("username"),
+            "first_name": request.data.get("first_name"),
+            "last_name": request.data.get("last_name"),
+        }
         try:
-            user.save(update_fields=update_fields)
-        except IntegrityError:
-            # login (username) is already taken — save without it
-            if "login" in update_fields:
-                user.login = None
-                update_fields.remove("login")
-            user.save(update_fields=update_fields)
-        cache.delete(cache_key)
+            link_telegram(user, tg_user)
+        except TelegramTaken as taken:
+            # Слияний нет: чужой (или второй свой) аккаунт — решает человек.
+            return Response({"message": "⚠️ " + taken.detail["detail"]}, status=status.HTTP_409_CONFLICT)
 
+        fill_profile_from_telegram(user, tg_user)
+        cache.delete(cache_key)
         return Response(
             {"message": "✅ Аккаунти успішно пов'язані!"},
             status=status.HTTP_200_OK,

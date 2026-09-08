@@ -15,6 +15,7 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
+from core.tests.support import link_telegram, telegram_of
 from core.models import BONUS_ORDER_MARKER, Client, Order
 
 LOCMEM = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
@@ -27,17 +28,18 @@ def make_client(email, *, is_staff=False, telegram_id=None, phone=None):
         last_name="L",
         phone=phone or f"+3800000{abs(hash(email)) % 100000:05d}",
         is_staff=is_staff,
-        telegram_id=telegram_id,
     )
     user.set_password("pass")
     user.save()
+    if telegram_id:
+        link_telegram(user, telegram_id)
     return user
 
 
 def make_order(client, **overrides):
     fields = dict(
         client=client,
-        telegram_id=client.telegram_id,
+        telegram_id=telegram_of(client),
         name="N",
         last_name="L",
         phone="+380000000000",
@@ -69,7 +71,7 @@ class OrderListScopeTests(TestCase):
         """Тот самый запрос, который делает «Статус замовлень 📦»."""
         self.as_bot()
 
-        response = self.api.get("/api/v2/orders/", {"telegram_id": self.customer.telegram_id})
+        response = self.api.get("/api/v2/orders/", {"telegram_id": telegram_of(self.customer)})
 
         self.assertEqual(response.status_code, 200)
         ids = [o["id"] for o in response.data["results"]]
@@ -183,7 +185,7 @@ class ClientListExposureTests(TestCase):
         """Без этого бот отвечает «Ви не авторизовані» каждому."""
         self.api.credentials(HTTP_X_API_KEY=self.bot_account.api_key)
 
-        response = self.api.get("/api/v2/clients/", {"telegram_id": self.customer.telegram_id})
+        response = self.api.get("/api/v2/clients/", {"telegram_id": telegram_of(self.customer)})
 
         self.assertEqual(response.data["count"], 1)
         self.assertEqual(response.data["results"][0]["id"], self.customer.id)

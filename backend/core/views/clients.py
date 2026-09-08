@@ -8,6 +8,7 @@ from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.utils import timezone
+from django_filters import rest_framework as filters
 
 from core.models import BONUS_ORDER_MARKER, Client, ClientEvent, ClientEventType, Order
 from core.serializers import (
@@ -26,10 +27,26 @@ from core.services.email_confirmation import (
 from .utils import generate_filterset_for_model, is_service_request
 
 
+class ClientFilterSet(filters.FilterSet):
+    """
+    Явный список фильтров вместо автогенерации по всем полям модели.
+
+    `?telegram_id=` — то, чем пользуется бот; теперь номер живёт в привязках,
+    и фильтр идёт через них. Уникальность `ClientTelegram.telegram_id` даёт
+    не больше одной записи в ответе — бот на это опирается.
+    """
+
+    telegram_id = filters.NumberFilter(field_name="telegram_links__telegram_id")
+
+    class Meta:
+        model = Client
+        fields = ["id", "email", "phone", "id_remonline", "is_active", "is_staff", "telegram_id"]
+
+
 class ClientViewSet(viewsets.ModelViewSet):
     queryset = Client.objects.all()
     serializer_class = ClientSerializer
-    filterset_class = generate_filterset_for_model(Client)
+    filterset_class = ClientFilterSet
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
@@ -37,8 +54,7 @@ class ClientViewSet(viewsets.ModelViewSet):
         Обычный пользователь видит здесь только себя.
 
         Раньше вьюха отдавала `Client.objects.all()` любому авторизованному —
-        включая гостя, которого заводит `POST /auth/guest/`. То есть вся
-        клиентская база (ФИО, телефоны, telegram_id) выгружалась одним запросом.
+        то есть вся клиентская база выгружалась одним запросом.
 
         Бот и админ исключены: боту нужен произвольный клиент по `telegram_id`,
         чтобы ответить тому, кто пишет в чат, админу — админ-панель.
@@ -98,9 +114,10 @@ class ClientViewSet(viewsets.ModelViewSet):
             timezone.datetime(first_day_prev_month.year, first_day_prev_month.month, first_day_prev_month.day)
         )
 
+        telegram_ids = client.telegram_ids
         bonus_order = Order.objects.create(
             client=client,
-            telegram_id=client.telegram_id,
+            telegram_id=telegram_ids[0] if telegram_ids else None,
             name=client.name or BONUS_ORDER_MARKER,
             last_name=client.last_name or BONUS_ORDER_MARKER,
             phone=client.phone or BONUS_ORDER_MARKER,

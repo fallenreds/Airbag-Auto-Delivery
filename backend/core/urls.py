@@ -32,7 +32,6 @@ from .views import (
     TelegramLinkView,
     TemplateViewSet,
 )
-from .views.guest_clients import GuestClientCreationView
 from .views.orders import bank_details
 
 router = DefaultRouter()
@@ -76,7 +75,6 @@ urlpatterns = router.urls + [
         name="account_claim_preview",
     ),
     path("auth/claim/", AccountClaimView.as_view(), name="account_claim"),
-    path("auth/guest/", GuestClientCreationView.as_view(), name="create_guest"),
     path("telegram/auth", TelegramAuthView.as_view(), name="telegram_auth"),
     path("telegram/link", TelegramLinkView.as_view(), name="telegram_link"),
     path("telegram/link/consume/", TelegramLinkConsumeView.as_view(), name="telegram_link_consume"),

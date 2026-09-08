@@ -165,6 +165,10 @@ async def check_status(message):
         client_result = await get_client_by_tg_id(telegram_id)
         if not client_result or client_result.get("count", 0) == 0:
             return await bot.send_message(telegram_id, "Ви не авторизовані. Увійдіть або зареєструйтесь у додатку")
+        if client_result.get("count", 0) > 1:
+            # Один Telegram — один аккаунт; больше одного — сломанный контракт, не «берём первого».
+            logger.error("Several clients for one telegram_id", telegram_id=telegram_id, count=client_result["count"])
+            return await bot.send_message(telegram_id, "⚠️ З вашим акаунтом щось не так. Зверніться до адміністратора.")
         client = client_result["results"][0]
 
         orders = await get_orders_by_tg_id(telegram_id)
@@ -206,9 +210,12 @@ async def check_discount(message: types.Message):
         reply_text = 'В магазині <b>Airbag "AutoDelivery"</b> діють накопичувальні знижки для гуртових покупців.\n\n'
         discounts_info = await get_discounts_info()
         
-        clients = await get_client_by_tg_id(telegram_id)
-        client = (clients.get("results") or [None])[0] #Получаем первого клиента из списка
-        
+        clients = await get_client_by_tg_id(telegram_id) or {}
+        if clients.get("count", 0) > 1:
+            logger.error("Several clients for one telegram_id", telegram_id=telegram_id, count=clients["count"])
+            return await bot.send_message(telegram_id, "⚠️ З вашим акаунтом щось не так. Зверніться до адміністратора.")
+        client = (clients.get("results") or [None])[0]
+
         if client is None:
             return await bot.send_message(telegram_id, "Ви не авторизовані")
         else:
