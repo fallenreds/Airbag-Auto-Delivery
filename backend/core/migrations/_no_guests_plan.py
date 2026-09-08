@@ -202,7 +202,9 @@ def _promote_or_delete_guests(apps, out, dry_run):
 
 def _link_telegrams(apps, out, dry_run):
     Client = apps.get_model("core", "Client")
-    ClientTelegram = apps.get_model("core", "ClientTelegram")
+    # В пробном прогоне состояние моделей — 0021, где ClientTelegram ещё нет;
+    # там только считаем и ищем дубли.
+    ClientTelegram = None if dry_run else apps.get_model("core", "ClientTelegram")
     seen = {}
     created = 0
     for client in Client.objects.exclude(telegram_id__isnull=True).order_by("pk"):
