@@ -1,3 +1,4 @@
+import os
 import logging
 from typing import Any, Dict, cast
 
@@ -86,6 +87,11 @@ class GooglePayWalletPaymentView(APIView):
         return Response(response_payload, status=status.HTTP_200_OK)
 
 
+def telegram_bot_username() -> str | None:
+    value = os.getenv("TELEGRAM_BOT_USERNAME") or os.getenv("BOT_USERNAME") or ""
+    return value.lstrip("@") or None
+
+
 class PaymentConfigView(APIView):
     """Публичная (несекретная) конфигурация оплаты для фронта."""
 
@@ -99,6 +105,9 @@ class PaymentConfigView(APIView):
                 "mode": settings_obj.mode,
                 "google_pay_environment": settings_obj.google_pay_environment,
                 "google_pay_merchant_id": get_active_google_pay_merchant_id(),
+                # Мини-апп открывает страницу Monobank снаружи и возвращается
+                # в бота ссылкой t.me/<bot>?start=order_<id> (ADR-0022).
+                "telegram_bot_username": telegram_bot_username(),
             },
             status=status.HTTP_200_OK,
         )

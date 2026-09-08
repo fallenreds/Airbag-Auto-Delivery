@@ -95,7 +95,16 @@ async def start_message(message: types.Message):
 
     payload = message.get_args().strip() if hasattr(message, 'get_args') else ''
 
-    if payload:
+    if payload.startswith('order_'):
+        # Возврат из внешней страницы оплаты Monobank (ADR-0022): мини-апп уже
+        # опрашивает заказ, здесь только вернуть человека в магазин.
+        await bot.send_message(
+            telegram_id,
+            "Дякуємо! Якщо оплата пройшла, статус замовлення оновиться за кілька секунд — "
+            "перевірте його в «Статус замовлень 📦» або в магазині.",
+        )
+        success = True
+    elif payload:
         success, response_message = await api.link_account_via_code(payload, telegram_id, message.from_user)
         await bot.send_message(telegram_id, response_message)
     else:
