@@ -7,7 +7,7 @@ from config.settings import (
 )
 from core.models import CancelReason, Order, OrderEvent, OrderEventType
 from core.services import order_status, remonline_notes
-from core.services.remonline_notes import parse_ttn  # noqa: F401  (читают и тесты, и крон)
+from core.services.remonline_notes import parse_ttn, ttn_from_card  # noqa: F401  (читают и тесты, и крон)
 from core.services.order_cancel import cancel_order
 from core.services.remonline.api import RemonlineInterface
 
@@ -69,11 +69,11 @@ def process_order(remonline_order: dict, local_order: Order):
             )
         return
 
-    # Номер из карточки — это способ узнать, что менеджер вписал его вручную.
-    # Хранится он у нас, и отслеживание идёт по нашему значению: у заказов,
-    # заведённых до перехода на одно поле, номер в карточке лежит в другом
-    # месте, но в базе он есть — терять их из виду нельзя.
-    written_by_manager = parse_ttn(remonline_order.get("manager_notes", ""))
+    # Номер из карточки — это способ узнать, что менеджер вписал его вручную:
+    # в заметки инженера, как в старой системе. Хранится он у нас, и
+    # отслеживание идёт по нашему значению — если в карточке номера нет, а в
+    # базе есть, заказ из виду не теряем.
+    written_by_manager = ttn_from_card(remonline_order)
 
     if written_by_manager is not None and written_by_manager != local_order.ttn:
         local_order.ttn = written_by_manager

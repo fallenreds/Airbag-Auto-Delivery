@@ -2,7 +2,7 @@
 Заметки в карточке RemOnline и данные Новой Почты.
 
 Заказ по реквизитам сразу видно как ждущий оплату, подтверждённая оплата
-уводит его в «Новий» и отмечается в заметках, ТТН из бота попадает в заметки.
+уводит его в «Новий» и отмечается в заметках, ТТН из бота попадает в заметки инженера, состав — в заметки менеджера.
 
 Продвижение заказа по цепочке — «Відправлений», «Закрито» — система не
 трогает вовсе: это работа менеджера (05.09.2026, решение владельца). Здесь же
@@ -57,32 +57,55 @@ def make_order(owner, **fields):
 @override_settings(**CRM_SETTINGS)
 @patch("core.services.remonline_notes.RoappInterface")
 class PushTtnTests(TestCase):
+    """ТТН — в заметках инженера, как в старой системе (ADR-0023)."""
+
     def setUp(self):
         self.owner = make_client("ttn-owner@example.com")
 
-    def test_ttn_goes_into_manager_notes(self, roapp):
-        """
-        ТТН живёт там же, где остальные данные заказа.
-
-        «Замітки інженера» система только читает — туда номер вписывает
-        менеджер, и трогать это поле мы не должны.
-        """
+    def test_ttn_goes_into_engineer_notes(self, roapp):
+        roapp.return_value.get_order.return_value = {"engineer_notes": ""}
         order = make_order(self.owner, remonline_order_id=4242, ttn="59000123456789")
 
         self.assertTrue(remonline_notes.push_ttn(order))
 
         sent = roapp.return_value.update_order.call_args.kwargs
-        self.assertIn("Номер ТТН: 59000123456789", sent["manager_notes"])
-        self.assertEqual(list(sent), ["manager_notes"])
+        self.assertEqual(sent, {"engineer_notes": "ТТН: 59000123456789"})
 
-    def test_notes_keep_the_rest_of_the_order(self, roapp):
+    def test_manager_text_in_engineer_notes_is_kept(self, roapp):
+        roapp.return_value.get_order.return_value = {"engineer_notes": "Передзвонити клієнту\nпісля 18:00"}
         order = make_order(self.owner, remonline_order_id=4242, ttn="59000123456789")
 
         remonline_notes.push_ttn(order)
 
-        notes = roapp.return_value.update_order.call_args.kwargs["manager_notes"]
-        self.assertIn("Подушка безпеки", notes)
-        self.assertIn("Петренко", notes)
+        sent = roapp.return_value.update_order.call_args.kwargs["engineer_notes"]
+        self.assertEqual(sent, "ТТН: 59000123456789\n\nПередзвонити клієнту\nпісля 18:00")
+
+    def test_repeated_push_replaces_the_number(self, roapp):
+        roapp.return_value.get_order.return_value = {"engineer_notes": "ттн:59000000000000\nЗабрати до п'ятниці"}
+        order = make_order(self.owner, remonline_order_id=4242, ttn="59000123456789")
+
+        remonline_notes.push_ttn(order)
+
+        sent = roapp.return_value.update_order.call_args.kwargs["engineer_notes"]
+        self.assertEqual(sent.count("ТТН"), 1)
+        self.assertIn("59000123456789", sent)
+        self.assertNotIn("59000000000000", sent)
+        self.assertIn("Забрати до п'ятниці", sent)
+
+    def test_same_number_is_not_rewritten(self, roapp):
+        roapp.return_value.get_order.return_value = {"engineer_notes": "ТТН: 59000123456789"}
+        order = make_order(self.owner, remonline_order_id=4242, ttn="59000123456789")
+
+        self.assertFalse(remonline_notes.push_ttn(order))
+        roapp.return_value.update_order.assert_not_called()
+
+    def test_manager_notes_are_not_touched(self, roapp):
+        roapp.return_value.get_order.return_value = {"engineer_notes": ""}
+        order = make_order(self.owner, remonline_order_id=4242, ttn="59000123456789")
+
+        remonline_notes.push_ttn(order)
+
+        self.assertNotIn("manager_notes", roapp.return_value.update_order.call_args.kwargs)
 
     def test_order_without_card_is_skipped(self, roapp):
         order = make_order(self.owner, remonline_order_id=None, ttn="59000123456789")
@@ -98,7 +121,7 @@ class PushTtnTests(TestCase):
 
     def test_crm_failure_is_swallowed(self, roapp):
         """ТТН уже сохранён у нас и клиент уведомлён — падать нельзя."""
-        roapp.return_value.update_order.side_effect = RuntimeError("502")
+        roapp.return_value.get_order.side_effect = RuntimeError("502")
         order = make_order(self.owner, remonline_order_id=4242, ttn="59000123456789")
 
         self.assertFalse(remonline_notes.push_ttn(order))
@@ -122,19 +145,25 @@ class ManagerNotesTests(TestCase):
         self.assertIn("Подушка безпеки", sent)
         self.assertIn("Петренко", sent)
 
-    def test_paid_order_with_ttn_keeps_both(self, roapp):
-        """
-        Обе строки — часть билдера, поэтому переживают перегенерацию.
-        Дописанные поверх, они затирали бы друг друга.
-        """
+    def test_ttn_stays_out_of_manager_notes(self, roapp):
+        """Номер живёт в заметках инженера; здесь его не дублируем (ADR-0023)."""
         order = make_order(self.owner, remonline_order_id=4242,
                            is_paid=True, ttn="59000123456789")
 
         remonline_notes.refresh_manager_notes(order)
 
-        notes = roapp.return_value.update_order.call_args.kwargs["manager_notes"]
-        self.assertIn("Оплачено", notes)
-        self.assertIn("Номер ТТН: 59000123456789", notes)
+        sent = roapp.return_value.update_order.call_args.kwargs
+        self.assertEqual(list(sent), ["manager_notes"])
+        self.assertIn("Оплачено", sent["manager_notes"])
+        self.assertNotIn("59000123456789", sent["manager_notes"])
+
+    def test_card_is_not_reread_before_rewrite(self, roapp):
+        """Перечитывать карточку незачем: ТТН в другом поле и стереться не может."""
+        order = make_order(self.owner, remonline_order_id=4242, is_paid=True)
+
+        remonline_notes.refresh_manager_notes(order)
+
+        roapp.return_value.get_order.assert_not_called()
 
     def test_without_payment_there_is_no_mark(self, roapp):
         order = make_order(self.owner, remonline_order_id=4242, is_paid=False)
@@ -200,7 +229,7 @@ class CronNeverTouchesCardStatusTests(TestCase):
             details.return_value = {"data": [{"StatusCode": str(status_code)}]}
             process_order(
                 {"status": {"id": int(NEW), "name": "Новий"},
-                 "manager_notes": f"Номер ТТН: {self.order.ttn}"},
+                 "engineer_notes": f"ТТН: {self.order.ttn}"},
                 self.order,
             )
         self.order.refresh_from_db()
@@ -279,7 +308,7 @@ class DeliveryMarksOrderPaidTests(TestCase):
             details.return_value = {"data": [{"StatusCode": status_code}]}
             process_order(
                 {"status": {"name": "Відправлений"},
-                 "manager_notes": f"Номер ТТН: {self.order.ttn}"},
+                 "engineer_notes": f"ТТН: {self.order.ttn}"},
                 self.order,
             )
         self.order.refresh_from_db()
@@ -315,3 +344,32 @@ class DeliveryMarksOrderPaidTests(TestCase):
         self.deliver(9)
 
         notes_api.return_value.update_order.assert_not_called()
+
+
+class ParseTtnTests(TestCase):
+    """Менеджер дописывает рядом что угодно — номер всё равно читается (ADR-0023)."""
+
+    def test_common_spellings(self):
+        for text in (
+            "ТТН: 20451524772776",
+            "ттн:20451524772776",
+            "Номер ТТН: 20451524772776",
+            "ТТН №20451524772776",
+            "ТТН - 20451524772776",
+            "Передзвонити після 18:00\nттн : 2045 1524 7727 76 (Нова Пошта)\nвідділення 5",
+            "ТТН 2045-1524-7727-76 забрати до п'ятниці",
+        ):
+            self.assertEqual(remonline_notes.parse_ttn(text), "20451524772776", text)
+
+    def test_short_number_does_not_swallow_the_next_word(self):
+        self.assertEqual(remonline_notes.parse_ttn("ТТН: 2045152477277\nвідділення 5"), "2045152477277")
+
+    def test_no_number_or_too_short(self):
+        for text in ("", None, "Передзвонити клієнту", "ТТН: 12345", "ТТН: буде завтра"):
+            self.assertIsNone(remonline_notes.parse_ttn(text), text)
+
+    def test_engineer_notes_win_over_manager_notes(self):
+        card = {"engineer_notes": "ТТН: 20451524772776", "manager_notes": "Номер ТТН: 20451500000000"}
+        self.assertEqual(remonline_notes.ttn_from_card(card), "20451524772776")
+        self.assertEqual(remonline_notes.ttn_from_card({"manager_notes": "Номер ТТН: 20451500000000"}), "20451500000000")
+
