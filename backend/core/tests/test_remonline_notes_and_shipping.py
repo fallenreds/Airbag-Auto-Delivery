@@ -344,3 +344,32 @@ class DeliveryMarksOrderPaidTests(TestCase):
         self.deliver(9)
 
         notes_api.return_value.update_order.assert_not_called()
+
+
+class ParseTtnTests(TestCase):
+    """Менеджер дописывает рядом что угодно — номер всё равно читается (ADR-0023)."""
+
+    def test_common_spellings(self):
+        for text in (
+            "ТТН: 20451524772776",
+            "ттн:20451524772776",
+            "Номер ТТН: 20451524772776",
+            "ТТН №20451524772776",
+            "ТТН - 20451524772776",
+            "Передзвонити після 18:00\nттн : 2045 1524 7727 76 (Нова Пошта)\nвідділення 5",
+            "ТТН 2045-1524-7727-76 забрати до п'ятниці",
+        ):
+            self.assertEqual(remonline_notes.parse_ttn(text), "20451524772776", text)
+
+    def test_short_number_does_not_swallow_the_next_word(self):
+        self.assertEqual(remonline_notes.parse_ttn("ТТН: 2045152477277\nвідділення 5"), "2045152477277")
+
+    def test_no_number_or_too_short(self):
+        for text in ("", None, "Передзвонити клієнту", "ТТН: 12345", "ТТН: буде завтра"):
+            self.assertIsNone(remonline_notes.parse_ttn(text), text)
+
+    def test_engineer_notes_win_over_manager_notes(self):
+        card = {"engineer_notes": "ТТН: 20451524772776", "manager_notes": "Номер ТТН: 20451500000000"}
+        self.assertEqual(remonline_notes.ttn_from_card(card), "20451524772776")
+        self.assertEqual(remonline_notes.ttn_from_card({"manager_notes": "Номер ТТН: 20451500000000"}), "20451500000000")
+
